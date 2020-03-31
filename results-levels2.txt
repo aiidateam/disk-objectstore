@@ -1,0 +1,118 @@
+# Results on /tmp on Mac SSD
+# I run three times (second and third time without cleaning the repo)
+
+## NOTE THIS WAS DONE WITH LEVEL 2, max 256 files
+
+
+## STORING FILES IN ONE COMMIT
+
+Currently known files: 0
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 5028075 bytes (~4.795 MB).
+Time to store 10000 loose objects (IN ONE COMMIT): 4.666 s
+Time to retrieve 10000 loose objects: 7.191 s
+Time to pack all loose objects: 12.89 s
+Time to retrieve 10000 packed objects in random order: 7.021313190460205 s
+All tests passed
+
+---
+
+Currently known files: 10000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 5011546 bytes (~4.779 MB).
+Time to store 10000 loose objects (IN ONE COMMIT): 5.264 s
+Time to retrieve 10000 loose objects: 7.458 s
+Time to pack all loose objects: 13.65 s
+Time to retrieve 10000 packed objects in random order: 7.241814613342285 s
+All tests passed
+
+---
+
+Currently known files: 20000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 4923960 bytes (~4.695 MB).
+Time to store 10000 loose objects (IN ONE COMMIT): 4.963 s
+Time to retrieve 10000 loose objects: 7.084 s
+Time to pack all loose objects: 13.66 s
+Time to retrieve 10000 packed objects in random order: 6.950268983840942 s
+All tests passed
+
+## STORING FILES IN INDEPENDENT COMMITS
+
+Currently known files: 0
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 5042079 bytes (~4.808 MB).
+Time to store 10000 loose objects (IN INDEPENDENT COMMITS): 31.42 s
+Time to retrieve 10000 loose objects: 7.11 s
+Time to pack all loose objects: 11.61 s
+Time to retrieve 10000 packed objects in random order: 7.3023669719696045 s
+All tests passed
+
+---
+
+Currently known files: 10000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 5008458 bytes (~4.776 MB).
+Time to store 10000 loose objects (IN INDEPENDENT COMMITS): 30.75 s
+Time to retrieve 10000 loose objects: 7.247 s
+Time to pack all loose objects: 12.0 s
+Time to retrieve 10000 packed objects in random order: 6.9708240032196045 s
+All tests passed
+
+---
+
+Currently known files: 20000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 4977186 bytes (~4.746 MB).
+Time to store 10000 loose objects (IN INDEPENDENT COMMITS): 30.7 s
+Time to retrieve 10000 loose objects: 7.336 s
+Time to pack all loose objects: 12.09 s
+Time to retrieve 10000 packed objects in random order: 7.282958745956421 s
+All tests passed
+
+
+## STORING FILES DIRECTLY TO PACKS
+
+Currently known files: 0
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 5013467 bytes (~4.780 MB).
+Time to store 10000 objects DIRECTLY TO THE PACKS: 3.863 s
+Time to retrieve 10000 packed objects in random order: 7.200431823730469 s
+All tests passed
+
+---
+
+Currently known files: 10000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 4995679 bytes (~4.764 MB).
+Time to store 10000 objects DIRECTLY TO THE PACKS: 4.498 s
+Time to retrieve 10000 packed objects in random order: 7.1564249992370605 s
+All tests passed
+
+---
+
+Currently known files: 20000
+Currently known loose objects: 0
+Loose objects on disk: 0
+Generating 10000 files in memory...
+Done. Total size: 4956275 bytes (~4.727 MB).
+Time to store 10000 objects DIRECTLY TO THE PACKS: 4.12 s
+Time to retrieve 10000 packed objects in random order: 7.142000675201416 s
+All tests passed
+
