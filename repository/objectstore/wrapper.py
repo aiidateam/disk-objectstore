@@ -1,16 +1,15 @@
 from .container import Container
-import datetime
 import tempfile
 
 class WrappedRepository:
-    def __init__(self, folder=None, verbose=True):
+    def __init__(self, folder=None, verbose=True, clear=False):
         """Initialise a new container."""
         if folder is None:
             folder = tempfile.mkdtemp()
             if verbose:
                 print("Using random folder '{}' - remember to delete it (e.g. using 'self.clean_up_folder()".format(folder))
         self._container = Container(folder=folder)
-        self._container.init_container()
+        self._container.init_container(clear=clear)
 
     def clean_up_folder(self):
         """Clean up the folder of the container.
@@ -24,17 +23,12 @@ class WrappedRepository:
         :param objlist: a list of bytestreams
         :return: a list of keys for the objects, in the same order as specified in objlist.
         """
-        basedate = str(datetime.date.today())
-        basetime = str(datetime.datetime.now().time()).replace(':','-')
-        basename = 'file-'+basedate+'-'+basetime
+        keys = []
 
-        files_dict = {
-            basename+str(idx).zfill(6)+'.dat': objcont
-            for idx, objcont in enumerate(objlist)}
+        for content in objlist:
+            keys.append(self._container.add_object(content))
 
-        self._container.add_files(files_dict)
-
-        return list(files_dict.keys())
+        return keys
 
     def get_objects(self, keylist):
         """Get a list of objects from the container.
@@ -44,7 +38,7 @@ class WrappedRepository:
         """
         objlist = []
         for keyname in keylist:
-            objlist.append( self._container.get_file_content(keyname) )
+            objlist.append( self._container.get_object_content(keyname) )
 
         return objlist
 
@@ -65,23 +59,4 @@ class WrappedRepository:
 
     def pack(self):
         """Pack all loose objects."""
-        self.pack_all_loose()
-
-if __name__ == "__main__":
-
-    wrapped_repo = WrappedRepository(verbose=True)
-
-    contents = [b"34234", b"sdfssd"]
-
-    filenames = wrapped_repo.put_objects(contents)
-    size_before = wrapped_repo.get_size()
-    print("Size before: {}".format(size_before))
-
-    wrapped_repo.pack()
-    size_after = wrapped_repo.get_size()
-    print("Size after: {}".format(size_after))
-    
-    data = wrapped_repo.get_objects(filenames)
-    assert data == contents
-
-    print("All tests passed (write+read)")
+        self._container.pack_all_loose()
