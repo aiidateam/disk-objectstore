@@ -1,0 +1,49 @@
+Files created in memory in 238.33 s
+FILE1 written:
+-rw-r--r--  1 pizzi  wheel  981926742 Mar 27 11:20 /tmp/file1.dat
+FILE2 written:
+-rw-r--r--  1 pizzi  wheel  981926742 Mar 27 11:20 /tmp/file2.dat
+*** TRANSFERRING FILE1 WITH RSYNC
+
+file1.dat
+
+Number of files: 1
+Number of files transferred: 1
+Total file size: 981926742 bytes
+Total transferred file size: 981926742 bytes
+Literal data: 981926742 bytes
+Matched data: 0 bytes
+File list size: 28
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 982046696
+Total bytes received: 42
+
+sent 982046696 bytes  received 42 bytes  3784380.49 bytes/sec
+total size is 981926742  speedup is 1.00
+
+real	4m19.056s
+user	0m9.986s
+sys	0m7.257s
+*** REPLACING FILE1 WITH RESHUFFLED FILE2:
+*** TRANSFERRING AGAIN THE (NOW RESHUFFLED) FILE1:
+file1.dat
+
+Number of files: 1
+Number of files transferred: 1
+Total file size: 981926742 bytes
+Total transferred file size: 981926742 bytes
+Literal data: 31748502 bytes
+Matched data: 950178240 bytes
+File list size: 28
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 31875772
+Total bytes received: 219450
+
+sent 31875772 bytes  received 219450 bytes  2213463.59 bytes/sec
+total size is 981926742  speedup is 30.59
+
+real	0m13.887s
+user	0m5.112s
+sys	0m1.115s

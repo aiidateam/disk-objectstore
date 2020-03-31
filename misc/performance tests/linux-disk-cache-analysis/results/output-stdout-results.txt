@@ -1,0 +1,35 @@
+bs=1000001, count1=1021, size=1021001021
+bs=1000001, count2=2041, size=2041002041
+1021+0 records in
+1021+0 records out
+1021001021 bytes (1.0 GB, 974 MiB) copied, 74.2661 s, 13.7 MB/s
+2041+0 records in
+2041+0 records out
+2041002041 bytes (2.0 GB, 1.9 GiB) copied, 149.124 s, 13.7 MB/s
+0194d38f1aa5c448877c38f10b3ecec8  /tmp/testbigfile1
+28cbebf9732cf3d16bbc027074c087c1  /tmp/testbigfile2
+-rw-rw-r-- 1 pizzi pizzi 3062003062 Mar 27 10:15 /tmp/testbigfile
+-rw-rw-r-- 1 pizzi pizzi 1021001021 Mar 27 10:13 /tmp/testbigfile1
+-rw-rw-r-- 1 pizzi pizzi 2041002041 Mar 27 10:15 /tmp/testbigfile2
+----- CACHE FLUSHED ----
+step1-before-mem.txt written
+Cached:           584384 kB
+******************************************
+28cbebf9732cf3d16bbc027074c087c1 python part 2
+
+******************************************
+step2-2ndhalf-mem.txt written
+Cached:          2585348 kB
+----- CACHE FLUSHED ----
+step3-flush-mem.txt written
+Cached:           584728 kB
+
+******************************************
+0194d38f1aa5c448877c38f10b3ecec8 python part 1
+step4-1sthalf-mem.txt written
+Cached:          1589080 kB
+
+******************************************
+28cbebf9732cf3d16bbc027074c087c1 python part 2
+step5-also2ndhalf-mem.txt written
+Cached:          3583152 kB

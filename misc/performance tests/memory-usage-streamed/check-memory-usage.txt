@@ -1,0 +1,34 @@
+Goal: check that when using fully stream, rather than loading in memory, we never fill RAM memory even if we are working with big files (10GB) in this example.
+
+Result: Indeed it works: I checked that the memory usage never goes above 150MB, even when working with a 10GB file to compress. See attached file.
+
+As a side note: note how a 10GB file, when compressed, reduces to 46MB (probably it could be even more compressed, here we're using a level of 1 of gzip/zlib)
+
+Note that gzipping with default options a 1GB file gives 1MB instead of 4MB as here; this is using gzip's default compression level. It is indeed 4MB with level 1 (the one we are using by default in the object store implementation).
+So, it's OK (we are compressing "correctly", with the expected compression rate).
+
+
+Command:
+
+./profile_zeros.py -p /tmp/test-repository-zeros -c -s 10 -z &
+psrecord `ps auxw | grep 'profile_zer[o]s' | awk '{print $2}'` --interval 0.1 --plot memory-usage.png
+
+
+Output:
+
+Clearing the container...
+Currently known objects: 0 packed, 0 loose
+Pack objects on disk: 0
+Time to store one file of zeros of size 10 GB: 19.38 s
+Object store size info:
+- total_size_loose              : 0
+- total_size_packed             : 10737418240
+- total_size_packed_on_disk     : 46854451
+- total_size_packfiles_on_disk  : 46854451
+- total_size_packindexes_on_disk: 3072
+Time to retrieve 1 packed object of size 10 GB: 15.322084903717041 s
+All tests passed
+rss: 40390656 -> 98025472 (DELTA = 57634816 = 54.96 MB)
+uss: 32686080 -> 89714688 (DELTA = 57028608 = 54.39 MB)
+vms: 689434624 -> 751550464 (DELTA = 62115840 = 59.24 MB)
+

@@ -1,0 +1,53 @@
+bs=1000001, count=1021, size=1021001021
+1021+0 records in
+1021+0 records out
+1021001021 bytes transferred in 31.734456 secs (32173264 bytes/sec)
+*** FILE CREATED
+-rw-r--r--  1 pizzi  wheel  1021001021 Mar 27 11:06 /tmp/bigfile
+*** TRANSFERRING FILE WITH RSYNC:
+bigfile
+
+Number of files: 1
+Number of files transferred: 1
+Total file size: 1021001021 bytes
+Total transferred file size: 1021001021 bytes
+Literal data: 1021001021 bytes
+Matched data: 0 bytes
+File list size: 26
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 1021125741
+Total bytes received: 42
+
+sent 1021125741 bytes  received 42 bytes  3846048.15 bytes/sec
+total size is 1021001021  speedup is 1.00
+
+real	4m24.976s
+user	0m9.306s
+sys	0m6.561s
+*** CREATING A SMALL FILE AND APPENDING IT TO THE SAME FILE:
+bs=10001, count=1021, size=10211021
+1021+0 records in
+1021+0 records out
+10211021 bytes transferred in 0.324198 secs (31496248 bytes/sec)
+*** TRANSFERRING AGAIN THE BIG FILE (WITH SMALL APPENDED CONTENT) WITH RSYNC:
+bigfile
+
+Number of files: 1
+Number of files transferred: 1
+Total file size: 1031212042 bytes
+Total transferred file size: 1031212042 bytes
+Literal data: 10217834 bytes
+Matched data: 1020994208 bytes
+File list size: 26
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 10346982
+Total bytes received: 223727
+
+sent 10346982 bytes  received 223727 bytes  729014.41 bytes/sec
+total size is 1031212042  speedup is 97.55
+
+real	0m14.012s
+user	0m4.895s
+sys	0m1.278s

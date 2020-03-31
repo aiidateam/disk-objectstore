@@ -1,0 +1,13 @@
+As seen from the output stdout of the script:
+
+(NOTE: tests run on a linux workstation - theospc36).
+
+- I create a 3GB file, composed of a 1GB file (of which I know the MD5) and of a 2GB file (of which I know the MD5). They are concatenated on a single file on disk. File sizes are not multiples of a power of 2 to avoid alignment with block size.
+
+- After flushing the caches, if one reads only the second half, 2GB are added to the memory cache.
+
+- After flushing the caches, if one reads only the first half, 1GB is added to the memory cache.
+- Without further flushing the caches, if one reads also the first half, 2 more GBs are added to the memory cache (totalling 3GB more).
+
+Therefore, conclusion:
+caches are per blocks/pages in linux, not per file. Concatenating files does not impact performance on cache efficiency.

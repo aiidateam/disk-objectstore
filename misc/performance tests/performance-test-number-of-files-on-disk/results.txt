@@ -1,0 +1,39 @@
+Report on the cost of having many files (empty)
+
+Summary: we want to stay at three levels of nesting (aaa, aab, aac, ...)
+The cost is still acceptable (on my Mac SSD), 11seconds, while one level more
+becomes very expensive (>3 mins just to create the files)
+
+###########################
+4 levels: up to 65536 files
+###########################
+
+pizzi@swissmongoose:~/tmp/test$ time ./create.sh
+
+real	3m9.568s
+user	0m59.093s
+sys	1m41.880s
+pizzi@swissmongoose:~/tmp/test$ time rm -r data/
+
+real	0m4.944s
+user	0m0.135s
+sys	0m4.351s
+pizzi@swissmongoose:~/tmp/test$ mkdir data
+
+
+##########################
+3 levels: up to 4096 files
+##########################
+
+pizzi@swissmongoose:~/tmp/test$ time ./create.sh
+
+real	0m11.057s
+user	0m3.609s
+sys	0m6.040s
+pizzi@swissmongoose:~/tmp/test$ ls data/ | wc -l
+    4096
+pizzi@swissmongoose:~/tmp/test$ time rm -r data/
+
+real	0m0.259s
+user	0m0.008s
+sys	0m0.234s

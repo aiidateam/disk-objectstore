@@ -1,0 +1,27 @@
+(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py 
+Total time to generate 10000 UUID4 (str): 0.061849117279052734 s
+Time per UUID (microseconds): 6.184911727905273
+Total time to generate 10000 UUID4 (.hex): 0.04797697067260742 s
+Time per UUID (microseconds): 4.797697067260742
+(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py 
+Total time to generate 10000 UUID4 (str): 0.06092214584350586 s
+Time per UUID (microseconds): 6.092214584350586
+Total time to generate 10000 UUID4 (.hex): 0.04745769500732422 s
+Time per UUID (microseconds): 4.745769500732422
+
+So, .hex is faster.
+To create 1million UUIDs, it will take 5 seconds. It's ok I think w.r.t. all other timings.
+
+Moreover:
+From the hex-int function (see comments in there):
+
+Time to compute a back-and-forth conversion from UUID string to 2 8-byte (long) ints and back: ~1.5 ms, so ~1/3 of the time to get a UUID. It's an acceptable cost, if we discover it's much faster to store in SQLite (and anyway it will be cheaper to store in terms of space!)
+
+
+
+However, using hex-int conversion, beside making everything very complex, is slower (see test-schema-uuid-int.py):
+
+UUID, time to store 10000 UUIDs: 1.406s
+Two ints, time to store 10000 UUIDs: 1.656s
+UUID, time to read 10000 UUIDs: 0.389s
+Two ints, time to read 10000 UUIDs: 1.457s

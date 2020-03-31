@@ -1,0 +1,45 @@
+Reading 100'000 objects in bulk from the packs is very fast (~2.3 seconds).
+Even reading a random subdivision in 10 chunks of 10'000 objects is only ~50% slower (3.4s).
+While looping is slow, but this is probably OK.
+
+See results below
+
+
+$ ./example_objectstore.py -p /tmp/test-container/ -c -d -n 100000
+Clearing the container...
+Currently known objects: 0 packed, 0 loose
+Pack objects on disk: 0
+Generating 100000 files in memory...
+Done. Total size: 49909321 bytes (~47.597 MB).
+Time to store 100000 objects DIRECTLY TO THE PACKS: 9.849 s
+Object store size info:
+- total_size_loose              : 0
+- total_size_packed             : 49909321
+- total_size_packed_on_disk     : 49909321
+- total_size_packfiles_on_disk  : 49909321
+- total_size_packindexes_on_disk: 10309632
+Time to retrieve 100000 packed objects in random order WITH ONE BULK CALL: 2.2982466220855713 s
+Time to retrieve 100000 packed objects in random order WITH 10 BULK CALLS: 3.377854824066162 s
+Time to retrieve 100000 packed objects in random order: 44.57672834396362 s
+All tests passed
+
+
+## Second run, not wiping the repository
+
+
+$ ./example_objectstore.py -p /tmp/test-container/ -d -n 100000
+Currently known objects: 100000 packed, 0 loose
+Pack objects on disk: 256
+Generating 100000 files in memory...
+Done. Total size: 50080084 bytes (~47.760 MB).
+Time to store 100000 objects DIRECTLY TO THE PACKS: 9.71 s
+Object store size info:
+- total_size_loose              : 0
+- total_size_packed             : 99989405
+- total_size_packed_on_disk     : 99989405
+- total_size_packfiles_on_disk  : 99989405
+- total_size_packindexes_on_disk: 20493312
+Time to retrieve 100000 packed objects in random order WITH ONE BULK CALL: 2.312037467956543 s
+Time to retrieve 100000 packed objects in random order WITH 10 BULK CALLS: 3.4072420597076416 s
+Time to retrieve 100000 packed objects in random order: 43.60569715499878 s
+All tests passed

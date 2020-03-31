@@ -1,0 +1,52 @@
+If we append something to a file, rsync is clever enough and it does not retransfer the whole file.
+
+From the man page:
+
+       The rsync remote-update protocol allows rsync to transfer just the dif-
+       ferences between two sets of files across the network connection, using
+       an efficient  checksum-search  algorithm  described  in  the  technical
+       report that accompanies this package.
+
+Therefore when packing, we want to keep appending rather than recreating the file; efficient both in doing, and in rsyncing.
+
+Only when we really need to delete, we want to repack everything.
+
+
+NOTE: however, I don't know if there are multiple files, rsync just does some faster heuristics (e.g. based on date, file size etc.), while in this way probably it has to compute the MD5 of everything at every run, which anyway has some disk impact).
+
+YOU CAN SEE RESULTS IN THE 'APPEND' FOLDER. Indeed, it is very fast in checking only the diff (takes only 14 seconds to transfer the additional 10MB of a 1GB file).
+
+Note: when suggesting how to do backups, we should suggest (to be tested), in case of network drops:
+       --partial
+              By default, rsync will delete any partially transferred file  if
+              the  transfer  is  interrupted. In some circumstances it is more
+              desirable to keep partially transferred files. Using the  --par-
+              tial  option  tells  rsync to keep the partial file which should
+              make a subsequent transfer of the rest of the file much  faster.
+
+For verbose output, note that:
+       -P     The -P option is equivalent to --partial --progress.   Its  pur-
+              pose  is to make it much easier to specify these two options for
+              a long transfer that may be interrupted.
+
+One of the links explaining the rsync algorithm: https://www.andrew.cmu.edu/course/15-749/READINGS/required/cas/tridgell96.pdf
+
+
+------------------------------------------------------------------------
+
+
+MOREOVER: the rsync algorithm is rolling, so possibly reshuffling files is also ok, as long as they are bigger than the block size. (Note that this is however selected based on the file being updated, unless one specifies it with this option (but one should test if it affects performance!)
+       -B, --block-size=BLOCKSIZE
+              This forces the block size used in  the  rsync  algorithm  to  a
+              fixed  value.  It is normally selected based on the size of each
+              file being updated.  See the technical report for details.
+
+
+I tried with 1021 files of random length between 1 byte and 2MB (total size ~1GB).
+Transferred it first, then retransferred randomly reshuffled. See attached results-stdout file (note: everything is random, so different runs could return different results).
+
+RESULTS IN THE 'SHUFFLE' FOLDER
+
+The results are still quite promising: out of a 1GB file, that took ~4mins to transfer fully the first time over my network, the second time the process took only 14 seconds, transferring only ~32MB, with a speedup of ~30x. 
+So also repacking (as long as we stay in the same file) is very effective, apparently!
+
