@@ -22,7 +22,12 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
     import time
 
     container = Container(path)
-    container.init_container(clear=clear)
+    if clear:
+        print("Clearing the container...")
+        container.init_container(clear=clear)
+    if not container.is_initialised:
+        print("Initialising the container...")
+        container.init_container()
 
     files = {}
 
@@ -33,21 +38,22 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
 
     print("Generating {} files in memory...".format(num_files))
     for _ in range(num_files):
-        filename = str(uuid.uuid4())[:8]
+        filename = "filename-{}".format(str(uuid.uuid4()))
         size = random.randint(min_size, max_size)
         content = bytearray(random.getrandbits(8) for _ in range(size))
-        #md5 = str(hashlib.md5(content).hexdigest())
-        #files[filename] = md5
         files[filename] = content
     total_size = sum(len(content) for content in files.values())
     print("Done. Total size: {} bytes (~{:.3f} MB).".format(total_size, (total_size // 1024) / 1024))
 
     if add_directly_to_pack:
-        uuid_mapping = {}
+        #uuid_mapping = {}
         start = time.time()
         filenames = list(files.keys())
+        #for key in filenames:
+        #    uuid = container.add_object_to_pack(files[key])
+        #    uuid_mapping[key] = uuid
         files_content = [files[key] for key in filenames]
-        uuids = container.add_objects_to_pack(files_content)
+        uuids = container.add_objects_to_pack(files_content, compress=compress_packs)
         uuid_mapping = dict(zip(filenames, uuids))
         tot_time = time.time() - start
         print("Time to store {} objects DIRECTLY TO THE PACKS: {:.4} s".format(
@@ -55,7 +61,9 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
 
         # No loose files were created
         counts = container.count_objects()
-        assert counts['loose'] == start_counts['loose']
+        assert counts['loose'] == start_counts['loose'], "Mismatch (loose in packed case): {} != {}".format(start_counts['loose'], counts['loose'])
+        assert counts['packed'] == start_counts['packed'] + num_files, "Mismatch (packed in packed case): {} + {} != {}".format(
+            start_counts['packed'], num_files, counts['packed'])
     else:
         start = time.time()
         uuid_mapping = {}
@@ -79,11 +87,18 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
         print("Time to retrieve {} loose objects: {:.4} s".format(num_files, tot_time))
 
         for filename in retrieved:
-            assert retrieved[filename] == files[filename], "Mismatch for {}".format(filename)
+            assert retrieved[filename] == files[filename], "Mismatch (content) for {}".format(filename)
 
         # Check that num_files new loose files are present now
         counts = container.count_objects()
-        assert counts['loose'] == start_counts['loose'] + num_files
+        assert counts['loose'] == start_counts['loose'] + num_files, "Mismatch (loose in unpacked case): {} + {} != {}".format(
+            start_counts['loose'], num_files, counts['loose'])
+
+        size_info = container.get_total_size()
+        print("Object store size info:")
+        for key in sorted(size_info.keys()):
+            print("- {:30s}: {}".format(key, size_info[key]))
+
 
         start = time.time()
         container.pack_all_loose(compress=compress_packs)
@@ -92,7 +107,10 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
 
         # Check that all loose files are gone
         counts = container.count_objects()
-        assert not counts['loose'], os.listdir(container._get_loose_folder())  # pylint: disable=protected-access
+        assert not counts['loose'], "loose objects left: {}".format(
+            os.listdir(container._get_loose_folder()))  # pylint: disable=protected-access
+        assert counts['packed'] == start_counts['packed'] + start_counts['loose'] + num_files, "Mismatch (post-pack): {} + {} + {} != {}".format(
+            start_counts['packed'], start_counts['loose'], num_files, counts['packed'])
 
     size_info = container.get_total_size()
     print("Object store size info:")
@@ -105,11 +123,13 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
     random_keys = list(files.keys())
     random.shuffle(random_keys)
     start = time.time()
+
     for filename in random_keys:
         obj_uuid = uuid_mapping[filename]
         retrieved_content = container.get_object_content(obj_uuid)
         retrieved[filename] = retrieved_content
         #retrieved = str(hashlib.md5(retrieved_content).hexdigest())
+
     tot_time = time.time() - start
     print("Time to retrieve {} packed objects in random order: {} s".format(num_files, tot_time))
 

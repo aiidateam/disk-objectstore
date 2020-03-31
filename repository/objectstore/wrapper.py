@@ -9,7 +9,10 @@ class WrappedRepository:
             if verbose:
                 print("Using random folder '{}' - remember to delete it (e.g. using 'self.clean_up_folder()".format(folder))
         self._container = Container(folder=folder)
-        self._container.init_container(clear=clear)
+        if clear:
+            self._container.init_container(clear=clear)
+        if not self._container.is_initialised:
+            self._container.init_container()
 
     def clean_up_folder(self):
         """Clean up the folder of the container.

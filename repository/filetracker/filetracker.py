@@ -8,9 +8,10 @@ class ObjectExists(Exception):
 
 class FileTracker:
 
-    def __init__(self, db_user, db_name, db_password, folder, pack_prefix_len=2, loose_prefix_len=2, db_port=5432, db_host="localhost"): # pylint: disable=too-many-arguments
-        self._container = Container(folder=folder, pack_prefix_len=pack_prefix_len, loose_prefix_len=loose_prefix_len)
-        self._container.init_container()
+    def __init__(self, db_user, db_name, db_password, folder, db_port=5432, db_host="localhost"): # pylint: disable=too-many-arguments
+        self._container = Container(folder=folder)
+        if not self._container.is_initialised:
+            self._container.init_container(pack_prefix_len=2, loose_prefix_len=2)
         self._db_user = db_user
         self._db_name = db_name
         self._db_password = db_password
