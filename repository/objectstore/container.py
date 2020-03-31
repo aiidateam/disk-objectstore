@@ -14,9 +14,6 @@ from sqlalchemy.sql import func
 from .models import Base, Obj
 
 
-SINGLEPACKINDEX = False
-
-
 class NotExistent(Exception):
     """Raised if the request object does not exist."""
 
@@ -35,6 +32,7 @@ def get_new_uuid():
     so we reduce storage space.
     """
     return uuid.uuid4().hex
+
 
 class _ObjectWriter:
     """A class to get direct write access for a new object."""
@@ -108,6 +106,7 @@ class _ObjectWriter:
             if os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
 
+
 class _PackedObjectReader:
     """A class to read from a pack file.
 
@@ -118,7 +117,7 @@ class _PackedObjectReader:
         """Return whether object supports random access."""
         return False
 
-    def seek(self, target, whence=0):
+    def seek(self, target, whence=0):  # pylint: disable=unused-argument
         """Change stream position."""
         raise OSError("Object not seekable")
     
@@ -275,7 +274,7 @@ class Container:
         :param folder: the path to a folder that will host this object-store continer.
         """
         self._folder = folder
-        self._session = {} # Will be populated by the _get_session function
+        self._session = None # Will be populated by the _get_session function
 
     def get_folder(self):
         """Return the path to the folder that will host the object-store container."""
@@ -306,25 +305,21 @@ class Container:
         """Return the path to the container config file."""
         return os.path.join(self._folder, 'config.json')
 
-    def _get_session(self, pack_id, create=False, raise_if_missing=False):
+    def _get_session(self, create=False, raise_if_missing=False):
         """Return a new session to connect to the pack-index SQLite DB.
         
-        :param pack_id: the ID of a pack (you get a session per pack, as 
-          the indexes are different)
         :param create: if True, creates the sqlite file and schema.
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
            is missing, either raise an exception (NotExistent) if this flag is True, or return None
         """
         from sqlalchemy.orm import sessionmaker
 
-        if not create and not os.path.exists(
-                self._get_pack_index_path_from_pack_id(pack_id=pack_id)):
+        if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
-                raise NotExistent("Pack '{}' does not exist".format(pack_id))
+                raise NotExistent("Pack index does not exist")
             return None
 
-        engine = create_engine('sqlite:///{}'.format(
-            self._get_pack_index_path_from_pack_id(pack_id=pack_id)))
+        engine = create_engine('sqlite:///{}'.format(self._get_pack_index_path()))
 
         # For the next two bindings, see background on 
         # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
@@ -355,19 +350,15 @@ class Container:
 
         return session
     
-    def _get_cached_session(self, pack_id, create=False, raise_if_missing=False):
+    def _get_cached_session(self):
         """Return the SQLAlchemy session to access the SQLite file,
         reusing the same one."""
         # We want to catch both if it's missing, and if it's None
         # the latter means that in the previous run the pack file was missing
         # but maybe by now it has been created!
-        if SINGLEPACKINDEX:
-            # Override the variable - we want a single pack, to open a single file
-            pack_id = "SINGLEPACK"
-
-        if self._session.get(pack_id) is None:
-            self._session[pack_id] = self._get_session(create=create, pack_id=pack_id, raise_if_missing=raise_if_missing)
-        return self._session[pack_id]
+        if self._session is None:
+            self._session = self._get_session(create=False, raise_if_missing=True)
+        return self._session
 
     def _get_loose_path_from_uuid(self, uuid):
         """Return the path of a loose object on disk containing the data of a given UUID.
@@ -391,15 +382,10 @@ class Container:
         assert self._is_valid_pack_id(pack_id), "Invalid pack ID {}".format(pack_id)
         return os.path.join(self._get_pack_folder(), pack_id)
 
-    def _get_pack_index_path_from_pack_id(self, pack_id):
-        """Return the path to the SQLite file containing the index of packed objects for a given pack ID.
-                
-        :param pack_id: the pack ID.
+    def _get_pack_index_path(self):
+        """Return the path to the SQLite file containing the index of packed objects.
         """
-        if SINGLEPACKINDEX:
-            return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))    
-        assert self._is_valid_pack_id(pack_id), "Invalid pack ID {}".format(pack_id)
-        return os.path.join(self._get_pack_folder(), '{}{}'.format(pack_id, self._PACK_INDEX_SUFFIX))
+        return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))    
 
     @property
     def is_initialised(self):
@@ -455,8 +441,7 @@ class Container:
             if not os.path.exists(folder):
                 os.makedirs(folder)
         
-        if SINGLEPACKINDEX:
-            self._get_session("whatever", create=True)
+        self._get_session(create=True)
 
     def _get_repository_config(self):
         """Return the repository config."""
@@ -486,6 +471,7 @@ class Container:
         """Get the content of an object with a given UUID.
 
         :param uuid: The UUID of the object to retrieve.
+        :return: a byte stream with the object content.
         """
         with self.get_object_stream(uuid) as handle:
             return handle.read()
@@ -504,15 +490,11 @@ class Container:
         not be seekable.
         :param uuid: the UUID of the object to stream.
         """
-        pack_id, uuid_remainder = self._split_uuid_for_pack(uuid)
-        session = self._get_cached_session(pack_id)
-        if session is not None:
-            obj = session.query(Obj).filter(
-                Obj.uuid_remainder==uuid_remainder).one_or_none()
-        else:
-            # There is no pack
-            obj = None
+        session = self._get_cached_session()
+        obj = session.query(Obj).filter(Obj.uuid==uuid).one_or_none()
+
         if obj is not None: # packed object
+            pack_id = self._split_uuid_for_pack(uuid)[0]
             obj_path = self._get_pack_path_from_pack_id(pack_id)
             with open(obj_path, 'rb') as fhandle:
                 obj_reader = _PackedObjectReader(fhandle=fhandle, offset=obj.offset, length=obj.length)
@@ -527,7 +509,132 @@ class Container:
                 raise NotExistent("No object with UUID {}".format(uuid))
             with open(obj_path, 'rb') as fhandle:
                 yield fhandle
-    
+
+    @contextmanager  # noqa: MC0001
+    def get_object_streams(self, uuids, skip_if_missing=True):  
+        """A context manager returning a generator yielding pairs of (uuid, open stream).
+
+        :note: the UUIDs yielded are often in a *different* order than the original
+            ``uuids`` list. This is done for efficiency reasons, to reduce to a minimum
+            file opening and to try to read file chunks (for packs) in sequential 
+            order rather than in random order.
+
+        To use it, you should do something like the following::
+
+            with container.get_object_streams(uuids=uuids) as uuid_stream_pairs:
+                for obj_uuid, stream in uuid_stream_pairs:
+                    if stream is None:
+                        # This should happen only if you pass skip_if_missing=False to ``get_object_streams``
+                        retrieved[obj_uuid] = None
+                    else:
+                        retrieved[obj_uuid] = stream.read()
+
+        :param uuids: a list of UUIDs for which we want to get a stream reader
+        :param skip_if_missing: if True, just skip UUIDs that are not in the container
+            (i.e., neither packed nor loose). If False, return ``None`` instead of the
+            stream. In this latter case, the length of the generator returned by this context
+            manager has always the same length as the input ``uuids`` list.
+        """
+
+        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches
+            """Return a generator yielding pairs of (uuid, open stream).
+
+            :note: The stream is already open and at the right position, and can
+                just be read.
+
+            :param uuids: a list of UUIDs for which we want to get a stream reader
+            :param last_open_file: must be a list of length one, initialised with None.
+                During the run, the first (and only) element of the list is updated
+                with the currently open file.
+                When the generator is exhausted, the file is closed (but the outer
+                context manager will still close the file, if it's open - this is needed
+                if the caller of ``get_object_streams`` exits the ``with`` context manager
+                without exhausting this generator).
+            :param skip_if_missing: if True, just skip UUIDs that are not in the container
+                (i.e., neither packed nor loose). If False, return ``None`` instead of the
+                stream.
+            """
+            try:
+                uuids_in_packs = set()
+
+                packs = defaultdict(list)
+                for obj_uuid in uuids:
+                    pack_id = self._split_uuid_for_pack(obj_uuid)[0]
+                    packs[pack_id].append(obj_uuid)
+
+                for pack_id, obj_uuids in packs.items():
+                    session = self._get_cached_session()
+                    pack_metadata = {
+                        res[0]: (res[1], res[2], res[3])
+                        for res in session.query(Obj).filter(
+                        Obj.uuid.in_(obj_uuids)).with_entities(
+                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed).order_by(Obj.offset)
+                        }
+                    if pack_metadata:                        
+                        uuids_in_packs.update(pack_metadata.keys())
+                        pack_path = self._get_pack_path_from_pack_id(pack_id)
+                        if last_open_file[0] is not None:
+                            if not last_open_file[0].closed:
+                                last_open_file[0].close()
+                        # Open only once per file
+                        last_open_file[0] = open(pack_path, mode='rb')
+                        for obj_uuid, metadata in pack_metadata.items():
+                            obj_reader = _PackedObjectReader(
+                                fhandle=last_open_file[0],
+                                offset=metadata[0],
+                                length=metadata[1])
+                            if metadata[2]:
+                                obj_reader = _StreamDecompresser(obj_reader)
+                            yield obj_uuid, obj_reader
+
+                for loose_uuid in set(uuids).difference(uuids_in_packs):
+                    obj_path = self._get_loose_path_from_uuid(uuid=loose_uuid)
+                    if not os.path.exists(obj_path):
+                        if skip_if_missing:
+                            continue
+                        else:
+                            yield loose_uuid, None
+                            continue
+                    if last_open_file[0] is not None:
+                        if not last_open_file[0].closed:
+                            last_open_file[0].close()
+                    last_open_file[0] = open(obj_path, mode='rb')
+                    yield loose_uuid, last_open_file[0]
+            finally:
+                if last_open_file[0] is not None:
+                    last_open_file[0].close()
+
+        # I want it to be a list of length 1 to make sure I actually have a reference to it
+        last_open_file = [None]
+
+        yield get_object_stream_generator(
+            uuids=uuids, last_open_file=last_open_file, skip_if_missing=skip_if_missing)        
+
+        if last_open_file[0] is not None:
+            if not last_open_file[0].closed:
+                last_open_file[0].close()
+
+    def get_object_contents(self, uuids, skip_if_missing=True):
+        """Get the content of a number of objects with given UUIDs.
+
+        :note: use this method only if you know objects fit in memory.
+            Otherwise, use the ``get_object_streams`` context manager and
+            process the objects one by one.
+
+        :param uuids: A list of UUIDs of the objects to retrieve.
+        :return: a dictionary of byte streams where the keys are the UUIDs and the values
+            are the object contents.
+        """
+        retrieved = {}
+        with self.get_object_streams(uuids=uuids, skip_if_missing=skip_if_missing) as uuid_stream_pairs:
+            for obj_uuid, stream in uuid_stream_pairs:
+                if stream is None:
+                    # This should happen only if skip_if_missing is False
+                    retrieved[obj_uuid] = None
+                else:
+                    retrieved[obj_uuid] = stream.read()
+        return retrieved
+
     def _new_object_writer(self):
         """Return a context manager that can be used to create a new object.
 
@@ -562,12 +669,7 @@ class Container:
         Also return a number of packs under 'pack_files'."""
         retval = {}
 
-        number_packed = 0
-        if SINGLEPACKINDEX:
-            number_packed = self._get_cached_session("whatever").query(Obj).count()
-        else:
-            for pack_id in self._list_packs():
-                number_packed += self._get_cached_session(pack_id).query(Obj).count()
+        number_packed = self._get_cached_session().query(Obj).count()
         retval['packed'] = number_packed
 
         retval['loose'] = 0
@@ -606,24 +708,13 @@ class Container:
         """
         retval = {}
 
-        total_size_packed = 0
-        total_size_packed_on_disk = 0
-
-        if SINGLEPACKINDEX:
-            list_packs = ['whatever']
-        else:
-            list_packs = list(self._list_packs())
-
-        for pack_id in list_packs:
-            session = self._get_cached_session(pack_id)
-            # COALESCE is used to return 0 if there are no results, rather than None
-            # SQL's COALESCE returns the first non-null result
-            total_size_packed += session.query(
-                func.coalesce(func.sum(Obj.size), 0).label("total_size_packed")).all()[0][0]
-            total_size_packed_on_disk += session.query(
-                func.coalesce(func.sum(Obj.length), 0).label("total_length_packed")).all()[0][0]
-        retval['total_size_packed'] = total_size_packed
-        retval['total_size_packed_on_disk'] = total_size_packed_on_disk
+        session = self._get_cached_session()
+        # COALESCE is used to return 0 if there are no results, rather than None
+        # SQL's COALESCE returns the first non-null result
+        retval['total_size_packed'] = session.query(
+            func.coalesce(func.sum(Obj.size), 0).label("total_size_packed")).all()[0][0]
+        retval['total_size_packed_on_disk'] = session.query(
+            func.coalesce(func.sum(Obj.length), 0).label("total_length_packed")).all()[0][0]
 
         total_size_packfiles_on_disk = 0
         for pack_id in list(self._list_packs()):
@@ -631,11 +722,8 @@ class Container:
                 self._get_pack_path_from_pack_id(pack_id))
         retval['total_size_packfiles_on_disk'] = total_size_packfiles_on_disk
 
-        total_size_packindexes_on_disk = 0
-        for pack_id in list_packs:
-            total_size_packindexes_on_disk += os.path.getsize(
-                self._get_pack_index_path_from_pack_id(pack_id))
-        retval['total_size_packindexes_on_disk'] = total_size_packindexes_on_disk
+        retval['total_size_packindexes_on_disk'] = os.path.getsize(
+                self._get_pack_index_path())
 
         total_size_loose = 0
         for loose_uuid in self._list_loose():
@@ -762,16 +850,15 @@ class Container:
         """
         packs = defaultdict(list)
         for loose_uuid in self._list_loose():
-            pack_id, uuid_remainder = self._split_uuid_for_pack(loose_uuid)
-            packs[pack_id].append(uuid_remainder)
+            pack_id = self._split_uuid_for_pack(loose_uuid)[0]
+            packs[pack_id].append(loose_uuid)
         for pack_id, loose_objects in packs.items():
             if loose_objects:
+                session = self._get_cached_session()
                 # Avoid concurrent writes        
                 with self.lock_pack(pack_id) as pack_handle:
-                    session = self._get_cached_session(pack_id, create=True)
-                    for uuid_remainder in loose_objects:
-                        obj_uuid = "{}{}".format(pack_id, uuid_remainder)
-                        obj = Obj(uuid_remainder=uuid_remainder)
+                    for obj_uuid in loose_objects:
+                        obj = Obj(uuid=obj_uuid)
                         obj.compressed = compress                    
                         obj.offset = pack_handle.tell()
                         with open(self._get_loose_path_from_uuid(obj_uuid), 'rb') as loose_handle:
@@ -779,10 +866,10 @@ class Container:
                                 pack_handle=pack_handle, read_handle=loose_handle, compress=compress)
                         obj.length = pack_handle.tell() - obj.offset
                         session.add(obj)
+                    # Committing as soon as we are done with one pack
                     session.commit()
-                # Clean up loose objects
-                for uuid_remainder in loose_objects:
-                    obj_uuid = "{}{}".format(pack_id, uuid_remainder)
+                # Clean up loose objects, for each pack
+                for obj_uuid in loose_objects:
                     os.remove(self._get_loose_path_from_uuid(obj_uuid))
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False):
@@ -802,21 +889,22 @@ class Container:
         for pos in range(len(stream_list)):
             obj_uuid = get_new_uuid()
             uuids.append(obj_uuid)
-            pack_id, uuid_remainder = self._split_uuid_for_pack(obj_uuid)
-            packs[pack_id].append((pos, uuid_remainder)) 
+            pack_id = self._split_uuid_for_pack(obj_uuid)[0]
+            packs[pack_id].append((pos, obj_uuid)) 
         for pack_id, obj_ids in packs.items():
             if obj_ids:
+                session = self._get_cached_session()
                 # Avoid concurrent writes        
                 with self.lock_pack(pack_id) as pack_handle:
-                    session = self._get_cached_session(pack_id, create=True)
-                    for pos, uuid_remainder in obj_ids:
-                        obj = Obj(uuid_remainder=uuid_remainder)
+                    for pos, obj_uuid in obj_ids:
+                        obj = Obj(uuid=obj_uuid)
                         obj.compressed = compress
                         obj.offset = pack_handle.tell()
                         obj.size = self._write_data_to_packfile(
                             pack_handle=pack_handle, read_handle=stream_list[pos], compress=compress)
                         obj.length = pack_handle.tell() - obj.offset
                         session.add(obj)
+                    # Commit as soon as we are done with one pack
                     session.commit()
         return uuids
 

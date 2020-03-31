@@ -39,11 +39,8 @@ class WrappedRepository:
         :param objlist: a list of keys to retrieve.
         :return: a list of bytestreams with the content of the keys requested.
         """
-        objlist = []
-        for keyname in keylist:
-            objlist.append( self._container.get_object_content(keyname) )
-
-        return objlist
+        content = self._container.get_object_contents(keylist)
+        return [content[key] for key in keylist]
 
     def del_objects(self, keylist):
         """Delete an object from the container.

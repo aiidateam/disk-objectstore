@@ -6,17 +6,18 @@ import click
 
 from repository.objectstore.container import Container
 
-@click.command()
+@click.command()  # noqa: MC0001
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
 @click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
 @click.option('-d', '--add-directly-to-pack', is_flag=True, help='Add directly files to the packs rather than as loose objects.')
 @click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
 @click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
+@click.option('-B', '--num-bulk-calls', default=10, help='Number of bulk calls to get the files.')
 @click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
 @click.help_option('-h', '--help')
-def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
-        max_size, add_directly_to_pack, path, clear, compress_packs):
+def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
+        max_size, add_directly_to_pack, path, clear, num_bulk_calls, compress_packs):
     """Testing some basic functionality of the object-store, with timing."""
     import random
     import time
@@ -46,12 +47,9 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
     print("Done. Total size: {} bytes (~{:.3f} MB).".format(total_size, (total_size // 1024) / 1024))
 
     if add_directly_to_pack:
-        #uuid_mapping = {}
+        # STore objects (directly to pack)
         start = time.time()
         filenames = list(files.keys())
-        #for key in filenames:
-        #    uuid = container.add_object_to_pack(files[key])
-        #    uuid_mapping[key] = uuid
         files_content = [files[key] for key in filenames]
         uuids = container.add_objects_to_pack(files_content, compress=compress_packs)
         uuid_mapping = dict(zip(filenames, uuids))
@@ -59,12 +57,13 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
         print("Time to store {} objects DIRECTLY TO THE PACKS: {:.4} s".format(
             num_files, tot_time))
 
-        # No loose files were created
+        # Check that no loose files were created
         counts = container.count_objects()
         assert counts['loose'] == start_counts['loose'], "Mismatch (loose in packed case): {} != {}".format(start_counts['loose'], counts['loose'])
         assert counts['packed'] == start_counts['packed'] + num_files, "Mismatch (packed in packed case): {} + {} != {}".format(
             start_counts['packed'], num_files, counts['packed'])
     else:
+        # Store objects (loose)
         start = time.time()
         uuid_mapping = {}
         for filename, content in files.items():
@@ -74,6 +73,7 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
         print("Time to store {} loose objects: {:.4} s".format(
             num_files, tot_time))
 
+        # Retrieve objects (loose)
         retrieved = {}
         random_keys = list(files.keys())
         random.shuffle(random_keys)
@@ -82,10 +82,10 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
             obj_uuid = uuid_mapping[filename]
             retrieved_content = container.get_object_content(obj_uuid)
             retrieved[filename] = retrieved_content
-            #retrieved = str(hashlib.md5(retrieved_content).hexdigest())
         tot_time = time.time() - start
         print("Time to retrieve {} loose objects: {:.4} s".format(num_files, tot_time))
 
+        # Check that the content is correct
         for filename in retrieved:
             assert retrieved[filename] == files[filename], "Mismatch (content) for {}".format(filename)
 
@@ -94,12 +94,13 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
         assert counts['loose'] == start_counts['loose'] + num_files, "Mismatch (loose in unpacked case): {} + {} != {}".format(
             start_counts['loose'], num_files, counts['loose'])
 
+        # Print container size info (before packing)
         size_info = container.get_total_size()
         print("Object store size info:")
         for key in sorted(size_info.keys()):
             print("- {:30s}: {}".format(key, size_info[key]))
 
-
+        # Pack all loose objects
         start = time.time()
         container.pack_all_loose(compress=compress_packs)
         tot_time = time.time() - start
@@ -112,24 +113,62 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
         assert counts['packed'] == start_counts['packed'] + start_counts['loose'] + num_files, "Mismatch (post-pack): {} + {} + {} != {}".format(
             start_counts['packed'], start_counts['loose'], num_files, counts['packed'])
 
+    # print container size info
     size_info = container.get_total_size()
     print("Object store size info:")
     for key in sorted(size_info.keys()):
         print("- {:30s}: {}".format(key, size_info[key]))
 
-    # In all cases, retrieve all objects
-
+    # In all cases, retrieve all objects (in shuffled order)
     retrieved = {}
     random_keys = list(files.keys())
     random.shuffle(random_keys)
-    start = time.time()
 
+    # Will be needed later
+    reverse_uuid_mapping = {v: k for k, v in uuid_mapping.items()}
+
+    ########################################
+    # FIRST: single bulk read
+    all_uuids = [uuid_mapping[filename] for filename in random_keys]
+    start = time.time()
+    raw_retrieved = container.get_object_contents(all_uuids, skip_if_missing=False)
+    tot_time = time.time() - start
+    print("Time to retrieve {} packed objects in random order WITH ONE BULK CALL: {} s".format(num_files, tot_time))
+    retrieved = {reverse_uuid_mapping[key]: val for key, val in raw_retrieved.items()}
+    for filename in retrieved:
+        assert retrieved[filename] == files[filename], "Mismatch for {}".format(filename)
+
+    ########################################
+    # SECOND: num_bulk_calls bulk reads
+    random.shuffle(random_keys)
+    all_uuids = [uuid_mapping[filename] for filename in random_keys]
+    start = time.time()
+    raw_retrieved = {}
+
+    # Split the list into num_bulk_call even chunks
+    chunk_len = len(all_uuids) // num_bulk_calls
+    if len(all_uuids) % num_bulk_calls != 0:
+        chunk_len += 1
+    split_iterator = (all_uuids[start:start+chunk_len] for start in range(0, len(all_uuids), chunk_len))
+
+    # Retrieve in num_bulk_call chunks
+    for chunk_of_uuids in split_iterator:
+        raw_retrieved.update(container.get_object_contents(chunk_of_uuids, skip_if_missing=False))
+
+    tot_time = time.time() - start
+    print("Time to retrieve {} packed objects in random order WITH {} BULK CALLS: {} s".format(num_files, num_bulk_calls, tot_time))
+    retrieved = {reverse_uuid_mapping[key]: val for key, val in raw_retrieved.items()}
+    for filename in retrieved:
+        assert retrieved[filename] == files[filename], "Mismatch for {}".format(filename)
+
+    ########################################
+    # THIRD: a lot of independent reads, one per object
+    random.shuffle(random_keys)
+    start = time.time()
     for filename in random_keys:
         obj_uuid = uuid_mapping[filename]
         retrieved_content = container.get_object_content(obj_uuid)
         retrieved[filename] = retrieved_content
-        #retrieved = str(hashlib.md5(retrieved_content).hexdigest())
-
     tot_time = time.time() - start
     print("Time to retrieve {} packed objects in random order: {} s".format(num_files, tot_time))
 

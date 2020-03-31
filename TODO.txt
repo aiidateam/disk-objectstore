@@ -1,0 +1,21 @@
+# Less urgent
+- Risk of corruption of SQLite DB
+
+- Check cost of the validation function
+
+- implement function to do a full repack, recreating each pack only with the known objects (e.g. if something was deleted)
+
+- validation of pack (e.g. for overlapping bits)
+
+- options to pack only a subset of the loose objects (e.g. specified with regex, explicit list, or just prefix).
+
+- add tests for locking (and for much more)
+
+-- 
+PERFORMANCE: try to get and recreate the repository for 
+- My own DB
+- SSSP
+- 3DD
+
+PERFORMANCE: measure overhead of the SQLite DBs (and maybe check if the cost if,
+for typical DBs, recovered by compressing)
