@@ -16,7 +16,7 @@ from repository.filetracker.filetracker import FileTracker
 @click.option('-p', '--db-password', required=True, help='DB password.')
 @click.help_option('-h', '--help')
 def main(num_folders, path, clear, db_user, db_name, db_password):  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
-    """Testing some basic functionality of the object-store wrapper, with timing."""
+    """Testing some basic functionality of the file tracker module, with timing."""
 
     sample_content = b'some_content'
 

@@ -82,7 +82,7 @@ class LimitLengthWrapper:
 @click.help_option('-h', '--help')
 def main(size_gb, # pylint: disable=too-many-arguments,too-many-locals,too-many-statements
         path, clear, check_memory_measurement, compress_packs):
-    """Testing some basic functionality of the object-store, with timing."""
+    """Testing performance and size on disk when storing a single big file containing only zeros."""
     import time
 
     start_mem = get_memory()
