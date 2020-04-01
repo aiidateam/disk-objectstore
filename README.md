@@ -1,12 +1,19 @@
 # aiida-objectstore
 
-A possible implementation of an efficient object store for the AiiDA repository
+An implementation of an efficient object store for the AiiDA repository
 
 ## Goal
 
 The goal of this project is to have a very efficient implementation of an "object store" 
 for the AiiDA repository, that addresses a number of issues that are currently visible
 in the current (AiiDA 1.0) implementation.
+
+## How to install
+
+To install in development mode, run, in a (python 3) virtual environment:
+```
+pip install -e .[testing]
+```
 
 ## Implementation considerations
 

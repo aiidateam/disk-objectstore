@@ -2,5 +2,6 @@
 *.pyc
 __pycache__
 .DS_Store
+aiida_objectstore.egg-info
 
 reference_md5.json
