@@ -4,7 +4,7 @@ import uuid
 
 import click
 
-from repository.objectstore.container import Container
+from aiida_objectstore.objectstore.container import Container
 
 @click.command()  # noqa: MC0001
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')

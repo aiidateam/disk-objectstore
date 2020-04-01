@@ -2,3 +2,5 @@
 *.pyc
 __pycache__
 .DS_Store
+
+reference_md5.json

@@ -7,7 +7,7 @@ import time
 import click
 from profilehooks import profile
 
-from repository.objectstore.container import Container
+from aiida_objectstore.objectstore.container import Container
 
 @click.command()
 @click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
@@ -33,7 +33,7 @@ def main(path, with_profiling, batch_read):  # pylint: disable=too-many-locals
 
     ### THIS BLOCK DOES PROTECTED ACCESS - IT'S JUST FOR NOW, 
     ### MIGHT BE MOVED LATER TO A PUBLIC FUNCION
-    from repository.objectstore.models import Obj
+    from aiida_objectstore.objectstore.models import Obj
     # In all cases, retrieve all objects
     loose_uuids = list(container._list_loose())  # pylint: disable=protected-access
     pack_uuids = []

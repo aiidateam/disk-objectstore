@@ -4,7 +4,7 @@ import time
 
 import click
 
-from repository.filetracker.filetracker import FileTracker
+from aiida_objectstore.filetracker.filetracker import FileTracker
 
 @click.command()
 @click.option('-n', '--num-folders', default=1000, help='The number of folders to create')

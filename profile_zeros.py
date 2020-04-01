@@ -3,7 +3,7 @@ import click
 import psutil
 import numpy as np
 
-from repository.objectstore.container import Container
+from aiida_objectstore.objectstore.container import Container
 
 def get_memory():
     """Get memory info on the current process."""
