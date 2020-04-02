@@ -75,7 +75,7 @@ class LimitLengthWrapper:
 
 @click.command()
 @click.option('-s', '--size-gb', default=1, help='File size in GB.')
-@click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
+@click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')
 @click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
 @click.option('-m', '--check-memory-measurement', is_flag=True, help='Clear the repository path folder before starting.')
 @click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')

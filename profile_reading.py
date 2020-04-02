@@ -10,7 +10,7 @@ from profilehooks import profile
 from aiida_objectstore.objectstore.container import Container
 
 @click.command()
-@click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
+@click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')
 @click.option('-P', '--with-profiling', is_flag=True, help='Perform profiling')
 @click.option('-B', '--batch-read', is_flag=True, help='Use batch read')
 @click.help_option('-h', '--help')

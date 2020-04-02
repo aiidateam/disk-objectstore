@@ -5,3 +5,5 @@ __pycache__
 aiida_objectstore.egg-info
 
 reference_md5.json
+
+.vscode

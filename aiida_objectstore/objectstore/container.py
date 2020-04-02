@@ -10,8 +10,18 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 
 from sqlalchemy.sql import func
+from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
+
+
+@contextmanager
+def nullcontext(enter_result):
+    """Return a context manager that returns enter_result from __enter__, but otherwise does nothing.
+
+    This can be replaced by ``contextlib.nullcontext`` if we want to support only py>=3.7.
+    """
+    yield enter_result
 
 
 class NotExistent(Exception):
@@ -312,8 +322,6 @@ class Container:
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
            is missing, either raise an exception (NotExistent) if this flag is True, or return None
         """
-        from sqlalchemy.orm import sessionmaker
-
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
                 raise NotExistent("Pack index does not exist")
@@ -592,9 +600,8 @@ class Container:
                     if not os.path.exists(obj_path):
                         if skip_if_missing:
                             continue
-                        else:
-                            yield loose_uuid, None
-                            continue
+                        yield loose_uuid, None
+                        continue
                     if last_open_file[0] is not None:
                         if not last_open_file[0].closed:
                             last_open_file[0].close()
@@ -872,7 +879,7 @@ class Container:
                 for obj_uuid in loose_objects:
                     os.remove(self._get_loose_path_from_uuid(obj_uuid))
 
-    def add_streamed_objects_to_pack(self, stream_list, compress=False):
+    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
         
         This is a maintenance operation, available mostly for efficiency reasons
@@ -881,6 +888,10 @@ class Container:
         
         :param stream_list: a list of BytesIO bytestreams to add.
         :param compress: if True, compress objects before storing them.
+        :param open_streams: if True, then open the streams using a ``with`` context
+            manager. Otherwise, just read from them (assuming the responsibility of opening
+            them is on the caller). Setting to True is useful when reading from many files,
+            and passing here a number of ``LazyOpener`` objects.
         :return: a list of object UUIDs
         """
         packs = defaultdict(list)
@@ -900,8 +911,13 @@ class Container:
                         obj = Obj(uuid=obj_uuid)
                         obj.compressed = compress
                         obj.offset = pack_handle.tell()
-                        obj.size = self._write_data_to_packfile(
-                            pack_handle=pack_handle, read_handle=stream_list[pos], compress=compress)
+                        if open_streams:
+                            stream_context_manager = stream_list[pos]
+                        else:
+                            stream_context_manager = nullcontext(stream_list[pos])
+                        with stream_context_manager as stream:
+                            obj.size = self._write_data_to_packfile(
+                                pack_handle=pack_handle, read_handle=stream, compress=compress)
                         obj.length = pack_handle.tell() - obj.offset
                         session.add(obj)
                     # Commit as soon as we are done with one pack

@@ -9,7 +9,7 @@ from aiida_objectstore.objectstore.wrapper import WrappedRepository
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
 @click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
-@click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
+@click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')
 @click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
 @click.help_option('-h', '--help')
 def main(num_files, min_size, max_size, path, clear):  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements

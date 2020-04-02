@@ -11,7 +11,7 @@ from aiida_objectstore.objectstore.container import Container
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
 @click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
 @click.option('-d', '--add-directly-to-pack', is_flag=True, help='Add directly files to the packs rather than as loose objects.')
-@click.option('-p', '--path', default='test-container', help='The path to a test folder in which the container will be created.')
+@click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')
 @click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
 @click.option('-B', '--num-bulk-calls', default=10, help='Number of bulk calls to get the files.')
 @click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
