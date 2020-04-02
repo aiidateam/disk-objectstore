@@ -87,33 +87,44 @@ def main(path, clear,  # pylint: disable=too-many-arguments,too-many-locals,too-
     output_container = Container(folder=export_container_extract_to)
     output_container.init_container()
 
-    if False: # This part is not working yet, some handles are closed...
-        start = time.time()
+    start = time.time()
+    for idx, node_uuids_chunk in enumerate([node_uuids1, node_uuids2], start=1):
         obj_uuids = []
-        for idx, node_uuids_chunk in enumerate([node_uuids1, node_uuids2], start=1):
-            for repo_node in repo.get_node_repositories(node_uuids_chunk):
-                obj_uuids.extend(repo_node.get_all_obj_uuids())
-            print("{} objects to write in phase {}".format(len(obj_uuids), idx))
+        for repo_node in repo.get_node_repositories(node_uuids_chunk):
+            obj_uuids.extend(repo_node.get_all_obj_uuids())
+        print("{} objects to write in phase {}".format(len(obj_uuids), idx))
 
-            with repo.container.get_object_streams(obj_uuids) as uuid_and_stream_pairs:
-                old_obj_uuids = []
-                streams = []
-                for old_obj_uuid, stream in uuid_and_stream_pairs:
-                    old_obj_uuids.append(old_obj_uuid)
-                    streams.append(stream)
-                new_obj_uuids = output_container.add_streamed_objects_to_pack(
-                    streams, compress=compress)
-                # This is needed to recreate the metadata to put in the JSON
-                # I'm not doing it in this example
-                old_new_obj_uuid_mapping = dict(zip(old_obj_uuids, new_obj_uuids))
+        with repo.container.get_object_streams(obj_uuids) as uuid_and_stream_pairs:
+            ## NOTE! This does not work because the object streams yielded by the 
+            ## uuid_and_stream_pairs generator must be consumed immediately,
+            ## as they are then closed.                
+            ## old_obj_uuids = []
+            # streams = []
+            # for old_obj_uuid, stream in uuid_and_stream_pairs:
+            #     old_obj_uuids.append(old_obj_uuid)
+            #     streams.append(stream)
+            # new_obj_uuids = output_container.add_streamed_objects_to_pack(
+            #     streams, compress=compress)
+            ## This is needed to recreate the metadata to put in the JSON
+            ## I'm not doing it in this example
+            # old_new_obj_uuid_mapping = dict(zip(old_obj_uuids, new_obj_uuids))
+            old_obj_uuids = []
+            new_obj_uuids = []
+            for old_obj_uuid, stream in uuid_and_stream_pairs:
+                old_obj_uuids.append(old_obj_uuid)
+                new_obj_uuids.append(output_container.add_streamed_objects_to_pack(
+                    [stream], compress=compress)[0])
+            ## This is needed to recreate the metadata to put in the JSON
+            ## I'm not doing it in this example
+            #old_new_obj_uuid_mapping = dict(zip(old_obj_uuids, new_obj_uuids))
 
             # Print some size statistics
             size_info = output_container.get_total_size()
             print("Output object store size info after phase {}:".format(idx))
             for key in sorted(size_info.keys()):
                 print("- {:30s}: {}".format(key, size_info[key]))
-        tot_time = time.time() - start
-        print("Time to get back all folder metas for {} shuffled nodes from postgres: {:.3f} s".format(len(node_uuids), tot_time))
+    tot_time = time.time() - start
+    print("Time to store all objects (from packed to packed) in 2 steps: {:.3f} s".format(tot_time))
 
     # Let's try now to extract again
     random.shuffle(node_uuids)
