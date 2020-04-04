@@ -299,11 +299,29 @@ def main(path, clear,  # pylint: disable=too-many-arguments,too-many-locals,too-
         os.makedirs(repo_node_folder)
         create_folder(base=repo_node_folder, node_repo=node_repo)
     tot_time = time.time() - start
-    print("Time to recreate the repository in '{}': {:.3f} s".format(legacy_extract_to, tot_time))
+    print("Time to recreate the repository from new-style to legacy in '{}': {:.3f} s".format(legacy_extract_to, tot_time))
 
     # Check that the two folders are identical
     try:
         output = subprocess.check_output(['diff', '-rq', node_folder, legacy_extract_to])
+    except subprocess.CalledProcessError as exc:
+        print("ERROR! NON ZERO ERROR CODE. OUTPUT:")
+        print(exc.output.decode('utf8'))
+        sys.exit(1)
+    if output:
+        print("ERROR! FOLDERS DIFFER:")
+        print(output.decode('utf8'))
+        sys.exit(1)
+
+    legacy_export_extract_to = os.path.join(extract_to, 'legacy-export')
+    start = time.time()
+    print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
+    tot_time = time.time() - start
+    print("Time for the rsync of the legacy repo: {:.3f} s".format(tot_time))
+    
+    # Check that the two folders are identical
+    try:
+        output = subprocess.check_output(['diff', '-rq', node_folder, legacy_export_extract_to])
     except subprocess.CalledProcessError as exc:
         print("ERROR! NON ZERO ERROR CODE. OUTPUT:")
         print(exc.output.decode('utf8'))
