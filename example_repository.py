@@ -319,17 +319,26 @@ def main(path, clear,  # pylint: disable=too-many-arguments,too-many-locals,too-
     tot_time = time.time() - start
     print("Time for the rsync of the legacy repo: {:.3f} s".format(tot_time))
     
-    # Check that the two folders are identical
-    try:
-        output = subprocess.check_output(['diff', '-rq', node_folder, legacy_export_extract_to])
-    except subprocess.CalledProcessError as exc:
-        print("ERROR! NON ZERO ERROR CODE. OUTPUT:")
-        print(exc.output.decode('utf8'))
-        sys.exit(1)
-    if output:
-        print("ERROR! FOLDERS DIFFER:")
-        print(output.decode('utf8'))
-        sys.exit(1)
+    start = time.time()
+    print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
+    tot_time = time.time() - start
+    print("Time for the 2nd rsync of the legacy repo: {:.3f} s".format(tot_time))
+
+
+    new_rsync_extract_to = os.path.join(extract_to, 'rsync-new')
+    start = time.time()
+    print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
+    tot_time = time.time() - start
+    print("Time for the rsync of the new-style repo: {:.3f} s".format(tot_time))
+
+    # add a 1 kb file to a pack
+    repo.container.add_objects_to_pack([b"a"*1024])
+    start = time.time()
+    print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
+    tot_time = time.time() - start
+    print("Time for the 2nd rsync of the new-style repo after adding a 1kb file: {:.3f} s".format(tot_time))
+
+
 
     print("All tests passed.")
 
