@@ -519,8 +519,8 @@ class Container:
                 yield fhandle
 
     @contextmanager  # noqa: MC0001
-    def get_object_streams(self, uuids, skip_if_missing=True):  
-        """A context manager returning a generator yielding pairs of (uuid, open stream).
+    def get_object_streams_and_size(self, uuids, skip_if_missing=True):  
+        """A context manager returning a generator yielding triplets of (uuid, open stream, size).
 
         :note: the UUIDs yielded are often in a *different* order than the original
             ``uuids`` list. This is done for efficiency reasons, to reduce to a minimum
@@ -529,12 +529,13 @@ class Container:
 
         To use it, you should do something like the following::
 
-            with container.get_object_streams(uuids=uuids) as uuid_stream_pairs:
-                for obj_uuid, stream in uuid_stream_pairs:
+            with container.get_object_streams_and_size(uuids=uuids) as triplets:
+                for obj_uuid, stream, size in triplets:
                     if stream is None:
-                        # This should happen only if you pass skip_if_missing=False to ``get_object_streams``
+                        # This should happen only if you pass skip_if_missing=False
                         retrieved[obj_uuid] = None
                     else:
+                        # len(stream.read() will be equal to size
                         retrieved[obj_uuid] = stream.read()
 
         :param uuids: a list of UUIDs for which we want to get a stream reader
@@ -545,10 +546,13 @@ class Container:
         """
 
         def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches
-            """Return a generator yielding pairs of (uuid, open stream).
+            """Return a generator yielding tripltes of (uuid, open stream, size).
 
             :note: The stream is already open and at the right position, and can
                 just be read.
+
+            :note: size is the length of the object (uncompressed) when doing a
+               ``read()`` on the returned stream
 
             :param uuids: a list of UUIDs for which we want to get a stream reader
             :param last_open_file: must be a list of length one, initialised with None.
@@ -556,7 +560,7 @@ class Container:
                 with the currently open file.
                 When the generator is exhausted, the file is closed (but the outer
                 context manager will still close the file, if it's open - this is needed
-                if the caller of ``get_object_streams`` exits the ``with`` context manager
+                if the caller of ``get_object_streams_and_size`` exits the ``with`` context manager
                 without exhausting this generator).
             :param skip_if_missing: if True, just skip UUIDs that are not in the container
                 (i.e., neither packed nor loose). If False, return ``None`` instead of the
@@ -573,10 +577,10 @@ class Container:
                 for pack_id, obj_uuids in packs.items():
                     session = self._get_cached_session()
                     pack_metadata = {
-                        res[0]: (res[1], res[2], res[3])
+                        res[0]: (res[1], res[2], res[3], res[4])
                         for res in session.query(Obj).filter(
                         Obj.uuid.in_(obj_uuids)).with_entities(
-                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed).order_by(Obj.offset)
+                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
                         }
                     if pack_metadata:                        
                         uuids_in_packs.update(pack_metadata.keys())
@@ -593,20 +597,20 @@ class Container:
                                 length=metadata[1])
                             if metadata[2]:
                                 obj_reader = _StreamDecompresser(obj_reader)
-                            yield obj_uuid, obj_reader
+                            yield obj_uuid, obj_reader, metadata[3]
 
                 for loose_uuid in set(uuids).difference(uuids_in_packs):
                     obj_path = self._get_loose_path_from_uuid(uuid=loose_uuid)
                     if not os.path.exists(obj_path):
                         if skip_if_missing:
                             continue
-                        yield loose_uuid, None
+                        yield loose_uuid, None, 0
                         continue
                     if last_open_file[0] is not None:
                         if not last_open_file[0].closed:
                             last_open_file[0].close()
                     last_open_file[0] = open(obj_path, mode='rb')
-                    yield loose_uuid, last_open_file[0]
+                    yield loose_uuid, last_open_file[0], os.path.getsize(obj_path)
             finally:
                 if last_open_file[0] is not None:
                     last_open_file[0].close()
@@ -625,7 +629,7 @@ class Container:
         """Get the content of a number of objects with given UUIDs.
 
         :note: use this method only if you know objects fit in memory.
-            Otherwise, use the ``get_object_streams`` context manager and
+            Otherwise, use the ``get_object_streams_and_size`` context manager and
             process the objects one by one.
 
         :param uuids: A list of UUIDs of the objects to retrieve.
@@ -633,8 +637,8 @@ class Container:
             are the object contents.
         """
         retrieved = {}
-        with self.get_object_streams(uuids=uuids, skip_if_missing=skip_if_missing) as uuid_stream_pairs:
-            for obj_uuid, stream in uuid_stream_pairs:
+        with self.get_object_streams_and_size(uuids=uuids, skip_if_missing=skip_if_missing) as triplets:
+            for obj_uuid, stream, _ in triplets:
                 if stream is None:
                     # This should happen only if skip_if_missing is False
                     retrieved[obj_uuid] = None
@@ -879,7 +883,7 @@ class Container:
                 for obj_uuid in loose_objects:
                     os.remove(self._get_loose_path_from_uuid(obj_uuid))
 
-    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
+    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):  # pylint: disable=too-many-locals
         """Add objects directly to a pack, reading from a list of streams.
         
         This is a maintenance operation, available mostly for efficiency reasons
