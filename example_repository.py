@@ -215,130 +215,143 @@ def import_from_legacy_repo(repo, node_folder, compress):
     help='Re-extract the repository to this folder. Must not exist unless -C is specified.')
 @click.option('-C', '--clear-extract-to', is_flag=True, help='Delete the extract-to folder before starting.')
 @click.option('-z', '--compress', is_flag=True, help='Use compression when packing.')
+@click.option('-o', '--only', type=click.Choice(
+    ['load-legacy', 'export-new', 'export-new-to-legacy', 'rsync-legacy', 'rsync-new']), required=False,
+    help='Which parts of the script to run. Do not specify to run all.')
 @click.help_option('-h', '--help')
 def main(path, clear,  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
     db_user, db_name, db_password, repository_folder,
-    extract_to, clear_extract_to, compress):  
+    extract_to, clear_extract_to, compress, only):  
 
     repo = Repository(folder=path, db_user=db_user, db_name=db_name, db_password=db_password)
-
-    if clear:
-        repo.drop_db()
-        repo.container.init_container(clear=True)
-
     if clear_extract_to:
         if os.path.exists(extract_to):
             #input("Press ENTER to delete '{}'... ".format(extract_to))
             shutil.rmtree(extract_to)
-
     if os.path.exists(extract_to):
         print("The folder '{}' exists - either delete it, or specify the -C option")
         sys.exit(1)
-
-    # Import from a legacy repository_folder to a new-style repo
-    assert 'node' in os.listdir(repository_folder), "No 'node' folder in repository_folder, is this an AiiDA repository?"
-    node_folder = os.path.join(repository_folder, 'node')
-    folder_paths = import_from_legacy_repo(repo, node_folder, compress=compress)
-
-    # Print some size statistics
-    size_info = repo.container.get_total_size()
-    print("Object store size info:")
-    for key in sorted(size_info.keys()):
-        print("- {:30s}: {}".format(key, size_info[key]))
-    count = repo.container.count_objects()
-    print("Object store objects info:")
-    for key in sorted(count.keys()):
-        print("- {:30s}: {}".format(key, count[key]))
-
-    # Export everything in two chunks
-    node_uuids = list(folder_paths.keys())
-    random.shuffle(node_uuids)
-
-    node_uuids1, node_uuids2 = node_uuids[:len(node_uuids)//2], node_uuids[len(node_uuids)//2:]
     os.mkdir(extract_to)
 
-    print("*"*74)
-    print("* REEXPORTING FROM NEW-STYLE REPO DIRECTLY TO NEW-STYLE PACKED REPO, IN A FEW CHUNKS")
+    node_folder = os.path.join(repository_folder, 'node')
 
-    #output_objectstore, old_new_mapping = export_from_pack(extract_to, repo, [node_uuids1, node_uuids2], compress=compress)
-    output_objectstore, old_new_mapping = export_from_pack_grouped(extract_to, repo, [node_uuids1, node_uuids2], compress=compress)
+    if only is None or only == 'load-legacy':
+        if clear:
+            repo.drop_db()
+            repo.container.init_container(clear=True)
 
-    with repo.container.get_object_streams_and_size(old_new_mapping.keys()) as triplets:
-        for old_uuid, _, old_size in triplets:
-            # TODO: Not the fastest method, we should add get_object_size()
-            new_size = len(output_objectstore.get_object_content(old_new_mapping[old_uuid]))
-            assert new_size == old_size, "{} ({}) vs {} ({})".format(
-                new_size, old_new_mapping[old_uuid], old_size, old_uuid
-            )
+        # Import from a legacy repository_folder to a new-style repo
+        assert 'node' in os.listdir(repository_folder), "No 'node' folder in repository_folder, is this an AiiDA repository?"
+        import_from_legacy_repo(repo, node_folder, compress=compress)
 
-    # Print space statistics for exported 
-    size_info = output_objectstore.get_total_size()
-    print("OUTPUT object store size info:")
-    for key in sorted(size_info.keys()):
-        print("- {:30s}: {}".format(key, size_info[key]))    
-    count = output_objectstore.count_objects()
-    print("OUTPUT object store objects info:")
-    for key in sorted(count.keys()):
-        print("- {:30s}: {}".format(key, count[key]))
+        # Print some size statistics
+        size_info = repo.container.get_total_size()
+        print("Object store size info:")
+        for key in sorted(size_info.keys()):
+            print("- {:30s}: {}".format(key, size_info[key]))
+        count = repo.container.count_objects()
+        print("Object store objects info:")
+        for key in sorted(count.keys()):
+            print("- {:30s}: {}".format(key, count[key]))
 
+    if only is None or only == 'export-new':
+        
+        start = time.time()
+        node_uuids = list(repo.get_all_node_uuids())
+        tot_time = time.time() - start
+        print("Time to get back all node UUIDs ({} received) from postgres: {:.3f} s".format(len(node_uuids), tot_time))
 
-    # Let's try now to extract again
-    random.shuffle(node_uuids)
-    print("Extracting (shuffled) again in '{}'...".format(extract_to))
-    start = time.time()
-    node_repos = repo.get_node_repositories(node_uuids)
-    tot_time = time.time() - start
-    print("Time to get back all folder metas for {} shuffled nodes from postgres: {:.3f} s".format(len(node_uuids), tot_time))
+        # Export everything in two chunks
+        random.shuffle(node_uuids)
 
-    # Recreate the legacy repository format
-    legacy_extract_to = os.path.join(extract_to, 'legacy')
-    os.mkdir(legacy_extract_to)
-    start = time.time()
-    for node_repo in node_repos:
-        repo_node_folder = os.path.join(legacy_extract_to, node_repo.node_uuid[:2], node_repo.node_uuid[2:4], node_repo.node_uuid[4:]) 
-        os.makedirs(repo_node_folder)
-        create_folder(base=repo_node_folder, node_repo=node_repo)
-    tot_time = time.time() - start
-    print("Time to recreate the repository from new-style to legacy in '{}': {:.3f} s".format(legacy_extract_to, tot_time))
+        node_uuids1, node_uuids2 = node_uuids[:len(node_uuids)//2], node_uuids[len(node_uuids)//2:]
 
-    # Check that the two folders are identical
-    try:
-        output = subprocess.check_output(['diff', '-rq', node_folder, legacy_extract_to])
-    except subprocess.CalledProcessError as exc:
-        print("ERROR! NON ZERO ERROR CODE. OUTPUT:")
-        print(exc.output.decode('utf8'))
-        sys.exit(1)
-    if output:
-        print("ERROR! FOLDERS DIFFER:")
-        print(output.decode('utf8'))
-        sys.exit(1)
+        print("*"*74)
+        print("* REEXPORTING FROM NEW-STYLE REPO DIRECTLY TO NEW-STYLE PACKED REPO, IN A FEW CHUNKS")
 
-    legacy_export_extract_to = os.path.join(extract_to, 'legacy-export')
-    start = time.time()
-    print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
-    tot_time = time.time() - start
-    print("Time for the rsync of the legacy repo: {:.3f} s".format(tot_time))
-    
-    start = time.time()
-    print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
-    tot_time = time.time() - start
-    print("Time for the 2nd rsync of the legacy repo: {:.3f} s".format(tot_time))
+        #output_objectstore, old_new_mapping = export_from_pack(extract_to, repo, [node_uuids1, node_uuids2], compress=compress)
+        output_objectstore, old_new_mapping = export_from_pack_grouped(extract_to, repo, [node_uuids1, node_uuids2], compress=compress)
 
+        with repo.container.get_object_streams_and_size(old_new_mapping.keys()) as triplets:
+            for old_uuid, _, old_size in triplets:
+                # TODO: Not the fastest method, we should add get_object_size()
+                new_size = len(output_objectstore.get_object_content(old_new_mapping[old_uuid]))
+                assert new_size == old_size, "{} ({}) vs {} ({})".format(
+                    new_size, old_new_mapping[old_uuid], old_size, old_uuid
+                )
 
-    new_rsync_extract_to = os.path.join(extract_to, 'rsync-new')
-    start = time.time()
-    print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
-    tot_time = time.time() - start
-    print("Time for the rsync of the new-style repo: {:.3f} s".format(tot_time))
+        # Print space statistics for exported 
+        size_info = output_objectstore.get_total_size()
+        print("OUTPUT object store size info:")
+        for key in sorted(size_info.keys()):
+            print("- {:30s}: {}".format(key, size_info[key]))    
+        count = output_objectstore.count_objects()
+        print("OUTPUT object store objects info:")
+        for key in sorted(count.keys()):
+            print("- {:30s}: {}".format(key, count[key]))
 
-    # add a 1 kb file to a pack
-    repo.container.add_objects_to_pack([b"a"*1024])
-    start = time.time()
-    print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
-    tot_time = time.time() - start
-    print("Time for the 2nd rsync of the new-style repo after adding a 1kb file: {:.3f} s".format(tot_time))
+    if only is None or only == 'export-new-to-legacy':
+        start = time.time()
+        node_uuids = list(repo.get_all_node_uuids())
+        tot_time = time.time() - start
+        print("Time to get back all node UUIDs ({} received) from postgres: {:.3f} s".format(len(node_uuids), tot_time))
 
+        # Let's try now to extract again
+        random.shuffle(node_uuids)
+        print("Extracting (shuffled) again in '{}'...".format(extract_to))
+        start = time.time()
+        node_repos = repo.get_node_repositories(node_uuids)
+        tot_time = time.time() - start
+        print("Time to get back all folder metas for {} shuffled nodes from postgres: {:.3f} s".format(len(node_uuids), tot_time))
 
+        # Recreate the legacy repository format
+        legacy_extract_to = os.path.join(extract_to, 'legacy')
+        os.mkdir(legacy_extract_to)
+        start = time.time()
+        for node_repo in node_repos:
+            repo_node_folder = os.path.join(legacy_extract_to, node_repo.node_uuid[:2], node_repo.node_uuid[2:4], node_repo.node_uuid[4:]) 
+            os.makedirs(repo_node_folder)
+            create_folder(base=repo_node_folder, node_repo=node_repo)
+        tot_time = time.time() - start
+        print("Time to recreate the repository from new-style to legacy in '{}': {:.3f} s".format(legacy_extract_to, tot_time))
+
+        # Check that the two folders are identical
+        try:
+            output = subprocess.check_output(['diff', '-rq', node_folder, legacy_extract_to])
+        except subprocess.CalledProcessError as exc:
+            print("ERROR! NON ZERO ERROR CODE. OUTPUT:")
+            print(exc.output.decode('utf8'))
+            sys.exit(1)
+        if output:
+            print("ERROR! FOLDERS DIFFER:")
+            print(output.decode('utf8'))
+            sys.exit(1)
+
+    if only is None or only == 'rsync-legacy':
+        legacy_export_extract_to = os.path.join(extract_to, 'legacy-export')
+        start = time.time()
+        print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
+        tot_time = time.time() - start
+        print("Time for the rsync of the legacy repo: {:.3f} s".format(tot_time))
+        
+        start = time.time()
+        print(subprocess.check_output(['rsync', '-aHx', node_folder + '/', legacy_export_extract_to + '/']).decode('utf8'))
+        tot_time = time.time() - start
+        print("Time for the 2nd rsync of the legacy repo: {:.3f} s".format(tot_time))
+
+    if only is None or only == 'rsync-new':
+        new_rsync_extract_to = os.path.join(extract_to, 'rsync-new')
+        start = time.time()
+        print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
+        tot_time = time.time() - start
+        print("Time for the rsync of the new-style repo: {:.3f} s".format(tot_time))
+
+        # add a 1 kb file to a pack
+        repo.container.add_objects_to_pack([b"a"*1024])
+        start = time.time()
+        print(subprocess.check_output(['rsync', '-aHx', repo.container.get_folder() + '/', new_rsync_extract_to + '/']).decode('utf8'))
+        tot_time = time.time() - start
+        print("Time for the 2nd rsync of the new-style repo after adding a 1kb file: {:.3f} s".format(tot_time))
 
     print("All tests passed.")
 

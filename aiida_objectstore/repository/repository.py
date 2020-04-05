@@ -89,6 +89,13 @@ class Repository:
             container=self._container,
             folder_meta=self._get_folder_meta(node_uuid))
 
+    def get_all_node_uuids(self):
+        session = self._get_cached_session()
+        all_uuids = []
+        for res in session.query(DbNodeRepo).with_entities(DbNodeRepo.node_uuid):
+            all_uuids.append(res[0])
+        return all_uuids
+
     def get_node_repositories(self, node_uuids):
         folder_metas = self._get_folder_metas(node_uuids)
 
