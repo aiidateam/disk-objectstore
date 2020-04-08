@@ -10,7 +10,7 @@ import time
 import click
 import psutil
 
-from aiida_objectstore.objectstore.container import Container, NotExistent
+from disk_objectstore.container import Container, NotExistent
 
 @click.command()  # noqa: MC0001
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')

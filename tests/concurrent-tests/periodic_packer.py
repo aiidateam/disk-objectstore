@@ -3,7 +3,7 @@ import time
 
 import click
 
-from aiida_objectstore.objectstore.container import Container
+from disk_objectstore.container import Container
 
 @click.command()  # noqa: MC0001
 @click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')

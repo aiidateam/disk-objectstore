@@ -1,12 +1,17 @@
-# aiida-objectstore
+# disk-objectstore
 
-An implementation of an efficient object store for the AiiDA repository
+An implementation of an efficient object store that writes directly on disk
+and does not require a server running.
 
 ## Goal
 
-The goal of this project is to have a very efficient implementation of an "object store" 
-for the AiiDA repository, that addresses a number of issues that are currently visible
-in the current (AiiDA 1.0) implementation.
+The goal of this project is to have a very efficient implementation of an "object store"
+that works directly on a disk folder, does not require a server to run, and addresses
+a number of performance issues, discussed also below.
+
+This project originated from the requirements needed by an efficient repository
+implementation in [AiiDA](http://www.aiida.net) (note, however, that this
+package is completely independent of AiiDA).
 
 ## How to install
 
@@ -24,7 +29,7 @@ This implementation, in particular, addresses the following aspects:
   can write at the same time without data corruption.
 
 - loose objects are stored in a one-level sharding format: aa/bbccddeeff00...
-  Current experience with AiiDA shows that it's actually not so good to use two
+  Current experience (with AiiDA) shows that it's actually not so good to use two
   levels of nesting. 
   And anyway when there are too many loose objects, the idea
   is that we will pack them in few files (see below).
@@ -79,8 +84,8 @@ This implementation, in particular, addresses the following aspects:
   This is particularly convenient when using the object store for bulk import and 
   export, and very fast. Also, it is useful when getting all files of a given node.
 
-  In normal operation, however, we expect AiiDA to write loose objects, to be repacked
-  periodically (e.g. once a week).
+  In normal operation, however, we expect the client to write loose objects,
+  to be repacked  periodically (e.g. once a week).
 
   Some reference results for bulk operations:
   Storing 100'000 small objects directly to the packs takes about 10s.
@@ -115,9 +120,7 @@ In addition, the following design choices have been made:
   a packing strategy that is efficient. Moreover, with the current packing strategy,
   it is immediate to know in which pack to check without having to keep also an index
   of the packs (this, however, would be possible in case we want to extend the behavior,
-  since anyway we have an index). But at the moment it does not seem necessary (except
-  for the possibility to pack files of the same AiiDA node consecutively, to be discussed
-  and benchmarked).
+  since anyway we have an index). But at the moment it does not seem necessary.
 
 - A single index file is used. Having one pack index per file, while reducing a bit
   the size of the index (one could skip storing the first part of the UUID, determined

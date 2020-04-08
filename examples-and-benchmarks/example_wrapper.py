@@ -3,7 +3,7 @@ import uuid
 
 import click
 
-from aiida_objectstore.objectstore.wrapper import WrappedRepository
+from disk_objectstore.wrapper import WrappedRepository
 
 @click.command()
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
