@@ -43,8 +43,9 @@ This implementation, in particular, addresses the following aspects:
   (e.g. storing 65536 empty files in the same folder took over 3 minutes to write
   and over 4 minutes to delete on a Mac SSD).
 
-- packing can be triggered by the user periodically. NOTE: currently, while packing,
-  the repository should NOT be used.
+- packing can be triggered by the user periodically. 
+  It is even possible (to be stress tested, though) to pack while the object store
+  is in use (this might temporarily impact read performance, though).
   This operation takes all loose objects and puts them in a controllable number
   of packs. The name of the packs is given by the first few letters of the UUID
   (by default: 2, so 256 packs in total; configurable). A value of 2 is a good balance

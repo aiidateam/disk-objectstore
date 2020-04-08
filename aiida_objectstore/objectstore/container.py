@@ -336,7 +336,19 @@ class Container:
             # disable pysqlite's emitting of the BEGIN statement entirely.
             # also stops it from emitting COMMIT before any DDL.
             dbapi_connection.isolation_level = None
+            # Open the file in WAL mode (see e.g. https://stackoverflow.com/questions/9671490/how-to-set-sqlite-pragma-statements-with-sqlalchemy)
+            # This allows to have as many readers as one wants, and a concurrent writer (up to one)
+            # Note that this writes on a journal, on a different packs.idx-wal,
+            # and also creates a packs.idx-shm file.
+            # Note also that when the session is created, you will keep reading from the same version,
+            # so you need to close and reload the session to see the newly written data.
+            # Docs on WAL: https://www.sqlite.org/wal.html
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=wal;")
+            cursor.close()
 
+        # For this binding, see background on 
+        # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
         @event.listens_for(engine, "begin")
         def do_begin(conn):  # pylint: disable=unused-variable
             # emit our own BEGIN
@@ -351,9 +363,8 @@ class Container:
         # declaratives can be accessed through a DBSession instance
         Base.metadata.bind = engine
         
-        ## See e.g.
-        ##http://pythoncentral.io/introductory-tutorial-python-sqlalchemy/
-        DBSession = sessionmaker(bind=engine)
+        # We set autoflush = False to avoid to lock the DB if just doing queries/reads
+        DBSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
         session = DBSession()
 
         return session
@@ -513,10 +524,33 @@ class Container:
         else:
             # It might be loose
             obj_path = self._get_loose_path_from_uuid(uuid=uuid)
-            if not os.path.exists(obj_path):
+            try:
+                with open(obj_path, 'rb') as fhandle:
+                    yield fhandle
+            except FileNotFoundError:
+                # Do a final test if the file is in the pack
+                # Note that closing and reopening the session in an expensive operation!
+                # I try to do it here, if no object was found, as a last resort,
+                # in case of concurrent packing while reading.
+                # This, however, means that asking for non-existent objects might be very slow!
+                # TODO: understand if this can be improved?
+                if self._session is not None:
+                    self._session.close()
+                    self._session = None
+                session = self._get_cached_session()
+
+                obj = session.query(Obj).filter(Obj.uuid==uuid).one_or_none()
+                if obj is not None: # packed object
+                    pack_id = self._split_uuid_for_pack(uuid)[0]
+                    obj_path = self._get_pack_path_from_pack_id(pack_id)
+                    with open(obj_path, 'rb') as fhandle:
+                        obj_reader = _PackedObjectReader(fhandle=fhandle, offset=obj.offset, length=obj.length)
+                        if obj.compressed:
+                            yield _StreamDecompresser(obj_reader)
+                        else:
+                            yield obj_reader
+                    return
                 raise NotExistent("No object with UUID {}".format(uuid))
-            with open(obj_path, 'rb') as fhandle:
-                yield fhandle
 
     @contextmanager  # noqa: MC0001
     def get_object_streams_and_size(self, uuids, skip_if_missing=True):  
@@ -545,7 +579,7 @@ class Container:
             manager has always the same length as the input ``uuids`` list.
         """
 
-        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches
+        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches,too-many-locals
             """Return a generator yielding tripltes of (uuid, open stream, size).
 
             :note: The stream is already open and at the right position, and can
@@ -599,18 +633,78 @@ class Container:
                                 obj_reader = _StreamDecompresser(obj_reader)
                             yield obj_uuid, obj_reader, metadata[3]
 
+                # Collect loose UUIDS that are not found
+                # Reason: a concurrent process might have packed them,
+                # in the meantime.
+                loose_not_found = []
                 for loose_uuid in set(uuids).difference(uuids_in_packs):
                     obj_path = self._get_loose_path_from_uuid(uuid=loose_uuid)
-                    if not os.path.exists(obj_path):
-                        if skip_if_missing:
-                            continue
-                        yield loose_uuid, None, 0
+                    try:
+                        last_open_file[0] = open(obj_path, mode='rb')
+                        yield loose_uuid, last_open_file[0], os.path.getsize(obj_path)
+                    except FileNotFoundError:
+                        loose_not_found.append(loose_uuid)
                         continue
                     if last_open_file[0] is not None:
                         if not last_open_file[0].closed:
                             last_open_file[0].close()
-                    last_open_file[0] = open(obj_path, mode='rb')
-                    yield loose_uuid, last_open_file[0], os.path.getsize(obj_path)
+
+                # There were some loose objects that were not found
+                # Give a final try - if they have been deleted in the meantime
+                # while being packed, I should have the guarantee that they
+                # are by now in the pack.
+                # If they are not, the object does not exist.
+                if loose_not_found:
+                    # In this case, I do *not* sort them - I expect
+                    # this situation to happen quite rarely, only while
+                    # packing, and it's ok to lose a bit of performance
+                    # in this rare case, but keep the code simpler.
+
+                    # IMPORTANT. I need to close the session (and flush the
+                    # self._session cache) to refresh the DB, otherwise since I am
+                    # reading in WAL mode, I will be keeping to read from the "old"
+                    # state of the DB.
+                    # Note that this is an expensive operation!
+                    # This means that asking for non-existing objects will be
+                    # slow.
+                    if self._session is not None:
+                        self._session.close()
+                        self._session = None
+                    session = self._get_cached_session()
+                    pack_metadata = {
+                        res[0]: (res[1], res[2], res[3], res[4])
+                        for res in session.query(Obj).filter(
+                        Obj.uuid.in_(loose_not_found)).with_entities(
+                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
+                        }
+                    # These are really missing objects
+                    really_not_found = set(loose_not_found).difference(pack_metadata)
+
+                    for obj_uuid, metadata in pack_metadata.items():
+                        pack_id = self._split_uuid_for_pack(obj_uuid)[0]
+                        pack_path = self._get_pack_path_from_pack_id(pack_id)
+
+                        # Close possibly open file - might not be optimised if all
+                        # are in the same pack, but as discussed above we should reach
+                        # here only if someone packed exactly while we were listing the objects,
+                        # and this should be rare
+                        if last_open_file[0] is not None:
+                            if not last_open_file[0].closed:
+                                last_open_file[0].close()
+                        last_open_file[0] = open(pack_path, mode='rb')
+                        obj_reader = _PackedObjectReader(
+                            fhandle=last_open_file[0],
+                            offset=metadata[0],
+                            length=metadata[1])
+                        if metadata[2]:
+                            obj_reader = _StreamDecompresser(obj_reader)
+                        yield obj_uuid, obj_reader, metadata[3]
+
+                    # If there are really missing objects, and skip_if_missing is False, yield them
+                    if really_not_found and not skip_if_missing:
+                        for missing_uuid in really_not_found:
+                            yield missing_uuid, None, 0
+
             finally:
                 if last_open_file[0] is not None:
                     last_open_file[0].close()
