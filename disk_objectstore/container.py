@@ -1,3 +1,6 @@
+"""
+The main implementation of the ``Container`` class of the object store.
+"""
 import io
 import json
 import os
@@ -19,7 +22,7 @@ from .exceptions import NotExistent, NotInitialised
 class Container:
     """A class representing a container of objects (which is stored on a disk folder)"""
 
-    _PACK_INDEX_SUFFIX = ".idx"
+    _PACK_INDEX_SUFFIX = '.idx'
     # Default compression level (when compression is requested)
     # This is the lowest one, to get some reasonable compression without too much CPU time required
     _COMPRESSLEVEL = 1
@@ -29,11 +32,14 @@ class Container:
 
     def __init__(self, folder):
         """Create the class that represents the container.
-        
+
         :param folder: the path to a folder that will host this object-store continer.
         """
         self._folder = folder
-        self._session = None # Will be populated by the _get_session function
+        self._session = None  # Will be populated by the _get_session function
+        # These act as caches and will be populated by the corresponding properties
+        self._loose_prefix_len = None
+        self._pack_prefix_len = None
 
     def get_folder(self):
         """Return the path to the folder that will host the object-store container."""
@@ -59,33 +65,38 @@ class Container:
         It is a subfolder of the container folder.
         """
         return os.path.join(self._folder, 'packs')
-        
+
     def _get_config_file(self):
         """Return the path to the container config file."""
         return os.path.join(self._folder, 'config.json')
 
     def _get_session(self, create=False, raise_if_missing=False):
         """Return a new session to connect to the pack-index SQLite DB.
-        
+
         :param create: if True, creates the sqlite file and schema.
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
            is missing, either raise an exception (FileExistsError) if this flag is True, or return None
         """
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
-                raise FileExistsError("Pack index does not exist")
+                raise FileExistsError('Pack index does not exist')
             return None
 
         engine = create_engine('sqlite:///{}'.format(self._get_pack_index_path()))
 
-        # For the next two bindings, see background on 
+        # For the next two bindings, see background on
         # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, "connect")
+        @event.listens_for(engine, 'connect')
         def do_connect(dbapi_connection, connection_record):  # pylint: disable=unused-argument,unused-variable
+            """Hook function that is called upon connection.
+
+            It modifies the default behavior of SQLite to use WAL and to
+            go back to the 'default' isolation level mode.
+            """
             # disable pysqlite's emitting of the BEGIN statement entirely.
             # also stops it from emitting COMMIT before any DDL.
             dbapi_connection.isolation_level = None
-            # Open the file in WAL mode (see e.g. https://stackoverflow.com/questions/9671490/how-to-set-sqlite-pragma-statements-with-sqlalchemy)
+            # Open the file in WAL mode (see e.g. https://stackoverflow.com/questions/9671490)
             # This allows to have as many readers as one wants, and a concurrent writer (up to one)
             # Note that this writes on a journal, on a different packs.idx-wal,
             # and also creates a packs.idx-shm file.
@@ -93,15 +104,15 @@ class Container:
             # so you need to close and reload the session to see the newly written data.
             # Docs on WAL: https://www.sqlite.org/wal.html
             cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA journal_mode=wal;")
+            cursor.execute('PRAGMA journal_mode=wal;')
             cursor.close()
 
-        # For this binding, see background on 
+        # For this binding, see background on
         # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, "begin")
+        @event.listens_for(engine, 'begin')
         def do_begin(conn):  # pylint: disable=unused-variable
             # emit our own BEGIN
-            conn.execute("BEGIN")
+            conn.execute('BEGIN')
 
         if create:
             # Create all tables in the engine. This is equivalent to "Create Table"
@@ -111,13 +122,15 @@ class Container:
         # Bind the engine to the metadata of the Base class so that the
         # declaratives can be accessed through a DBSession instance
         Base.metadata.bind = engine
-        
+
         # We set autoflush = False to avoid to lock the DB if just doing queries/reads
-        DBSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        DBSession = sessionmaker(  # pylint: disable=invalid-name
+            bind=engine, autoflush=False, autocommit=False
+        )
         session = DBSession()
 
         return session
-    
+
     def _get_cached_session(self):
         """Return the SQLAlchemy session to access the SQLite file,
         reusing the same one."""
@@ -130,7 +143,7 @@ class Container:
 
     def _get_loose_path_from_uuid(self, uuid):
         """Return the path of a loose object on disk containing the data of a given UUID.
-        
+
         :param uuid: the UUID of the object to get.
         """
         if self.loose_prefix_len:
@@ -138,22 +151,22 @@ class Container:
                 self._get_loose_folder(),
                 uuid[:self.loose_prefix_len],
                 uuid[self.loose_prefix_len:],
-                )
+            )
         # if loose_prefix_len is zero, there is no subfolder
         return os.path.join(self._get_loose_folder(), uuid)
 
     def _get_pack_path_from_pack_id(self, pack_id):
         """Return the path of the pack file on disk for the given pack ID.
-        
+
         :param pack_id: the pack ID.
         """
-        assert self._is_valid_pack_id(pack_id), "Invalid pack ID {}".format(pack_id)
+        assert self._is_valid_pack_id(pack_id), 'Invalid pack ID {}'.format(pack_id)
         return os.path.join(self._get_pack_folder(), pack_id)
 
     def _get_pack_index_path(self):
         """Return the path to the SQLite file containing the index of packed objects.
         """
-        return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))    
+        return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))
 
     @property
     def is_initialised(self):
@@ -177,7 +190,7 @@ class Container:
         unless you add the ``clear=True`` option.
 
         :param clear: if True, delete everything in the container and
-          initialise a new, empty one.          
+          initialise a new, empty one.
         :param pack_prefix_len: The length of the prefix of the packed objects.
           The longer the length, the more packs will be created. Suggested
           values: 2 or 3.
@@ -188,46 +201,57 @@ class Container:
         if clear:
             if os.path.exists(self._folder):
                 shutil.rmtree(self._folder)
-                
+
         if os.path.exists(self._folder):
             raise FileExistsError(
-                "The container already exists, so you cannot initialise it - "
-                "use the clear option if you want to overwrite with a clean one"
+                'The container already exists, so you cannot initialise it - '
+                'use the clear option if you want to overwrite with a clean one'
             )
- 
+
         os.makedirs(self._folder)
 
         # Create config file
         with open(self._get_config_file(), 'w') as fhandle:
-            json.dump({
-                'container_version': 1, # For future compatibility, this is the version of the format
-                'loose_prefix_len': loose_prefix_len,
-                'pack_prefix_len': pack_prefix_len
-            }, fhandle)
+            json.dump(
+                {
+                    'container_version': 1,  # For future compatibility, this is the version of the format
+                    'loose_prefix_len': loose_prefix_len,
+                    'pack_prefix_len': pack_prefix_len
+                },
+                fhandle
+            )
 
         for folder in [self._get_pack_folder(), self._get_loose_folder(), self._get_sandbox_folder()]:
             if not os.path.exists(folder):
                 os.makedirs(folder)
-        
+
         self._get_session(create=True)
 
     def _get_repository_config(self):
         """Return the repository config."""
         if not self.is_initialised:
-            raise NotInitialised("The container is not initialised yet - use .init_container() first")
+            raise NotInitialised('The container is not initialised yet - use .init_container() first')
         with open(self._get_config_file()) as fhandle:
             config = json.load(fhandle)
         return config
 
     @property
     def loose_prefix_len(self):
-        if not hasattr(self, '_loose_prefix_len'):
+        """Return the length of the prefix of loose objects, when sharding.
+
+        This is read from the repository configuration.
+        """
+        if self._loose_prefix_len is None:
             self._loose_prefix_len = self._get_repository_config()['loose_prefix_len']
         return self._loose_prefix_len
 
     @property
     def pack_prefix_len(self):
-        if not hasattr(self, '_pack_prefix_len'):
+        """Return the length of the pack name, when sharding.
+
+        This is read from the repository configuration.
+        """
+        if self._pack_prefix_len is None:
             self._pack_prefix_len = self._get_repository_config()['pack_prefix_len']
         return self._pack_prefix_len
 
@@ -263,25 +287,24 @@ class Container:
             assert obj_uuid == uuid
 
             if stream is None:
-                raise NotExistent("No object with UUID {}".format(uuid))
+                raise NotExistent('No object with UUID {}'.format(uuid))
 
             yield stream
 
             try:
                 next(triplets)
-                raise AssertionError("There is more than one item returned by get_object_streams_and_size")
+                raise AssertionError('There is more than one item returned by get_object_streams_and_size')
             except StopIteration:
                 # There should be only one entry
                 pass
 
-
     @contextmanager  # noqa: MC0001
-    def get_object_streams_and_size(self, uuids, skip_if_missing=True):  
+    def get_object_streams_and_size(self, uuids, skip_if_missing=True):  # pylint: disable=too-many-statements
         """A context manager returning a generator yielding triplets of (uuid, open stream, size).
 
         :note: the UUIDs yielded are often in a *different* order than the original
             ``uuids`` list. This is done for efficiency reasons, to reduce to a minimum
-            file opening and to try to read file chunks (for packs) in sequential 
+            file opening and to try to read file chunks (for packs) in sequential
             order rather than in random order.
 
         To use it, you should do something like the following::
@@ -302,7 +325,7 @@ class Container:
             manager has always the same length as the input ``uuids`` list.
         """
 
-        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches,too-many-locals
+        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
             """Return a generator yielding tripltes of (uuid, open stream, size).
 
             :note: The stream is already open and at the right position, and can
@@ -335,11 +358,10 @@ class Container:
                     session = self._get_cached_session()
                     pack_metadata = {
                         res[0]: (res[1], res[2], res[3], res[4])
-                        for res in session.query(Obj).filter(
-                        Obj.uuid.in_(obj_uuids)).with_entities(
-                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
-                        }
-                    if pack_metadata:                        
+                        for res in session.query(Obj).filter(Obj.uuid.in_(obj_uuids)).
+                        with_entities(Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
+                    }
+                    if pack_metadata:
                         uuids_in_packs.update(pack_metadata.keys())
                         pack_path = self._get_pack_path_from_pack_id(pack_id)
                         if last_open_file[0] is not None:
@@ -349,9 +371,8 @@ class Container:
                         last_open_file[0] = open(pack_path, mode='rb')
                         for obj_uuid, metadata in pack_metadata.items():
                             obj_reader = PackedObjectReader(
-                                fhandle=last_open_file[0],
-                                offset=metadata[0],
-                                length=metadata[1])
+                                fhandle=last_open_file[0], offset=metadata[0], length=metadata[1]
+                            )
                             if metadata[2]:
                                 obj_reader = StreamDecompresser(obj_reader)
                             yield obj_uuid, obj_reader, metadata[3]
@@ -396,10 +417,9 @@ class Container:
                     session = self._get_cached_session()
                     pack_metadata = {
                         res[0]: (res[1], res[2], res[3], res[4])
-                        for res in session.query(Obj).filter(
-                        Obj.uuid.in_(loose_not_found)).with_entities(
-                            Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
-                        }
+                        for res in session.query(Obj).filter(Obj.uuid.in_(loose_not_found)).
+                        with_entities(Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
+                    }
                     # These are really missing objects
                     really_not_found = set(loose_not_found).difference(pack_metadata)
 
@@ -416,9 +436,8 @@ class Container:
                                 last_open_file[0].close()
                         last_open_file[0] = open(pack_path, mode='rb')
                         obj_reader = PackedObjectReader(
-                            fhandle=last_open_file[0],
-                            offset=metadata[0],
-                            length=metadata[1])
+                            fhandle=last_open_file[0], offset=metadata[0], length=metadata[1]
+                        )
                         if metadata[2]:
                             obj_reader = StreamDecompresser(obj_reader)
                         yield obj_uuid, obj_reader, metadata[3]
@@ -435,8 +454,7 @@ class Container:
         # I want it to be a list of length 1 to make sure I actually have a reference to it
         last_open_file = [None]
 
-        yield get_object_stream_generator(
-            uuids=uuids, last_open_file=last_open_file, skip_if_missing=skip_if_missing)        
+        yield get_object_stream_generator(uuids=uuids, last_open_file=last_open_file, skip_if_missing=skip_if_missing)
 
         if last_open_file[0] is not None:
             if not last_open_file[0].closed:
@@ -477,11 +495,11 @@ class Container:
             sandbox_folder=self._get_sandbox_folder(),
             loose_folder=self._get_loose_folder(),
             loose_prefix_len=self.loose_prefix_len
-            )
-    
+        )
+
     def add_object(self, content):
         """Add a loose object.
-        
+
         :param content: a binary stream with the file content.
         :return: the UUID of the newly created object.
         """
@@ -493,7 +511,7 @@ class Container:
 
     def count_objects(self):
         """Return a dictionary with the count of objects, keys are 'loose' and 'packed'.
-        
+
         Also return a number of packs under 'pack_files'."""
         retval = {}
 
@@ -512,7 +530,7 @@ class Container:
         """Return True if the name is a valid pack ID."""
         if len(pack_id) != self.pack_prefix_len:
             return False
-        if not all(char in "0123456789abcdef" for char in pack_id):
+        if not all(char in '0123456789abcdef' for char in pack_id):
             return False
         return True
 
@@ -520,13 +538,13 @@ class Container:
         """Return True if the name is a valid prefix."""
         if len(prefix) != self.loose_prefix_len:
             return False
-        if not all(char in "0123456789abcdef" for char in prefix):
+        if not all(char in '0123456789abcdef' for char in prefix):
             return False
         return True
 
     def get_total_size(self):
         """Return a dictionary with the total size of objects in the container.
-        
+
         - total_size_packed: size of the objects (before compressing) in the packs.
         - total_size_packed_on_disk: size actually occupied on disk by the objects (including optional compression).
         - total_size_packfiles_on_disk: size of the packs on disk (can be larger if objects are still
@@ -539,19 +557,18 @@ class Container:
         session = self._get_cached_session()
         # COALESCE is used to return 0 if there are no results, rather than None
         # SQL's COALESCE returns the first non-null result
-        retval['total_size_packed'] = session.query(
-            func.coalesce(func.sum(Obj.size), 0).label("total_size_packed")).all()[0][0]
+        retval['total_size_packed'] = session.query(func.coalesce(func.sum(Obj.size),
+                                                                  0).label('total_size_packed')).all()[0][0]
         retval['total_size_packed_on_disk'] = session.query(
-            func.coalesce(func.sum(Obj.length), 0).label("total_length_packed")).all()[0][0]
+            func.coalesce(func.sum(Obj.length), 0).label('total_length_packed')
+        ).all()[0][0]
 
         total_size_packfiles_on_disk = 0
         for pack_id in list(self._list_packs()):
-            total_size_packfiles_on_disk += os.path.getsize(
-                self._get_pack_path_from_pack_id(pack_id))
+            total_size_packfiles_on_disk += os.path.getsize(self._get_pack_path_from_pack_id(pack_id))
         retval['total_size_packfiles_on_disk'] = total_size_packfiles_on_disk
 
-        retval['total_size_packindexes_on_disk'] = os.path.getsize(
-                self._get_pack_index_path())
+        retval['total_size_packindexes_on_disk'] = os.path.getsize(self._get_pack_index_path())
 
         total_size_loose = 0
         for loose_uuid in self._list_loose():
@@ -587,10 +604,10 @@ class Container:
             # Release resource (I check if it exists in case there was an exception)
             if os.path.exists(lock_file):
                 os.remove(lock_file)
-    
+
     def _list_loose(self):
         """Iterate over loose objects
-        
+
         It does the right thing depending on the value of loose_prefix_len.
 
         Note that this returns a generator.
@@ -601,17 +618,15 @@ class Container:
             if self.loose_prefix_len:
                 if not self._is_valid_loose_prefix(first_level):
                     continue
-                for second_level in os.listdir(os.path.join(
-                        self._get_loose_folder(),
-                        first_level)):
-                    yield "{}{}".format(first_level, second_level)
+                for second_level in os.listdir(os.path.join(self._get_loose_folder(), first_level)):
+                    yield '{}{}'.format(first_level, second_level)
             else:
                 # It's flat (loose_prefix_len == 0)
                 yield first_level
 
     def _list_packs(self):
         """Iterate over packs.
-        
+
         Note that this returns a generator of the pack IDs.
 
         TODO add a prefix filter?
@@ -627,7 +642,7 @@ class Container:
     def _write_data_to_packfile(self, pack_handle, read_handle, compress):
         """Append data, read from read_handle until it ends, to the correct packfile.
 
-        Return the number of bytes READ (note that this will be different 
+        Return the number of bytes READ (note that this will be different
         than the number of bytes written to pack_handle, if compress==True).
         If you need to know how many bytes were written, call pack_handle.tell() before
         and after calling this function.
@@ -641,7 +656,7 @@ class Container:
         :param read_handle: a file-like object to read from (must be a binary stream, needs to
            support at least the .read() method with a size parameter).
         :param compress: if True, compress the stream when writing to disk
-        :return: the number of bytes 
+        :return: the number of bytes
         """
         assert 'b' in pack_handle.mode
         assert 'a' in pack_handle.mode
@@ -683,15 +698,16 @@ class Container:
         for pack_id, loose_objects in packs.items():
             if loose_objects:
                 session = self._get_cached_session()
-                # Avoid concurrent writes        
+                # Avoid concurrent writes
                 with self.lock_pack(pack_id) as pack_handle:
                     for obj_uuid in loose_objects:
                         obj = Obj(uuid=obj_uuid)
-                        obj.compressed = compress                    
+                        obj.compressed = compress
                         obj.offset = pack_handle.tell()
                         with open(self._get_loose_path_from_uuid(obj_uuid), 'rb') as loose_handle:
                             obj.size = self._write_data_to_packfile(
-                                pack_handle=pack_handle, read_handle=loose_handle, compress=compress)
+                                pack_handle=pack_handle, read_handle=loose_handle, compress=compress
+                            )
                         obj.length = pack_handle.tell() - obj.offset
                         session.add(obj)
                     # Committing as soon as we are done with one pack
@@ -700,13 +716,13 @@ class Container:
                 for obj_uuid in loose_objects:
                     os.remove(self._get_loose_path_from_uuid(obj_uuid))
 
-    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):  # pylint: disable=too-many-locals
+    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
-        
+
         This is a maintenance operation, available mostly for efficiency reasons
         e.g. if you are creating a container from scratch.
         As such, it needs to be done only by one process.
-        
+
         :param stream_list: a list of BytesIO bytestreams to add.
         :param compress: if True, compress objects before storing them.
         :param open_streams: if True, then open the streams using a ``with`` context
@@ -722,11 +738,11 @@ class Container:
             obj_uuid = get_new_uuid()
             uuids.append(obj_uuid)
             pack_id = self._split_uuid_for_pack(obj_uuid)[0]
-            packs[pack_id].append((pos, obj_uuid)) 
+            packs[pack_id].append((pos, obj_uuid))
         for pack_id, obj_ids in packs.items():
             if obj_ids:
                 session = self._get_cached_session()
-                # Avoid concurrent writes        
+                # Avoid concurrent writes
                 with self.lock_pack(pack_id) as pack_handle:
                     for pos, obj_uuid in obj_ids:
                         obj = Obj(uuid=obj_uuid)
@@ -738,7 +754,8 @@ class Container:
                             stream_context_manager = nullcontext(stream_list[pos])
                         with stream_context_manager as stream:
                             obj.size = self._write_data_to_packfile(
-                                pack_handle=pack_handle, read_handle=stream, compress=compress)
+                                pack_handle=pack_handle, read_handle=stream, compress=compress
+                            )
                         obj.length = pack_handle.tell() - obj.offset
                         session.add(obj)
                     # Commit as soon as we are done with one pack
@@ -747,11 +764,11 @@ class Container:
 
     def add_objects_to_pack(self, content_list, compress=False):
         """Add objects directly to a pack, reading from a list of content byte arrays.
-        
+
         This is a maintenance operation, available mostly for efficiency reasons
         e.g. if you are creating a container from scratch.
         As such, it needs to be done only by one process.
-        
+
         :note: use this only if you know the full list of contents fits in memory.
           Otherwise, call the add_streamed_objects_to_pack instead.
 

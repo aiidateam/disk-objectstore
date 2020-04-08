@@ -9,7 +9,7 @@
 
 - (Maybe) implement option to pack only a subset of the loose objects (e.g. specified with regex, explicit list, or just prefix).
 
-- Add tests! We should aim at 100% coverage. 
+- Add tests! We should aim at 100% coverage.
   - Moreover, we need to add a few tests for concurrency (at least to check that e.g. the locking mechanism works).
   - It would be also good to stress-test this implementation with multiple readers and writers (both while unpacked, and while packed) -> see 'test-concurrent subfolder'
 

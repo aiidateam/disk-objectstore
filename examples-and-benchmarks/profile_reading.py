@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+"""A simple profiling test to read back all objects from a repository."""
 import json
 import os
 import random
@@ -9,29 +10,35 @@ from profilehooks import profile
 
 from disk_objectstore.container import Container
 
+
 @click.command()
-@click.option('-p', '--path', default='/tmp/test-container', help='The path to a test folder in which the container will be created.')
+@click.option(
+    '-p',
+    '--path',
+    default='/tmp/test-container',
+    help='The path to a test folder in which the container will be created.'
+)
 @click.option('-P', '--with-profiling', is_flag=True, help='Perform profiling')
 @click.option('-B', '--batch-read', is_flag=True, help='Use batch read')
 @click.help_option('-h', '--help')
-def main(path, with_profiling, batch_read):  # pylint: disable=too-many-locals
+def main(path, with_profiling, batch_read):
     """Profile reading functionality."""
+    # pylint: disable=too-many-locals
     container = Container(path)
     if not container.is_initialised:
-        print("Initialising the container...")
+        print('Initialising the container...')
         container.init_container()
 
     start_counts = container.count_objects()
-    print("Currently known objects: {} packed, {} loose".format(
-        start_counts['packed'], start_counts['loose']))
-    print("Pack objects on disk:", start_counts['pack_files'])
+    print('Currently known objects: {} packed, {} loose'.format(start_counts['packed'], start_counts['loose']))
+    print('Pack objects on disk:', start_counts['pack_files'])
 
     size_info = container.get_total_size()
-    print("Object store size info:")
+    print('Object store size info:')
     for key in sorted(size_info.keys()):
-        print("- {:30s}: {}".format(key, size_info[key]))
+        print('- {:30s}: {}'.format(key, size_info[key]))
 
-    ### THIS BLOCK DOES PROTECTED ACCESS - IT'S JUST FOR NOW, 
+    ### THIS BLOCK DOES PROTECTED ACCESS - IT'S JUST FOR NOW,
     ### MIGHT BE MOVED LATER TO A PUBLIC FUNCION
     from disk_objectstore.models import Obj
     # In all cases, retrieve all objects
@@ -47,8 +54,8 @@ def main(path, with_profiling, batch_read):  # pylint: disable=too-many-locals
     all_uuids = loose_uuids + pack_uuids
     random.shuffle(all_uuids)
 
-    #@profile(sort='cumtime', filename='out.prof')
     def read_data(batch_read):
+        """The main function to optionally profile."""
         retrieved = {}
 
         if batch_read:
@@ -67,29 +74,29 @@ def main(path, with_profiling, batch_read):  # pylint: disable=too-many-locals
         func = read_data
     retrieved = func(batch_read=batch_read)
     tot_time = time.time() - start
-    print("Time to retrieve {} packed objects in random order: {} s".format(len(all_uuids), tot_time))
+    print('Time to retrieve {} packed objects in random order: {} s'.format(len(all_uuids), tot_time))
 
-    import hashlib 
+    import hashlib
     hashes = {k: hashlib.md5(v).hexdigest() for k, v in retrieved.items()}
 
     if not os.path.exists('reference_md5.json'):
-        print("WARNING! reference does not exist, creating")
-        with open('reference_md5.json', 'w') as f:
-            json.dump(hashes, f)
+        print('WARNING! reference does not exist, creating')
+        with open('reference_md5.json', 'w') as fhandle:
+            json.dump(hashes, fhandle)
     else:
-        with open('reference_md5.json', 'r') as f:
-            reference_hashes = json.load(f)
-    
-        assert hashes.keys() == reference_hashes.keys(), "{}\n{}".format(
+        with open('reference_md5.json', 'r') as fhandle:
+            reference_hashes = json.load(fhandle)
+
+        assert hashes.keys() == reference_hashes.keys(), '{}\n{}'.format(
             set(hashes.keys()).difference(reference_hashes.keys()),
             set(hashes.keys()).difference(reference_hashes.keys())
-            )
+        )
         assert hashes == reference_hashes
-        print("Hashes are the same as the previous run (remove json file to regenerate it)")
+        print('Hashes are the same as the previous run (remove json file to regenerate it)')
 
     if with_profiling:
         print("You can check the profiling results running 'snakeviz out.prof'")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()  # pylint: disable=no-value-for-parameter

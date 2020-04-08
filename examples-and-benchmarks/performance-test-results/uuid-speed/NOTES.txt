@@ -1,9 +1,9 @@
-(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py 
+(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py
 Total time to generate 10000 UUID4 (str): 0.061849117279052734 s
 Time per UUID (microseconds): 6.184911727905273
 Total time to generate 10000 UUID4 (.hex): 0.04797697067260742 s
 Time per UUID (microseconds): 4.797697067260742
-(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py 
+(generic36) pizzi@swissmongoose:~/Dropbox/Mini-Projects/object-store/performance tests/undestood/uuid-speed$ ./measure.py
 Total time to generate 10000 UUID4 (str): 0.06092214584350586 s
 Time per UUID (microseconds): 6.092214584350586
 Total time to generate 10000 UUID4 (.hex): 0.04745769500732422 s

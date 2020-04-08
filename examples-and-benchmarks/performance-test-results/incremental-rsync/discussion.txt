@@ -47,6 +47,6 @@ Transferred it first, then retransferred randomly reshuffled. See attached resul
 
 RESULTS IN THE 'SHUFFLE' FOLDER
 
-The results are still quite promising: out of a 1GB file, that took ~4mins to transfer fully the first time over my network, the second time the process took only 14 seconds, transferring only ~32MB, with a speedup of ~30x. 
+The results are still quite promising: out of a 1GB file, that took ~4mins to transfer fully the first time over my network, the second time the process took only 14 seconds, transferring only ~32MB, with a speedup of ~30x.
 So also repacking (as long as we stay in the same file) is very effective, apparently!
 

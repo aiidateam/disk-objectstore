@@ -1,0 +1,27 @@
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v2.2.3
+  hooks:
+  - id: trailing-whitespace
+  - id: double-quote-string-fixer
+
+- repo: local
+  hooks:
+  - id: yapf
+    name: yapf
+    entry: yapf
+    language: system
+    types: [python]
+    args: ["-i"]
+    exclude: &exclude_files >
+      (?x)^(
+        examples-and-benchmarks/performance-test-results/.*/.*\.py
+      )$
+
+  # prospector: collection of linters
+  - id: prospector
+    language: system
+    types: [file, python]
+    name: prospector
+    description: "This hook runs Prospector: https://github.com/landscapeio/prospector"
+    entry: prospector
+    exclude: *exclude_files
