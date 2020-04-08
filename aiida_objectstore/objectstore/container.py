@@ -509,48 +509,22 @@ class Container:
         not be seekable.
         :param uuid: the UUID of the object to stream.
         """
-        session = self._get_cached_session()
-        obj = session.query(Obj).filter(Obj.uuid==uuid).one_or_none()
+        with self.get_object_streams_and_size(uuids=[uuid], skip_if_missing=False) as triplets:
+            obj_uuid, stream, _ = next(triplets)  # pylint: disable=stop-iteration-return
+            assert obj_uuid == uuid
 
-        if obj is not None: # packed object
-            pack_id = self._split_uuid_for_pack(uuid)[0]
-            obj_path = self._get_pack_path_from_pack_id(pack_id)
-            with open(obj_path, 'rb') as fhandle:
-                obj_reader = _PackedObjectReader(fhandle=fhandle, offset=obj.offset, length=obj.length)
-                if obj.compressed:
-                    yield _StreamDecompresser(obj_reader)
-                else:
-                    yield obj_reader
-        else:
-            # It might be loose
-            obj_path = self._get_loose_path_from_uuid(uuid=uuid)
-            try:
-                with open(obj_path, 'rb') as fhandle:
-                    yield fhandle
-            except FileNotFoundError:
-                # Do a final test if the file is in the pack
-                # Note that closing and reopening the session in an expensive operation!
-                # I try to do it here, if no object was found, as a last resort,
-                # in case of concurrent packing while reading.
-                # This, however, means that asking for non-existent objects might be very slow!
-                # TODO: understand if this can be improved?
-                if self._session is not None:
-                    self._session.close()
-                    self._session = None
-                session = self._get_cached_session()
-
-                obj = session.query(Obj).filter(Obj.uuid==uuid).one_or_none()
-                if obj is not None: # packed object
-                    pack_id = self._split_uuid_for_pack(uuid)[0]
-                    obj_path = self._get_pack_path_from_pack_id(pack_id)
-                    with open(obj_path, 'rb') as fhandle:
-                        obj_reader = _PackedObjectReader(fhandle=fhandle, offset=obj.offset, length=obj.length)
-                        if obj.compressed:
-                            yield _StreamDecompresser(obj_reader)
-                        else:
-                            yield obj_reader
-                    return
+            if stream is None:
                 raise NotExistent("No object with UUID {}".format(uuid))
+
+            yield stream
+
+            try:
+                next(triplets)
+                raise AssertionError("There is more than one item returned by get_object_streams_and_size")
+            except StopIteration:
+                # There should be only one entry
+                pass
+
 
     @contextmanager  # noqa: MC0001
     def get_object_streams_and_size(self, uuids, skip_if_missing=True):  

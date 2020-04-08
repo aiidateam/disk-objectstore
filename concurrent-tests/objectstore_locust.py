@@ -10,7 +10,7 @@ import time
 import click
 import psutil
 
-from aiida_objectstore.objectstore.container import Container
+from aiida_objectstore.objectstore.container import Container, NotExistent
 
 @click.command()  # noqa: MC0001
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
@@ -21,9 +21,10 @@ from aiida_objectstore.objectstore.container import Container
 @click.option('-w', '--wait-time', default=0.1, help='Time to wait between iterations.')
 @click.option('-s', '--shared-folder', default='/tmp/test-container-shared',
     help='The path to a test folder in which all locusts will write the MD5s for others to read. It must already exist.')
+@click.option('-b', '--bulk-read', is_flag=True, help='Whether to use bulk reads, or a loop on each UUID.')
 @click.help_option('-h', '--help')
 def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
-        max_size, path, repetitions, wait_time, shared_folder):
+        max_size, path, repetitions, wait_time, shared_folder, bulk_read):
     """Keep writing loose objects, then read all those written by all locusts, and try to read them back."""
     if not os.path.isdir(shared_folder):
         raise ValueError("Create the folder '{}' first!".format(shared_folder))
@@ -57,13 +58,7 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
 
         md5s = {}
         for obj_uuid, content in zip(uuids, contents):
-            m = hashlib.md5()
-            try:
-                m.update(content)
-            except TypeError:
-                print("ERROR, {}, {}".format(content, type(content)))
-                raise
-            md5s[obj_uuid] = m.hexdigest()
+            md5s[obj_uuid] = hashlib.md5(content).hexdigest()
 
         ## Dump to file
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', dir=shared_folder, delete=False) as fhandle:
@@ -82,26 +77,29 @@ def main(num_files, min_size, # pylint: disable=too-many-arguments,too-many-loca
             with open(os.path.join(shared_folder, fname)) as fhandle:
                 chunk_md5s = json.load(fhandle)
             all_md5s.update(chunk_md5s)
-        print("[{}] {} object MD5s read from {} files.".format(proc_id, len(all_md5s), file_count))
+        print("[{}] {} object MD5s read from {} files ({}).".format(proc_id, len(all_md5s), file_count,
+            "with bulk reads" if bulk_read else "with single-object reads"
+        ))
 
         ########################################
         # single bulk read
         all_uuids = list(all_md5s.keys())
         random.shuffle(all_uuids)
 
-        retrieved_content = container.get_object_contents(all_uuids, skip_if_missing=False)
+        if bulk_read:
+            retrieved_content = container.get_object_contents(all_uuids, skip_if_missing=False)
+        else:
+            retrieved_content = {}
+            for obj_uuid in all_uuids:
+                try:
+                    retrieved_content[obj_uuid] = container.get_object_content(obj_uuid)
+                except NotExistent:
+                    retrieved_content[obj_uuid] = None
         retrieved_md5s = {}
         for obj_uuid, content in retrieved_content.items():
             if content is None:
                 raise ValueError("No content returned for object {}!".format(obj_uuid))
-            m = hashlib.md5()
-            try:
-                m.update(content)
-            except TypeError:
-                print("ERROR, {}, {}".format(content, type(content)))
-                raise
-
-            retrieved_md5s[obj_uuid] = m.hexdigest()
+            retrieved_md5s[obj_uuid] = hashlib.md5(content).hexdigest()
             
         assert retrieved_md5s == all_md5s
         del retrieved_content
