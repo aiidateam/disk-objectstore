@@ -19,6 +19,7 @@ from .utils import nullcontext, ObjectWriter, PackedObjectReader, StreamDecompre
 from .exceptions import NotExistent, NotInitialised
 
 
+# noqa: MC0001
 class Container:
     """A class representing a container of objects (which is stored on a disk folder)"""
 
@@ -298,7 +299,7 @@ class Container:
                 # There should be only one entry
                 pass
 
-    @contextmanager  # noqa: MC0001
+    @contextmanager
     def get_object_streams_and_size(self, uuids, skip_if_missing=True):  # pylint: disable=too-many-statements
         """A context manager returning a generator yielding triplets of (uuid, open stream, size).
 
@@ -522,7 +523,7 @@ class Container:
         for loose_uuid in self._list_loose():  # pylint: disable=unused-variable
             retval['loose'] += 1
 
-        retval['pack_files'] = len([pack_id for pack_id in self._list_packs()])
+        retval['pack_files'] = len(list(self._list_packs()))
 
         return retval
 

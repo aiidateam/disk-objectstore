@@ -10,7 +10,7 @@ import click
 from disk_objectstore.container import Container
 
 
-@click.command()  # noqa: MC0001
+@click.command()
 @click.option(
     '-p',
     '--path',

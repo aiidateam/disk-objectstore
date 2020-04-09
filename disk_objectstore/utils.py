@@ -158,7 +158,7 @@ class PackedObjectReader:
         """Return whether object supports random access."""
         return False
 
-    def seek(self, target, whence=0):  # pylint: disable=unused-argument,no-self-use
+    def seek(self, target, whence=0):  # pylint: disable=no-self-use
         """Change stream position."""
         raise OSError('Object not seekable')
 

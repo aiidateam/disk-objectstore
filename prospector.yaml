@@ -1,0 +1,3 @@
+mccabe:
+   disable:
+     - MC0001
