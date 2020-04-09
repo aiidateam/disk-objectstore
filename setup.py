@@ -33,7 +33,7 @@ setup(
     ],
     extras_require={
         'dev': [
-            'profilehooks', 'psutil', 'click', 'numpy', 'pre-commit', 'yapf==0.29.0', 'prospector==0.12.11', 'pytest',
+            'profilehooks', 'psutil', 'click', 'numpy', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest',
             'pytest-cov'
         ],
     },
