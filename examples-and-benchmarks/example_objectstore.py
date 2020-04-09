@@ -5,10 +5,9 @@ import uuid
 
 import click
 
-from disk_objectstore.container import Container
+from disk_objectstore import Container
 
 
-# noqa: MC0001
 @click.command()
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')

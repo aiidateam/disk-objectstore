@@ -19,7 +19,7 @@ with open(FNAME) as init:
     VERSIONLINES = [l.partition('#')[0] for l in init.readlines() if l.startswith('__version__')]
 assert len(VERSIONLINES) == 1, 'Unable to detect the version lines'
 VERSIONLINE = VERSIONLINES[0]
-VERSION = VERSIONLINE.partition('=')[2].replace('"', '').strip()
+VERSION = VERSIONLINE.partition('=')[2].replace('"', '').replace("'", '').strip()
 
 setup(
     name=MODULENAME,

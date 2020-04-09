@@ -7,7 +7,7 @@ import time
 
 import click
 
-from disk_objectstore.container import Container
+from disk_objectstore import Container
 
 
 @click.command()

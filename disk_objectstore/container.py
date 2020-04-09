@@ -19,7 +19,6 @@ from .utils import nullcontext, ObjectWriter, PackedObjectReader, StreamDecompre
 from .exceptions import NotExistent, NotInitialised
 
 
-# noqa: MC0001
 class Container:
     """A class representing a container of objects (which is stored on a disk folder)"""
 
