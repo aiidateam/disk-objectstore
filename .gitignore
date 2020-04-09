@@ -5,3 +5,6 @@ __pycache__
 disk_objectstore.egg-info
 
 .vscode
+
+htmlcov
+.coverage

@@ -32,16 +32,9 @@ setup(
         'sqlalchemy',
     ],
     extras_require={
-        'testing': [
-            'profilehooks',
-            'psutil',
-            'click',
-            'numpy',
-        ],
         'dev': [
-            'pre-commit',
-            'yapf==0.29.0',
-            'prospector==0.12.11',
+            'profilehooks', 'psutil', 'click', 'numpy', 'pre-commit', 'yapf==0.29.0', 'prospector==0.12.11', 'pytest',
+            'pytest-cov'
         ],
     },
     packages=find_packages(),
