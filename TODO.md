@@ -7,6 +7,10 @@
 
 - Implement validation of a pack (e.g. for overlapping objects)
 
+- Add a @maintenance decorator that marks all writing operations to the
+  packs (writing directly to packs, repacking, ...) so that only
+  one process can do it at a given time.
+
 - (Maybe) implement option to pack only a subset of the loose objects (e.g. specified with regex, explicit list, or just prefix).
 
 - Add tests! We should aim at 100% coverage.
