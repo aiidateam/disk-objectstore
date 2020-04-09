@@ -19,6 +19,8 @@ def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     container = Container(temp_dir)
     container.init_container(clear=True)
     yield container
+    # Close open files, if they are open
+    container.close()
 
 
 @pytest.fixture(scope='function')

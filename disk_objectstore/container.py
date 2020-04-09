@@ -45,6 +45,12 @@ class Container:
         """Return the path to the folder that will host the object-store container."""
         return self._folder
 
+    def close(self):
+        """Close open files (in particular, the connection to the SQLite DB)."""
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+
     def _get_sandbox_folder(self):
         """Return the path to the sandbox folder that is used during a new object creation.
 
