@@ -1,8 +1,11 @@
 """Test of the object-store container module."""
 import hashlib
+import os
 import random
 
 import pytest
+
+from disk_objectstore import Container
 
 
 def _assert_empty_repo(container):
@@ -147,6 +150,75 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
         assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
             obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
         )
+
+
+@pytest.mark.parametrize('loose_prefix_len,pack_prefix_len', [(0, 2), (2, 2), (3, 2), (0, 3), (2, 3), (3, 3)])
+def test_prefix_lengths(temp_dir, generate_random_data, pack_prefix_len, loose_prefix_len):
+    """Check if the prefix lengths are honored."""
+    container = Container(temp_dir)
+    container.init_container(clear=True, pack_prefix_len=pack_prefix_len, loose_prefix_len=loose_prefix_len)
+
+    _assert_empty_repo(container)
+    data = generate_random_data()
+
+    # Store
+    obj_md5s = _add_objects_loose_loop(container, data)
+
+    loose_firstlevel = os.listdir(container._get_loose_folder())  # pylint: disable=protected-access
+    assert len(loose_firstlevel) > 0
+    if loose_prefix_len == 0:
+        assert all(len(inode) == 32 for inode in loose_firstlevel)
+    else:
+        assert all(len(inode) == loose_prefix_len for inode in loose_firstlevel)
+
+    counts = container.count_objects()
+    assert counts['packed'] == 0, (
+        'The container should have 0 packed objects '
+        '(but there are {} instead)'.format(counts['packed'])
+    )
+    assert counts['loose'] == len(obj_md5s), (
+        'The container should have {} loose objects '
+        '(but there are {} instead)'.format(len(obj_md5s), counts['loose'])
+    )
+
+    retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
+    # Check that the MD5 are correct
+    for obj_uuid in obj_md5s:
+        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+        )
+
+    # Pack all loose objects
+    container.pack_all_loose()
+
+    pack_firstlevel = os.listdir(container._get_pack_folder())  # pylint: disable=protected-access
+    assert len(pack_firstlevel) > 0
+    assert all(len(inode) == pack_prefix_len for inode in pack_firstlevel)
+
+    counts = container.count_objects()
+    assert counts['packed'] == len(obj_md5s), (
+        'The container should have {} packed objects '
+        '(but there are {} instead)'.format(len(obj_md5s), counts['packed'])
+    )
+    assert counts['loose'] == 0, (
+        'The container should have 0 loose objects '
+        '(but there are {} instead)'.format(counts['loose'])
+    )
+
+    retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
+    # Check that the MD5 are correct
+    for obj_uuid in obj_md5s:
+        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+        )
+
+
+@pytest.mark.parametrize('loose_prefix_len,pack_prefix_len', [(-1, 2), (2, -1), (2, 0)])
+def test_invalid_prefix_lengths(temp_dir, pack_prefix_len, loose_prefix_len):
+    """Check if the prefix lengths are honored."""
+    container = Container(temp_dir)
+    with pytest.raises(ValueError):
+        container.init_container(clear=True, pack_prefix_len=pack_prefix_len, loose_prefix_len=loose_prefix_len)
 
 
 # Additional tests to implement

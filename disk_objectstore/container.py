@@ -204,6 +204,11 @@ class Container:
           The longer the length, the more folders will be used to store loose
           objects. Suggested values: 0 (for not using subfolders) or 2.
         """
+        if loose_prefix_len < 0:
+            raise ValueError('The loose prefix length can only be zero or a positive integer')
+        if pack_prefix_len <= 0:
+            raise ValueError('The pack prefix length can only be a non-zero positive integer')
+
         if clear:
             if os.path.exists(self._folder):
                 shutil.rmtree(self._folder)
