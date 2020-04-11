@@ -4,6 +4,7 @@ import os
 import uuid
 
 import click
+from profilehooks import profile
 
 from disk_objectstore import Container
 
@@ -13,7 +14,7 @@ from disk_objectstore import Container
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
 @click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
 @click.option(
-    '-d', '--add-directly-to-pack', is_flag=True, help='Add directly files to the packs rather than as loose objects.'
+    '-d', '--directly-to-pack', is_flag=True, help='Add directly files to the packs rather than as loose objects.'
 )
 @click.option(
     '-p',
@@ -24,8 +25,14 @@ from disk_objectstore import Container
 @click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
 @click.option('-B', '--num-bulk-calls', default=10, help='Number of bulk calls to get the files.')
 @click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
+@click.option(
+    '-P',
+    '--profile-file',
+    default=None,
+    help='Perform the bulk read with profiling and output results onto this file name.'
+)
 @click.help_option('-h', '--help')
-def main(num_files, min_size, max_size, add_directly_to_pack, path, clear, num_bulk_calls, compress_packs):
+def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_calls, compress_packs, profile_file):
     """Testing some basic functionality of the object-store, with timing."""
     # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
     import random
@@ -54,8 +61,8 @@ def main(num_files, min_size, max_size, add_directly_to_pack, path, clear, num_b
     total_size = sum(len(content) for content in files.values())
     print('Done. Total size: {} bytes (~{:.3f} MB).'.format(total_size, (total_size // 1024) / 1024))
 
-    if add_directly_to_pack:
-        # STore objects (directly to pack)
+    if directly_to_pack:
+        # Store objects (directly to pack)
         start = time.time()
         filenames = list(files.keys())
         files_content = [files[key] for key in filenames]
@@ -142,9 +149,23 @@ def main(num_files, min_size, max_size, add_directly_to_pack, path, clear, num_b
 
     ########################################
     # FIRST: single bulk read
+    def bulk_read_data(container, uuid_list):
+        """A function to read the data in bulk.
+
+        It's defined as a functon so it can be profiled."""
+        return container.get_object_contents(uuid_list, skip_if_missing=False)
+
     all_uuids = [uuid_mapping[filename] for filename in random_keys]
     start = time.time()
-    raw_retrieved = container.get_object_contents(all_uuids, skip_if_missing=False)
+
+    if profile_file is not None:
+        func = profile(sort='cumtime', filename=profile_file, stdout=False)(bulk_read_data)
+    else:
+        func = bulk_read_data
+    raw_retrieved = func(container=container, uuid_list=all_uuids)
+    if profile_file is not None:
+        print("You can check the profiling results running 'snakeviz {}'".format(profile_file))
+
     tot_time = time.time() - start
     print('Time to retrieve {} packed objects in random order WITH ONE BULK CALL: {} s'.format(num_files, tot_time))
     retrieved = {reverse_uuid_mapping[key]: val for key, val in raw_retrieved.items()}

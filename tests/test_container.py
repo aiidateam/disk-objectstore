@@ -1,4 +1,4 @@
-"""Test of the utils wrappers."""
+"""Test of the object-store container module."""
 import hashlib
 import random
 
@@ -80,6 +80,16 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
     # Store
     obj_md5s = _add_objects_loose_loop(temp_container, data)
 
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0, (
+        'The container should have no packed objects '
+        '(but there are {} instead)'.format(counts['packed'])
+    )
+    assert counts['loose'] == len(obj_md5s), (
+        'The container should have {} loose objects '
+        '(but there are {} instead)'.format(len(obj_md5s), counts['loose'])
+    )
+
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
     random.shuffle(random_keys)
@@ -112,6 +122,16 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     # Pack all loose objects
     temp_container.pack_all_loose(compress=use_compression)
 
+    counts = temp_container.count_objects()
+    assert counts['packed'] == len(obj_md5s), (
+        'The container should have {} packed objects '
+        '(but there are {} instead)'.format(len(obj_md5s), counts['packed'])
+    )
+    assert counts['loose'] == 0, (
+        'The container should have 0 loose objects '
+        '(but there are {} instead)'.format(counts['loose'])
+    )
+
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
     random.shuffle(random_keys)
@@ -130,12 +150,16 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
 
 
 # Additional tests to implement
+# - test initialisation with different loose and prefix lengths
 # - assert final object count in the two tests above
 # - test the util classes (in a different module)
 # - validation of pack names
 # - various exceptions
 # - test guards of packs
 # - test size measurements (packed and not)
+# - test that stream decompresser stops if the stream is partial
+
+# - It's not multithreaded. But check that it works with async event loops!
 
 # - Add testing with the locusts
 

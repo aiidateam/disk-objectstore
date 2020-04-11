@@ -32,10 +32,8 @@ setup(
         'sqlalchemy',
     ],
     extras_require={
-        'dev': [
-            'profilehooks', 'psutil', 'click', 'numpy', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest',
-            'pytest-cov'
-        ],
+        'dev':
+        ['profilehooks', 'psutil', 'click', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest', 'pytest-cov'],
     },
     packages=find_packages(),
     # Needed to include some static files declared in MANIFEST.in
@@ -48,7 +46,11 @@ setup(
     long_description=io.open(os.path.join(FOLDER, 'README.md'), encoding='utf-8').read(),
     long_description_content_type='text/markdown',
     classifiers=[
-        'Programming Language :: Python :: 3', 'License :: OSI Approved :: MIT License',
-        'Operating System :: OS Independent', 'Topic :: Software Development :: Libraries :: Python Modules'
+        'Programming Language :: Python :: 3', 'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6', 'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8', 'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent', 'Operating System :: MacOS :: MacOS X',
+        'Operating System :: Microsoft :: Windows', 'Operating System :: POSIX :: Linux',
+        'Topic :: Software Development :: Libraries :: Python Modules'
     ],
 )
