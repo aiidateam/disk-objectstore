@@ -230,8 +230,56 @@ def test_object_writer_existing_obj(temp_dir):
 
 
 def test_packed_object_reader():
-    #utils.PackedObjectReader
-    pass
+    """Test the functionality of the PackedObjectReader."""
+    bytestream = b'0123456789abcdef'
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tempfhandle:
+        tempfhandle.write(bytestream)
+
+    offset = 3
+    length = 5
+    expected_bytestream = bytestream[offset:offset + length]
+
+    with open(tempfhandle.name, 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
+
+        # Check the functionality is disabled
+        assert not packed_reader.seekable
+        with pytest.raises(OSError):
+            packed_reader.seek(0)
+        with pytest.raises(OSError):
+            packed_reader.tell()
+
+        # Read in one shot
+        assert packed_reader.read() == expected_bytestream
+
+    # Read 1 byte at a time
+    with open(tempfhandle.name, 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
+
+        data = []
+        while True:
+            piece = packed_reader.read(1)
+            if not piece:
+                break
+            data.append(piece)
+        assert b''.join(data) == expected_bytestream
+
+    # Read 2 bytes at a time (note that the length is odd, so it's not a multiple)
+    with open(tempfhandle.name, 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
+
+        data = []
+        while True:
+            piece = packed_reader.read(2)
+            if not piece:
+                break
+            data.append(piece)
+        assert b''.join(data) == expected_bytestream
+
+    # Offset beyond the file limit
+    with open(tempfhandle.name, 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=len(bytestream) + 10, length=length)
+        assert packed_reader.read() == b''
 
 
 def test_stream_decompresser():
@@ -278,11 +326,26 @@ def test_stream_decompresser():
 
         assert original == data, 'Uncompressed data is wrong (chunked read)'
 
+
+def test_decompresser_corrupt():
+    """Test that the stream decompresser raises on a corrupt input."""
+
     # Check that we get an error for an invalid stream of bytes
     decompresser = utils.StreamDecompresser(io.BytesIO(b'1234543'))
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert 'Error while uncompressing data' in str(excinfo.value)
+
+    # Check that we get an error for a truncated stream of bytes
+    original_data = b'someDATAotherTHINGS'
+    compressed_data = zlib.compress(original_data)
+    # I remove the last byte, so it's corrupted
+    corrupted_stream = io.BytesIO(compressed_data[:-1])
+
+    decompresser = utils.StreamDecompresser(corrupted_stream)
+    with pytest.raises(ValueError) as excinfo:
+        print(decompresser.read())
+    assert 'problem in the incoming buffer' in str(excinfo.value)
 
 
 def test_zero_stream_single_read():
@@ -294,7 +357,7 @@ def test_zero_stream_single_read():
     assert data == b'\x00' * length, 'The zero stream produced non-zero data'
 
 
-def test_zero_stream_multi_pread():
+def test_zero_stream_multi_read():
     """Test the ZeroStream class with multiple smaller .read() calls."""
     length = 23523
     chunk_size = 2342

@@ -1,16 +1,8 @@
 """Test of the object-store container module."""
 import hashlib
-import os
 import random
-import subprocess
-import tempfile
 
 import pytest
-
-from disk_objectstore.utils import nullcontext
-
-THIS_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-EXAMPLES_DIR = os.path.join(THIS_FILE_DIR, os.pardir, 'examples-and-benchmarks')
 
 
 def _assert_empty_repo(container):
@@ -155,53 +147,6 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
         assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
             obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
         )
-
-
-@pytest.mark.parametrize(
-    'idx_and_options',
-    enumerate([
-        [],
-        ['-c'],
-        ['-d'],
-        ['-z'],
-        ['-d', '-z'],
-        ['-B', '7'],  # Odd number of bulk calls
-        ['-P', 'TEMPFILE']
-    ])
-)
-def test_example_objectstore(temp_dir, idx_and_options):
-    """Test the example/profiling script 'example_objectstore'."""
-    idx, options = idx_and_options
-
-    tempfile_idx = None
-    try:
-        tempfile_idx = options.index('TEMPFILE')
-        context = tempfile.NamedTemporaryFile()
-    except ValueError:
-        # no need to create a tempfile
-        context = nullcontext(enter_result=None)
-
-    with context as tmpfile:
-        if tempfile_idx is not None:
-            options[tempfile_idx] = tmpfile.name
-        script = os.path.join(EXAMPLES_DIR, 'example_objectstore.py')
-        output = subprocess.check_output(['python', script, '-p', os.path.join(temp_dir, str(idx))] + options)
-        assert output != ''
-
-
-@pytest.mark.parametrize('idx_and_options', enumerate([
-    [],
-    ['-c'],
-    ['-m'],
-    ['-z'],
-    ['-z', '-m'],
-]))
-def test_example_profile_zeros(temp_dir, idx_and_options):
-    """Test the example/profiling script 'profile_zeros'."""
-    idx, options = idx_and_options
-    script = os.path.join(EXAMPLES_DIR, 'profile_zeros.py')
-    output = subprocess.check_output(['python', script, '-p', os.path.join(temp_dir, str(idx))] + options)
-    assert output != ''
 
 
 # Additional tests to implement

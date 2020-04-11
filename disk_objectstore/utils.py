@@ -292,13 +292,12 @@ class StreamDecompresser:
 
             if not next_chunk and not self._decompressor.unconsumed_tail:
                 # Nothing to do: no data read, and the unconsumed tail is over.
-                # We break.
-                break
-
-            if not next_chunk and len(self._decompressor.unconsumed_tail) == len(old_unconsumed):
+                if self._decompressor.eof:
+                    # Compressed file is over. We break
+                    break
                 raise ValueError(
-                    'There is no data in the reading buffer, and we are not consuming the '
-                    'remaining decompressed chunk: there must be a problem in the incoming buffer'
+                    "There is no data in the reading buffer, but we didn't reach the end of "
+                    'the compressed stream: there must be a problem in the incoming buffer'
                 )
 
         # Note that we could be here also with len(self._internal_buffer) < size,
