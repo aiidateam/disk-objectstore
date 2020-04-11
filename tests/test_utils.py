@@ -281,6 +281,11 @@ def test_packed_object_reader():
         packed_reader = utils.PackedObjectReader(fhandle, offset=len(bytestream) + 10, length=length)
         assert packed_reader.read() == b''
 
+    # Offset before the file limit, but longer length
+    with open(tempfhandle.name, 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=1000000)
+        assert packed_reader.read() == bytestream[offset:]
+
 
 def test_stream_decompresser():
     """Test the stream decompresser."""

@@ -20,10 +20,14 @@ implementation in [AiiDA](http://www.aiida.net) (note, however, that this
 package is completely independent of AiiDA).
 
 ## How to install
-
-To install in development mode, run, in a (python 3) virtual environment:
+To install, run:
 ```
-pip install -e .[testing]
+pip install disk-objectstore
+```
+
+To install in development mode, run, after checking out, in a (python 3) virtual environment:
+```
+pip install -e .[dev]
 ```
 
 ## Implementation considerations
@@ -101,7 +105,6 @@ This implementation, in particular, addresses the following aspects:
   covering the whole set of 100'000 objects) only takes ~3.4s. This should demonstrate
   that exporting a subset of the graph should be efficient (and the object store format
   could be used also inside the export file).
-
 
 - All operations internally (storing to a loose object, storing to a pack, reading
   from a loose object or from a pack, compression) are all happening via streaming.

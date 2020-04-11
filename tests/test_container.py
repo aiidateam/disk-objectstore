@@ -152,12 +152,10 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
 # Additional tests to implement
 # - test initialisation with different loose and prefix lengths
 # - assert final object count in the two tests above
-# - test the util classes (in a different module)
 # - validation of pack names
-# - various exceptions
+
 # - test guards of packs
 # - test size measurements (packed and not)
-# - test that stream decompresser stops if the stream is partial
 
 # - It's not multithreaded. But check that it works with async event loops!
 
