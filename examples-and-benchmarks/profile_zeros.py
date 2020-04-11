@@ -6,9 +6,9 @@ that in streaming mode, even when dealing with very large data, the memory usage
 limited."""
 import click
 import psutil
-import numpy as np
 
-from disk_objectstore.container import Container
+from disk_objectstore import Container
+from disk_objectstore.utils import ZeroStream
 
 
 def get_memory():
@@ -19,66 +19,6 @@ def get_memory():
         'vms': full_info.vms,
         'uss': full_info.uss,
     }
-
-
-class LimitLengthWrapper:
-    """A class to read from an open file handle, but stop after a given length.
-
-    This ensures that the .read() method works and does not go beyond the
-    length of the given object."""
-
-    @property
-    def seekable(self):
-        """Return whether object supports random access."""
-        return False
-
-    def seek(self, target, whence=0):  # pylint: disable=no-self-use
-        """Change stream position."""
-        raise OSError('Object not seekable')
-
-    def tell(self):  # pylint: disable=no-self-use
-        """Return current stream position."""
-        raise OSError('Object not seekable')
-
-    def __init__(self, fhandle, length):
-        """
-        Initialises the reader to a pack file.
-
-        :param fhandle: an open handle to the pack file, must be opened in read and binary mode.
-        :param length: the integer length of the byte stream.
-          The read() method will ensure that you never go beyond the given length.
-        """
-        assert 'b' in fhandle.mode
-        assert 'r' in fhandle.mode
-
-        self._fhandle = fhandle
-        self._length = length
-        self._pos = 0
-
-    def read(self, size=-1):
-        """
-        Read and return up to n bytes.
-
-        If the argument is omitted, None, or negative, reads and
-        returns all data until EOF (that corresponds to the length specified
-        in the __init__ method).
-
-        Returns an empty bytes object on EOF.
-        """
-        # Check how many bytes are left on this portion of the pack
-        # (avoid to go beyond)
-        remaining_bytes = self._length - self._pos
-
-        if size is None or size < 0:
-            stream = self._fhandle.read(remaining_bytes)
-            self._pos += remaining_bytes
-            return stream
-
-        # Get the requested bytes, but at most the remaining_bytes
-        bytes_to_fetch = min(remaining_bytes, size)
-        stream = self._fhandle.read(bytes_to_fetch)
-        self._pos += bytes_to_fetch
-        return stream
 
 
 @click.command()
@@ -104,12 +44,12 @@ def main(size_gb, path, clear, check_memory_measurement, compress_packs):
 
     if check_memory_measurement:  # To test that the measurement of the memory is reliable
         # Test of memory allocation
-        size_factor = 100  # 1 means 8MB (size of float64) -> this will allocate a 800MB array in mem
-        size = size_factor * 1024 * 1024
-        temp_array = np.zeros(size, dtype=np.float64)  #  noqa: F841
+        size_mb = 400
+        size = size_mb * 1024 * 1024
+        temp_array = b'\x00' * size  #  noqa: F841
 
         print('*' * 74)
-        print('AFTER CREATING AN ARRAY of {} MBs:'.format(size_factor * 8))
+        print('AFTER CREATING AN ARRAY of {} MBs:'.format(size_mb))
         end_mem = get_memory()
         for key in end_mem:
             print(
@@ -146,13 +86,12 @@ def main(size_gb, path, clear, check_memory_measurement, compress_packs):
     print('Currently known objects: {} packed, {} loose'.format(start_counts['packed'], start_counts['loose']))
     print('Pack objects on disk:', start_counts['pack_files'])
 
-    with open('/dev/zero', 'rb') as zero_handle:
-        zero_stream = LimitLengthWrapper(zero_handle, length=size_bytes)
-        start = time.time()
-        # Store objects (directly to pack)
-        obj_uuid = container.add_streamed_objects_to_pack(stream_list=[zero_stream], compress=compress_packs)[0]
-        tot_time = time.time() - start
-        print('Time to store one file of zeros of size {} GB: {:.4} s'.format(size_gb, tot_time))
+    zero_stream = ZeroStream(length=size_bytes)
+    start = time.time()
+    # Store objects (directly to pack)
+    obj_uuid = container.add_streamed_objects_to_pack(stream_list=[zero_stream], compress=compress_packs)[0]
+    tot_time = time.time() - start
+    print('Time to store one file of zeros of size {} GB: {:.4} s'.format(size_gb, tot_time))
 
     # Check that no loose files were created
     counts = container.count_objects()

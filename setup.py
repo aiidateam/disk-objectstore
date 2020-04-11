@@ -32,10 +32,8 @@ setup(
         'sqlalchemy',
     ],
     extras_require={
-        'dev': [
-            'profilehooks', 'psutil', 'click', 'numpy', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest',
-            'pytest-cov'
-        ],
+        'dev':
+        ['profilehooks', 'psutil', 'click', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest', 'pytest-cov'],
     },
     packages=find_packages(),
     # Needed to include some static files declared in MANIFEST.in

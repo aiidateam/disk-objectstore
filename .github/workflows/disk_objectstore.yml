@@ -51,4 +51,4 @@ jobs:
         pip install -r dev-requirements.txt
     - name: Test with pytest
       run: |
-        pytest --cov=disk_objectstore
+        pytest --cov=disk_objectstore --cov=examples-and-benchmarks
