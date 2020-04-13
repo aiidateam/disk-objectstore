@@ -51,7 +51,8 @@ jobs:
         pip install -r dev-requirements.txt
     - name: Test with pytest
       run: |
-        pytest --cov=disk_objectstore --cov=examples-and-benchmarks --cov-report=xml
+        pytest --cov=disk_objectstore --cov=examples-and-benchmarks
+        coverage xml
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
       with:

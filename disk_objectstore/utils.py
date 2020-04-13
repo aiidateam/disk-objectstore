@@ -4,7 +4,6 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 import os
-import shutil
 import uuid
 import zlib
 
@@ -146,8 +145,11 @@ class ObjectWriter:
 
             if os.path.exists(dest_loose_object):
                 raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._uuid))
-            # Hopefully this is a fast, atomic operation on most filesystems
-            shutil.move(self._obj_path, dest_loose_object)
+            # This is an atomic operation, at least according to this website:
+            # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
+            # but needs to be on the same filesystem (this should always be the case for us)
+            # Note that instead shutil.move is not guaranteed to be atomic!
+            os.rename(self._obj_path, dest_loose_object)
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
