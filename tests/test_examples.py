@@ -6,10 +6,11 @@ import tempfile
 
 import pytest
 
+import disk_objectstore
 from disk_objectstore.utils import nullcontext
 
-THIS_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-EXAMPLES_DIR = os.path.join(THIS_FILE_DIR, os.pardir, 'examples-and-benchmarks')
+MODULE_DIR = os.path.dirname(disk_objectstore.__file__)
+EXAMPLES_DIR = os.path.join(MODULE_DIR, 'examples')
 
 
 @pytest.mark.parametrize(
