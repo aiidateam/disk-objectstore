@@ -658,13 +658,3 @@ def test_get_object_streams_closes(temp_container, generate_random_data):
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
-
-
-# Additional tests to implement
-# - test guards of packs
-
-# - It's not multithreaded. But check that it works with async event loops!
-
-# - Add memory measurements?
-
-# - Add performance measurements?
