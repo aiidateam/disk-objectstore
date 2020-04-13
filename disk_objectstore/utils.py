@@ -241,7 +241,7 @@ class StreamDecompresser:
     uncompressed bytes when being read via the .read() method.
     """
 
-    _CHUNKSIZE = 65536
+    _CHUNKSIZE = 524288
 
     def __init__(self, compressed_stream):
         """Create the class from a given compressed bytestream.
@@ -280,9 +280,8 @@ class StreamDecompresser:
             return b''
 
         while len(self._internal_buffer) < size:
-            next_chunk = self._compressed_stream.read(self._CHUNKSIZE)
-
             old_unconsumed = self._decompressor.unconsumed_tail
+            next_chunk = self._compressed_stream.read(max(0, self._CHUNKSIZE - len(old_unconsumed)))
 
             # In the previous step, I might have some leftover data
             # since I am using the max_size parameter of .decompress()

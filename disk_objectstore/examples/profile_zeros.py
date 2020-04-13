@@ -4,8 +4,12 @@
 This checks the performance (can be run with profiling as well) and can be used to check
 that in streaming mode, even when dealing with very large data, the memory usage is always
 limited."""
+import time
+
 import click
 import psutil
+
+from memory_profiler import memory_usage, profile
 
 from disk_objectstore import Container
 from disk_objectstore.utils import ZeroStream
@@ -21,65 +25,8 @@ def get_memory():
     }
 
 
-@click.command()
-@click.option('-s', '--size-gb', default=1, help='File size in GB.')
-@click.option(
-    '-p',
-    '--path',
-    default='/tmp/test-container',
-    help='The path to a test folder in which the container will be created.'
-)
-@click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
-@click.option(
-    '-m', '--check-memory-measurement', is_flag=True, help='Clear the repository path folder before starting.'
-)
-@click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
-@click.help_option('-h', '--help')
-def main(size_gb, path, clear, check_memory_measurement, compress_packs):
-    """Testing performance and size on disk when storing a single big file containing only zeros."""
-    # pylint: disable=too-many-locals,too-many-statements
-    import time
-
-    start_mem = get_memory()
-
-    if check_memory_measurement:  # To test that the measurement of the memory is reliable
-        # Test of memory allocation
-        size_mb = 400
-        size = size_mb * 1024 * 1024
-        temp_array = b'\x00' * size  #  noqa: F841
-
-        print('*' * 74)
-        print('AFTER CREATING AN ARRAY of {} MBs:'.format(size_mb))
-        end_mem = get_memory()
-        for key in end_mem:
-            print(
-                '{}: {} -> {} (DELTA = {} = {:.2f} MB)'.format(
-                    key, start_mem[key], end_mem[key], end_mem[key] - start_mem[key],
-                    (end_mem[key] - start_mem[key]) / 1024. / 1024.
-                )
-            )
-        del temp_array
-
-        print('*' * 74)
-        print('AFTER DELETING THE ARRAY:')
-        end_mem = get_memory()
-        for key in end_mem:
-            print(
-                '{}: {} -> {} (DELTA = {} = {:.2f} MB)'.format(
-                    key, start_mem[key], end_mem[key], end_mem[key] - start_mem[key],
-                    (end_mem[key] - start_mem[key]) / 1024. / 1024.
-                )
-            )
-        print('*' * 74)
-
-    container = Container(path)
-    if clear:
-        print('Clearing the container...')
-        container.init_container(clear=clear)
-    if not container.is_initialised:
-        print('Initialising the container...')
-        container.init_container()
-
+def main_run(container, size_gb, compress_packs):
+    """Main function run, possibly to be profiled."""
     size_bytes = size_gb * 1024 * 1024 * 1024
 
     start_counts = container.count_objects()
@@ -129,6 +76,86 @@ def main(size_gb, path, clear, check_memory_measurement, compress_packs):
     #assert md5_beginning == md5_retrieved
 
     print('All tests passed')
+
+
+@click.command()
+@click.option('-s', '--size-gb', default=1, help='File size in GB.')
+@click.option(
+    '-p',
+    '--path',
+    default='/tmp/test-container',
+    help='The path to a test folder in which the container will be created.'
+)
+@click.option('-c', '--clear', is_flag=True, help='Clear the repository path folder before starting.')
+@click.option('-m', '--check-memory-measurement', is_flag=True, help='Perform various additional memory measurements.')
+@click.option('-l', '--with-line-profiler', is_flag=True, help='When profiling memory, also run a line profiler.')
+@click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
+@click.help_option('-h', '--help')
+def main(size_gb, path, clear, check_memory_measurement, with_line_profiler, compress_packs):
+    """Testing performance and size on disk when storing a single big file containing only zeros."""
+    start_mem = get_memory()
+
+    if check_memory_measurement:  # To test that the measurement of the memory is reliable
+        # Test of memory allocation
+        size_mb = 400
+        size = size_mb * 1024 * 1024
+        temp_array = b'\x00' * size  #  noqa: F841
+
+        print('*' * 74)
+        print('AFTER CREATING AN ARRAY of {} MBs:'.format(size_mb))
+        end_mem = get_memory()
+        for key in end_mem:
+            print(
+                '{}: {} -> {} (DELTA = {} = {:.2f} MB)'.format(
+                    key, start_mem[key], end_mem[key], end_mem[key] - start_mem[key],
+                    (end_mem[key] - start_mem[key]) / 1024. / 1024.
+                )
+            )
+        del temp_array
+
+        print('*' * 74)
+        print('AFTER DELETING THE ARRAY:')
+        end_mem = get_memory()
+        for key in end_mem:
+            print(
+                '{}: {} -> {} (DELTA = {} = {:.2f} MB)'.format(
+                    key, start_mem[key], end_mem[key], end_mem[key] - start_mem[key],
+                    (end_mem[key] - start_mem[key]) / 1024. / 1024.
+                )
+            )
+        print('*' * 74)
+
+    container = Container(path)
+    if clear:
+        print('Clearing the container...')
+        container.init_container(clear=clear)
+    if not container.is_initialised:
+        print('Initialising the container...')
+        container.init_container()
+
+    function = profile(main_run) if with_line_profiler else main_run
+    if check_memory_measurement:
+        memory_check_interval = 0.01  # seconds
+        # memory_report will be a list of memory every 'interval'
+        memory_report = memory_usage(
+            (function, tuple(), {
+                'container': container,
+                'size_gb': size_gb,
+                'compress_packs': compress_packs
+            }),
+            interval=memory_check_interval
+        )
+        assert len(memory_report) > 0, (
+            '>> Process too fast for checking memory usage '
+            'with interval {} s!!!'.format(memory_check_interval)
+        )
+        print(
+            '>> Max memory usage (check interval {} s, {} checks performed): {:.3f} MB'.format(
+                memory_check_interval, len(memory_report), max(memory_report)
+            )
+        )
+    else:
+        function(container=container, size_gb=size_gb, compress_packs=compress_packs)
 
     end_mem = get_memory()
     for key in end_mem:

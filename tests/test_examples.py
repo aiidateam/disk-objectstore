@@ -45,13 +45,17 @@ def test_example_objectstore(temp_dir, idx_and_options):
         assert output != ''
 
 
-@pytest.mark.parametrize('idx_and_options', enumerate([
-    [],
-    ['-c'],
-    ['-m'],
-    ['-z'],
-    ['-z', '-m'],
-]))
+@pytest.mark.parametrize(
+    'idx_and_options', enumerate([
+        [],
+        ['-c'],
+        ['-m'],
+        ['-z'],
+        ['-z', '-m'],
+        ['-l'],
+        ['-m', '-l'],
+    ])
+)
 def test_example_profile_zeros(temp_dir, idx_and_options):
     """Test the example/profiling script 'profile_zeros'."""
     idx, options = idx_and_options
