@@ -4,7 +4,6 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 import os
-import shutil
 import uuid
 import zlib
 
@@ -130,9 +129,13 @@ class ObjectWriter:
         if exc_type is None:
             if self._loose_prefix_len:
                 parent_folder = os.path.join(self._loose_folder, self._uuid[:self._loose_prefix_len])
-                # Create parent folder the first time
-                if not os.path.exists(parent_folder):
+                # Create parent folder the first time; done with try/except
+                # rather than with if/else to avoid problems at the beginning, for concurrent writing
+                try:
                     os.mkdir(parent_folder)
+                except FileExistsError:
+                    # The folder already exists, great! No work to do
+                    pass
 
                 dest_loose_object = os.path.join(
                     self._loose_folder, self._uuid[:self._loose_prefix_len], self._uuid[self._loose_prefix_len:]
@@ -142,8 +145,11 @@ class ObjectWriter:
 
             if os.path.exists(dest_loose_object):
                 raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._uuid))
-            # Hopefully this is a fast, atomic operation on most filesystems
-            shutil.move(self._obj_path, dest_loose_object)
+            # This is an atomic operation, at least according to this website:
+            # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
+            # but needs to be on the same filesystem (this should always be the case for us)
+            # Note that instead shutil.move is not guaranteed to be atomic!
+            os.rename(self._obj_path, dest_loose_object)
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
