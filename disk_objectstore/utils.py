@@ -4,7 +4,6 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 import os
-import shutil
 import uuid
 import zlib
 
@@ -110,6 +109,8 @@ class ObjectWriter:
 
         :note: Do not close the file, it will be closed automatically.
         """
+        if self._filehandle is not None:
+            raise IOError("You have already opened this ObjectWriter instance with UUID '{}'".format(self.get_uuid()))
         if self._stored:
             raise ModificationNotAllowed("You have already stored this object '{}'".format(self.get_uuid()))
         self._obj_path = os.path.join(self._sandbox_folder, self._uuid)
@@ -123,13 +124,18 @@ class ObjectWriter:
         """
         if not self._filehandle.closed:
             self._filehandle.close()
+        self._filehandle = None
 
         if exc_type is None:
             if self._loose_prefix_len:
                 parent_folder = os.path.join(self._loose_folder, self._uuid[:self._loose_prefix_len])
-                # Create parent folder the first time
-                if not os.path.exists(parent_folder):
+                # Create parent folder the first time; done with try/except
+                # rather than with if/else to avoid problems at the beginning, for concurrent writing
+                try:
                     os.mkdir(parent_folder)
+                except FileExistsError:
+                    # The folder already exists, great! No work to do
+                    pass
 
                 dest_loose_object = os.path.join(
                     self._loose_folder, self._uuid[:self._loose_prefix_len], self._uuid[self._loose_prefix_len:]
@@ -139,8 +145,11 @@ class ObjectWriter:
 
             if os.path.exists(dest_loose_object):
                 raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._uuid))
-            # Hopefully this is a fast, atomic operation on most filesystems
-            shutil.move(self._obj_path, dest_loose_object)
+            # This is an atomic operation, at least according to this website:
+            # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
+            # but needs to be on the same filesystem (this should always be the case for us)
+            # Note that instead shutil.move is not guaranteed to be atomic!
+            os.rename(self._obj_path, dest_loose_object)
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
@@ -281,18 +290,20 @@ class StreamDecompresser:
             # The second parameter is max_size. We know that in any case we do
             # not need more than `size` bytes. Leftovers will be left in
             # .unconsumed_tail and reused a the next loop
-            decompressed_chunk = self._decompressor.decompress(compressed_chunk, size)
+            try:
+                decompressed_chunk = self._decompressor.decompress(compressed_chunk, size)
+            except zlib.error as exc:
+                raise ValueError('Error while uncompressing data: {}'.format(exc))
             self._internal_buffer += decompressed_chunk
 
             if not next_chunk and not self._decompressor.unconsumed_tail:
                 # Nothing to do: no data read, and the unconsumed tail is over.
-                # We break.
-                break
-
-            if not next_chunk and len(self._decompressor.unconsumed_tail) == len(old_unconsumed):
+                if self._decompressor.eof:
+                    # Compressed file is over. We break
+                    break
                 raise ValueError(
-                    'There is no data in the reading buffer, and we are not consuming the '
-                    'remaining decompressed chunk: there must be a problem in the incoming buffer'
+                    "There is no data in the reading buffer, but we didn't reach the end of "
+                    'the compressed stream: there must be a problem in the incoming buffer'
                 )
 
         # Note that we could be here also with len(self._internal_buffer) < size,
@@ -300,3 +311,42 @@ class StreamDecompresser:
         to_return, self._internal_buffer = self._internal_buffer[:size], self._internal_buffer[size:]
 
         return to_return
+
+
+class ZeroStream:
+    """A class to return an (unseekable) stream returning only zeros, with length length."""
+
+    def __init__(self, length):
+        """
+        Initialises the object and specifies the expected length.
+
+        :param length: the integer length of the byte stream.
+          The read() method will return this number of bytes.
+        """
+        self._length = length
+        self._pos = 0
+
+    def read(self, size=-1):
+        """
+        Read and return up to n bytes (composed only of zeros).
+
+        If the argument is omitted, None, or negative, reads and
+        returns all data until EOF (that corresponds to the length specified
+        in the __init__ method).
+
+        Returns an empty bytes object on EOF.
+        """
+        # Check how many bytes are left on this portion of the pack
+        # (avoid to go beyond)
+        remaining_bytes = self._length - self._pos
+
+        if size is None or size < 0:
+            stream = b'\x00' * remaining_bytes
+            self._pos += remaining_bytes
+            return stream
+
+        # Get the requested bytes, but at most the remaining_bytes
+        bytes_to_fetch = min(remaining_bytes, size)
+        stream = b'\x00' * bytes_to_fetch
+        self._pos += bytes_to_fetch
+        return stream

@@ -14,7 +14,7 @@
     args: ["-i"]
     exclude: &exclude_files >
       (?x)^(
-        examples-and-benchmarks/performance-test-results/.*/.*\.py
+        performance-benchmarks/.*/.*\.py
       )$
 
   # prospector: collection of linters
