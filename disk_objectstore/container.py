@@ -35,7 +35,7 @@ class Container:
 
         :param folder: the path to a folder that will host this object-store continer.
         """
-        self._folder = folder
+        self._folder = os.path.realpath(folder)
         self._session = None  # Will be populated by the _get_session function
         # These act as caches and will be populated by the corresponding properties
         self._loose_prefix_len = None
@@ -85,7 +85,7 @@ class Container:
         """
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
-                raise FileExistsError('Pack index does not exist')
+                raise FileNotFoundError('Pack index does not exist')
             return None
 
         engine = create_engine('sqlite:///{}'.format(self._get_pack_index_path()))
@@ -177,13 +177,13 @@ class Container:
     @property
     def is_initialised(self):
         """Return True if the container is already initialised."""
-        if not os.path.exists(self._folder):
-            return False
+        # If the config file does not exist, the container is not initialised
         try:
             with open(self._get_config_file()) as fhandle:
                 json.load(fhandle)
         except (ValueError, OSError, IOError):
             return False
+        # I also check that the three folders exist
         for folder in [self._get_pack_folder(), self._get_loose_folder(), self._get_sandbox_folder()]:
             if not os.path.exists(folder):
                 return False
@@ -213,13 +213,22 @@ class Container:
             if os.path.exists(self._folder):
                 shutil.rmtree(self._folder)
 
-        if os.path.exists(self._folder):
+        if self.is_initialised:
             raise FileExistsError(
                 'The container already exists, so you cannot initialise it - '
                 'use the clear option if you want to overwrite with a clean one'
             )
 
-        os.makedirs(self._folder)
+        try:
+            os.makedirs(self._folder)
+        except FileExistsError:
+            # The directory already exists: it's ok
+            pass
+
+        if os.listdir(self._folder):
+            raise FileExistsError(
+                'There is already some file or folder in the Container folder, I cannot initialise it!'
+            )
 
         # Create config file
         with open(self._get_config_file(), 'w') as fhandle:
@@ -233,8 +242,7 @@ class Container:
             )
 
         for folder in [self._get_pack_folder(), self._get_loose_folder(), self._get_sandbox_folder()]:
-            if not os.path.exists(folder):
-                os.makedirs(folder)
+            os.makedirs(folder)
 
         self._get_session(create=True)
 
@@ -294,20 +302,16 @@ class Container:
         :param uuid: the UUID of the object to stream.
         """
         with self.get_object_streams_and_size(uuids=[uuid], skip_if_missing=False) as triplets:
-            obj_uuid, stream, _ = next(triplets)  # pylint: disable=stop-iteration-return
-            assert obj_uuid == uuid
+            counter = 0
+            for obj_uuid, stream, _ in triplets:
+                counter += 1
+                assert counter == 1, 'There is more than one item returned by get_object_streams_and_size'
+                assert obj_uuid == uuid
 
-            if stream is None:
-                raise NotExistent('No object with UUID {}'.format(uuid))
+                if stream is None:
+                    raise NotExistent('No object with UUID {}'.format(uuid))
 
-            yield stream
-
-            try:
-                next(triplets)
-                raise AssertionError('There is more than one item returned by get_object_streams_and_size')
-            except StopIteration:
-                # There should be only one entry
-                pass
+                yield stream
 
     @contextmanager
     def get_object_streams_and_size(self, uuids, skip_if_missing=True):  # pylint: disable=too-many-statements
@@ -336,7 +340,7 @@ class Container:
             manager has always the same length as the input ``uuids`` list.
         """
 
-        def get_object_stream_generator(uuids, last_open_file, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
+        def get_object_stream_generator(uuids, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
             """Return a generator yielding tripltes of (uuid, open stream, size).
 
             :note: The stream is already open and at the right position, and can
@@ -346,17 +350,16 @@ class Container:
                ``read()`` on the returned stream
 
             :param uuids: a list of UUIDs for which we want to get a stream reader
-            :param last_open_file: must be a list of length one, initialised with None.
-                During the run, the first (and only) element of the list is updated
-                with the currently open file.
-                When the generator is exhausted, the file is closed (but the outer
-                context manager will still close the file, if it's open - this is needed
-                if the caller of ``get_object_streams_and_size`` exits the ``with`` context manager
-                without exhausting this generator).
             :param skip_if_missing: if True, just skip UUIDs that are not in the container
                 (i.e., neither packed nor loose). If False, return ``None`` instead of the
                 stream.
             """
+            # During the run, this variable is updated with the currently open file.
+            # This file is closed before opening a new one - so we ensure only one is
+            # open at a given time.
+            # The try/finally block makes sure we close it at the end, if any was open.
+            last_open_file = None
+
             try:
                 uuids_in_packs = set()
 
@@ -375,14 +378,14 @@ class Container:
                     if pack_metadata:
                         uuids_in_packs.update(pack_metadata.keys())
                         pack_path = self._get_pack_path_from_pack_id(pack_id)
-                        if last_open_file[0] is not None:
-                            if not last_open_file[0].closed:
-                                last_open_file[0].close()
+                        if last_open_file is not None:
+                            if not last_open_file.closed:
+                                last_open_file.close()
                         # Open only once per file
-                        last_open_file[0] = open(pack_path, mode='rb')
+                        last_open_file = open(pack_path, mode='rb')
                         for obj_uuid, metadata in pack_metadata.items():
                             obj_reader = PackedObjectReader(
-                                fhandle=last_open_file[0], offset=metadata[0], length=metadata[1]
+                                fhandle=last_open_file, offset=metadata[0], length=metadata[1]
                             )
                             if metadata[2]:
                                 obj_reader = StreamDecompresser(obj_reader)
@@ -395,14 +398,14 @@ class Container:
                 for loose_uuid in set(uuids).difference(uuids_in_packs):
                     obj_path = self._get_loose_path_from_uuid(uuid=loose_uuid)
                     try:
-                        last_open_file[0] = open(obj_path, mode='rb')
-                        yield loose_uuid, last_open_file[0], os.path.getsize(obj_path)
+                        last_open_file = open(obj_path, mode='rb')
+                        yield loose_uuid, last_open_file, os.path.getsize(obj_path)
                     except FileNotFoundError:
                         loose_not_found.append(loose_uuid)
                         continue
-                    if last_open_file[0] is not None:
-                        if not last_open_file[0].closed:
-                            last_open_file[0].close()
+                    if last_open_file is not None:
+                        if not last_open_file.closed:
+                            last_open_file.close()
 
                 # There were some loose objects that were not found
                 # Give a final try - if they have been deleted in the meantime
@@ -442,13 +445,11 @@ class Container:
                         # are in the same pack, but as discussed above we should reach
                         # here only if someone packed exactly while we were listing the objects,
                         # and this should be rare
-                        if last_open_file[0] is not None:
-                            if not last_open_file[0].closed:
-                                last_open_file[0].close()
-                        last_open_file[0] = open(pack_path, mode='rb')
-                        obj_reader = PackedObjectReader(
-                            fhandle=last_open_file[0], offset=metadata[0], length=metadata[1]
-                        )
+                        if last_open_file is not None:
+                            if not last_open_file.closed:
+                                last_open_file.close()
+                        last_open_file = open(pack_path, mode='rb')
+                        obj_reader = PackedObjectReader(fhandle=last_open_file, offset=metadata[0], length=metadata[1])
                         if metadata[2]:
                             obj_reader = StreamDecompresser(obj_reader)
                         yield obj_uuid, obj_reader, metadata[3]
@@ -459,17 +460,10 @@ class Container:
                             yield missing_uuid, None, 0
 
             finally:
-                if last_open_file[0] is not None:
-                    last_open_file[0].close()
+                if last_open_file is not None:
+                    last_open_file.close()
 
-        # I want it to be a list of length 1 to make sure I actually have a reference to it
-        last_open_file = [None]
-
-        yield get_object_stream_generator(uuids=uuids, last_open_file=last_open_file, skip_if_missing=skip_if_missing)
-
-        if last_open_file[0] is not None:
-            if not last_open_file[0].closed:
-                last_open_file[0].close()
+        yield get_object_stream_generator(uuids=uuids, skip_if_missing=skip_if_missing)
 
     def get_object_contents(self, uuids, skip_if_missing=True):
         """Get the content of a number of objects with given UUIDs.
@@ -627,8 +621,9 @@ class Container:
         """
         for first_level in os.listdir(self._get_loose_folder()):
             if self.loose_prefix_len:
-                if not self._is_valid_loose_prefix(first_level):
-                    continue
+                assert self._is_valid_loose_prefix(first_level), (
+                    "Found invalid subfolder '{}' in the loose pack".format(first_level)
+                )
                 for second_level in os.listdir(os.path.join(self._get_loose_folder(), first_level)):
                     yield '{}{}'.format(first_level, second_level)
             else:

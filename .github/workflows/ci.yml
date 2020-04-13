@@ -57,4 +57,5 @@ jobs:
       with:
         file: ./coverage.xml
         name: disk-objectstore
-        fail_ci_if_error: true
+        ## Commenting the following lines - if often fails, and if at least one manages to push, it should be enough
+        # fail_ci_if_error: true

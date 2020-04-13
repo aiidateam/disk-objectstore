@@ -130,9 +130,13 @@ class ObjectWriter:
         if exc_type is None:
             if self._loose_prefix_len:
                 parent_folder = os.path.join(self._loose_folder, self._uuid[:self._loose_prefix_len])
-                # Create parent folder the first time
-                if not os.path.exists(parent_folder):
+                # Create parent folder the first time; done with try/except
+                # rather than with if/else to avoid problems at the beginning, for concurrent writing
+                try:
                     os.mkdir(parent_folder)
+                except FileExistsError:
+                    # The folder already exists, great! No work to do
+                    pass
 
                 dest_loose_object = os.path.join(
                     self._loose_folder, self._uuid[:self._loose_prefix_len], self._uuid[self._loose_prefix_len:]

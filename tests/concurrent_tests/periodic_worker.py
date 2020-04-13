@@ -10,6 +10,7 @@ The script will also write the objects it created (in a safe way also when there
 (defined by the -s option). Then each locust will try to read back *all* files written by *all* locusts (including
 itself) and check if the MD5s are correct.
 """
+import datetime
 import hashlib
 import json
 import os
@@ -22,6 +23,11 @@ import click
 import psutil
 
 from disk_objectstore.container import Container, NotExistent
+
+
+def timestamp():
+    """Return a timestamp string to print for logging."""
+    return datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
 
 
 @click.command()
@@ -58,11 +64,11 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
 
     start_counts = container.count_objects()
     print(
-        '[{}] Currently known objects: {} packed, {} loose'.format(
-            proc_id, start_counts['packed'], start_counts['loose']
+        '[{} {}] Currently known objects: {} packed, {} loose'.format(
+            proc_id, timestamp(), start_counts['packed'], start_counts['loose']
         )
     )
-    print('[{}] Pack objects on disk: {}'.format(proc_id, start_counts['pack_files']))
+    print('[{} {}] Pack objects on disk: {}'.format(proc_id, timestamp(), start_counts['pack_files']))
 
     for iteration in range(repetitions):
         if iteration != 0:
@@ -70,8 +76,8 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
 
         contents = []
         print(
-            '[{}] Iteration {}/{}, generating {} files in memory...'.format(
-                proc_id, iteration + 1, repetitions, num_files
+            '[{} {}] Iteration {}/{}, generating {} files in memory...'.format(
+                proc_id, timestamp(), iteration + 1, repetitions, num_files
             )
         )
         for _ in range(num_files):
@@ -106,8 +112,9 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                 chunk_md5s = json.load(fhandle)
             all_md5s.update(chunk_md5s)
         print(
-            '[{}] {} object MD5s read from {} files ({}).'.format(
-                proc_id, len(all_md5s), file_count, 'with bulk reads' if bulk_read else 'with single-object reads'
+            '[{} {}] {} object MD5s read from {} files ({}).'.format(
+                proc_id, timestamp(), len(all_md5s), file_count,
+                'with bulk reads' if bulk_read else 'with single-object reads'
             )
         )
 
