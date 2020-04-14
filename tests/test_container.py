@@ -17,6 +17,7 @@ import disk_objectstore.exceptions as exc
 
 
 class UnopenableBytesIO(io.BytesIO):
+    """An extension of BytesIO that cannot be used as a context manager."""
 
     def __enter__(self):
         raise AttributeError('__enter__ method disabled for UnopenableBytesIO')
