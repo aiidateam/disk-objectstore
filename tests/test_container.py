@@ -226,12 +226,15 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
         )
 
 
+# Try a large and a small one
+@pytest.mark.parametrize('pack_size_target', [1000, 40000000])
 @pytest.mark.parametrize('use_compression,open_streams', [(True, True), (True, False), (False, True), (False, False)])
-def test_directly_to_pack_streamed(temp_container, generate_random_data, use_compression, open_streams):
+def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compression, open_streams, pack_size_target):  # pylint: disable=too-many-locals
     """Add a number of objects directly to packs, using streams.
 
     Then retrieve them and check the content is correct (always bulk retrieve for simplicity)."""
-    _assert_empty_repo(temp_container)
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
 
     data = generate_random_data()
 
@@ -242,10 +245,10 @@ def test_directly_to_pack_streamed(temp_container, generate_random_data, use_com
     if open_streams:
         streams = []
         streams_copy = []
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir2:
             # Read a given fixed order, otherwise later when reconstructing obj_md5s we would have a problem
             for key, content in zip(keys, values):
-                file_path = os.path.join(temp_dir, key)
+                file_path = os.path.join(temp_dir2, key)
                 with open(file_path, 'bw') as fhandle:
                     fhandle.write(content)
                 streams.append(utils.LazyOpener(file_path, mode='rb'))
@@ -296,16 +299,18 @@ def test_directly_to_pack_streamed(temp_container, generate_random_data, use_com
         )
 
 
-@pytest.mark.parametrize('loose_prefix_len,pack_prefix_len', [(0, 2), (2, 2), (3, 2), (0, 3), (2, 3), (3, 3)])
-def test_prefix_lengths(temp_dir, generate_random_data, pack_prefix_len, loose_prefix_len):
-    """Check if the prefix lengths are honored."""
+@pytest.mark.parametrize(
+    'loose_prefix_len,pack_size_target', [(0, 1000), (2, 1000), (3, 1000), (0, 40000000), (2, 40000000), (3, 40000000)]
+)
+def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_prefix_len):
+    """Check if the loose prefix length are honored, and if everything works also with vey small pack size target."""
     container = Container(temp_dir)
-    container.init_container(clear=True, pack_prefix_len=pack_prefix_len, loose_prefix_len=loose_prefix_len)
+    container.init_container(clear=True, pack_size_target=pack_size_target, loose_prefix_len=loose_prefix_len)
     # Check that the `get_folder` method returns the expected folder name
     assert container.get_folder() == os.path.realpath(temp_dir)
 
     assert container.loose_prefix_len == loose_prefix_len
-    assert container.pack_prefix_len == pack_prefix_len
+    assert container.pack_size_target == pack_size_target
 
     _assert_empty_repo(container)
     data = generate_random_data()
@@ -342,7 +347,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_prefix_len, loose_p
 
     pack_firstlevel = os.listdir(container._get_pack_folder())  # pylint: disable=protected-access
     assert len(pack_firstlevel) > 0
-    assert all(len(inode) == pack_prefix_len for inode in pack_firstlevel)
+    # Pack IDs are zero-based, so the number of packs should be the current pack ID + 1
+    assert len([inode for inode in pack_firstlevel if container._is_valid_pack_id(inode)]  # pylint: disable=protected-access
+              ) == container._current_pack_id + 1  # pylint: disable=protected-access
 
     counts = container.count_objects()
     assert counts['packed'] == len(obj_md5s), (
@@ -362,8 +369,8 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_prefix_len, loose_p
         )
 
     # Test also the validation functions
-    valid_pack_ids = ['0' * pack_prefix_len, 'a' * pack_prefix_len]
-    invalid_pack_ids = ['0' * (pack_prefix_len + 1), 'a' * (pack_prefix_len + 1), 'g' * pack_prefix_len]
+    valid_pack_ids = ['0', '1', '2', '10', '100']
+    invalid_pack_ids = ['', '01', '0a', '1-']
     valid_loose_prefixes = ['0' * loose_prefix_len, 'a' * loose_prefix_len]
     invalid_loose_prefixes = [
         '0' * (loose_prefix_len + 1), 'a' * (loose_prefix_len + 1), 'g' * loose_prefix_len if loose_prefix_len else 'g'
@@ -390,12 +397,20 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_prefix_len, loose_p
     container.close()
 
 
-@pytest.mark.parametrize('loose_prefix_len,pack_prefix_len', [(-1, 2), (2, -1), (2, 0)])
-def test_invalid_prefix_lengths(temp_dir, pack_prefix_len, loose_prefix_len):
-    """Check if the prefix lengths are honored."""
+@pytest.mark.parametrize('pack_size_target', [-1, -2])
+def test_invalid_pack_size_target(temp_dir, pack_size_target):
+    """Check that the prefix lengths and the size targets."""
     container = Container(temp_dir)
     with pytest.raises(ValueError):
-        container.init_container(clear=True, pack_prefix_len=pack_prefix_len, loose_prefix_len=loose_prefix_len)
+        container.init_container(clear=True, pack_size_target=pack_size_target)
+
+
+@pytest.mark.parametrize('loose_prefix_len', [-1, -2])
+def test_invalid_prefix_length(temp_dir, loose_prefix_len):
+    """Check that the prefix lengths and the size targets."""
+    container = Container(temp_dir)
+    with pytest.raises(ValueError):
+        container.init_container(clear=True, loose_prefix_len=loose_prefix_len)
 
 
 def test_initialisation(temp_dir):
@@ -404,9 +419,9 @@ def test_initialisation(temp_dir):
     assert not container.is_initialised
 
     with pytest.raises(exc.NotInitialised):
-        _ = container.loose_prefix_len
+        container.loose_prefix_len  # pylint: disable=pointless-statement
     with pytest.raises(exc.NotInitialised):
-        _ = container.pack_prefix_len
+        container.pack_size_target  # pylint: disable=pointless-statement
 
     # Check that the session cannot be obtained before initialising
     with pytest.raises(FileNotFoundError):

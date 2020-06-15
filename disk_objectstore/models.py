@@ -16,3 +16,4 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
     size = Column(Integer, nullable=False)  # uncompressed size; if uncompressed, size == length
     offset = Column(Integer, nullable=False)
     length = Column(Integer, nullable=False)
+    pack_id = Column(Integer, nullable=False)  # integer ID of the pack in which this entry is stored

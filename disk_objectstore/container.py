@@ -7,7 +7,7 @@ import os
 import shutil
 import zlib
 
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 
@@ -17,6 +17,8 @@ from sqlalchemy.orm import sessionmaker
 from .models import Base, Obj
 from .utils import nullcontext, ObjectWriter, PackedObjectReader, StreamDecompresser, get_new_uuid
 from .exceptions import NotExistent, NotInitialised
+
+ObjQueryResults = namedtuple('ObjQueryResults', ['uuid', 'offset', 'length', 'compressed', 'size'])
 
 
 class Container:
@@ -39,7 +41,8 @@ class Container:
         self._session = None  # Will be populated by the _get_session function
         # These act as caches and will be populated by the corresponding properties
         self._loose_prefix_len = None
-        self._pack_prefix_len = None
+        self._pack_size_target = None
+        self._current_pack_id = None
 
     def get_folder(self):
         """Return the path to the folder that will host the object-store container."""
@@ -81,7 +84,7 @@ class Container:
 
         :param create: if True, creates the sqlite file and schema.
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
-           is missing, either raise an exception (FileExistsError) if this flag is True, or return None
+           is missing, either raise an exception (FileNotFoundError) if this flag is True, or return None
         """
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
@@ -166,6 +169,7 @@ class Container:
 
         :param pack_id: the pack ID.
         """
+        pack_id = str(pack_id)
         assert self._is_valid_pack_id(pack_id), 'Invalid pack ID {}'.format(pack_id)
         return os.path.join(self._get_pack_folder(), pack_id)
 
@@ -173,6 +177,33 @@ class Container:
         """Return the path to the SQLite file containing the index of packed objects.
         """
         return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))
+
+    def _get_pack_id_to_write_to(self):
+        """Return the pack ID to write the next object.
+
+        This function checks that there is a pack file with the current pack ID.
+        If it does not exist, that it returns that ID (the file is new and must be created).
+        If it exists, it returns the ID only if the size is smaller than the container's pack_size_target,
+        otherwise it increases by one until it finds a valid "non-full" pack ID.
+
+        :return: an integer pack ID.
+        """
+        # Default to zero if not set (e.g. if it's None)
+        pack_id = self._current_pack_id or 0
+        while True:
+            pack_path = self._get_pack_path_from_pack_id(pack_id)
+            if not os.path.exists(pack_path):
+                # Use this ID - the pack file does not exist yet
+                break
+            if os.path.getsize(pack_path) < self.pack_size_target:
+                # Use this ID - the pack file is not "full" yet
+                break
+            # Try the next pack
+            pack_id += 1
+
+        # Cache the value
+        self._current_pack_id = pack_id
+        return pack_id
 
     @property
     def is_initialised(self):
@@ -189,7 +220,7 @@ class Container:
                 return False
         return True
 
-    def init_container(self, clear=False, pack_prefix_len=2, loose_prefix_len=2):
+    def init_container(self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2):
         """Initialise the container folder, if not already done.
 
         If this is called multiple times, it does not corrupt the data,
@@ -197,17 +228,16 @@ class Container:
 
         :param clear: if True, delete everything in the container and
           initialise a new, empty one.
-        :param pack_prefix_len: The length of the prefix of the packed objects.
-          The longer the length, the more packs will be created. Suggested
-          values: 2 or 3.
+        :param pack_size_target: The minimum size (in bytes) of a pack file before
+          a new pack file is created. Pack files will be typically larger than this.
         :param loose_prefix_len: The length of the prefix of the loose objects.
           The longer the length, the more folders will be used to store loose
           objects. Suggested values: 0 (for not using subfolders) or 2.
         """
         if loose_prefix_len < 0:
             raise ValueError('The loose prefix length can only be zero or a positive integer')
-        if pack_prefix_len <= 0:
-            raise ValueError('The pack prefix length can only be a non-zero positive integer')
+        if pack_size_target <= 0:
+            raise ValueError('The pack size target can only be a non-zero positive integer')
 
         if clear:
             if os.path.exists(self._folder):
@@ -236,7 +266,7 @@ class Container:
                 {
                     'container_version': 1,  # For future compatibility, this is the version of the format
                     'loose_prefix_len': loose_prefix_len,
-                    'pack_prefix_len': pack_prefix_len
+                    'pack_size_target': pack_size_target
                 },
                 fhandle
             )
@@ -265,18 +295,14 @@ class Container:
         return self._loose_prefix_len
 
     @property
-    def pack_prefix_len(self):
+    def pack_size_target(self):
         """Return the length of the pack name, when sharding.
 
         This is read from the repository configuration.
         """
-        if self._pack_prefix_len is None:
-            self._pack_prefix_len = self._get_repository_config()['pack_prefix_len']
-        return self._pack_prefix_len
-
-    def _split_uuid_for_pack(self, uuid):
-        """Return the pack_id and the remainder of the UUID from a given UUID"""
-        return uuid[:self.pack_prefix_len], uuid[self.pack_prefix_len:]
+        if self._pack_size_target is None:
+            self._pack_size_target = self._get_repository_config()['pack_size_target']
+        return self._pack_size_target
 
     def get_object_content(self, uuid):
         """Get the content of an object with a given UUID.
@@ -364,32 +390,32 @@ class Container:
                 uuids_in_packs = set()
 
                 packs = defaultdict(list)
-                for obj_uuid in uuids:
-                    pack_id = self._split_uuid_for_pack(obj_uuid)[0]
-                    packs[pack_id].append(obj_uuid)
+                # Currently ordering in the DB (it's ordered across all packs, but this should not be
+                # a problem as we then split them by pack). To be checked, performance-wise, if it's better
+                # to order in python instead
+                session = self._get_cached_session()
+                query = session.query(Obj).filter(
+                    Obj.uuid.in_(uuids)
+                ).with_entities(Obj.pack_id, Obj.uuid, Obj.offset, Obj.length, Obj.compressed,
+                                Obj.size).order_by(Obj.offset)
+                for res in query:
+                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
-                for pack_id, obj_uuids in packs.items():
-                    session = self._get_cached_session()
-                    pack_metadata = {
-                        res[0]: (res[1], res[2], res[3], res[4])
-                        for res in session.query(Obj).filter(Obj.uuid.in_(obj_uuids)).
-                        with_entities(Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
-                    }
-                    if pack_metadata:
-                        uuids_in_packs.update(pack_metadata.keys())
-                        pack_path = self._get_pack_path_from_pack_id(pack_id)
-                        if last_open_file is not None:
-                            if not last_open_file.closed:
-                                last_open_file.close()
-                        # Open only once per file
-                        last_open_file = open(pack_path, mode='rb')
-                        for obj_uuid, metadata in pack_metadata.items():
-                            obj_reader = PackedObjectReader(
-                                fhandle=last_open_file, offset=metadata[0], length=metadata[1]
-                            )
-                            if metadata[2]:
-                                obj_reader = StreamDecompresser(obj_reader)
-                            yield obj_uuid, obj_reader, metadata[3]
+                for pack_int_id, pack_metadata in packs.items():
+                    uuids_in_packs.update(obj.uuid for obj in pack_metadata)
+                    pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+                    if last_open_file is not None:
+                        if not last_open_file.closed:
+                            last_open_file.close()
+                    # Open only once per file
+                    last_open_file = open(pack_path, mode='rb')
+                    for metadata in pack_metadata:
+                        obj_reader = PackedObjectReader(
+                            fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                        )
+                        if metadata.compressed:
+                            obj_reader = StreamDecompresser(obj_reader)
+                        yield metadata.uuid, obj_reader, metadata.size
 
                 # Collect loose UUIDS that are not found
                 # Reason: a concurrent process might have packed them,
@@ -428,18 +454,23 @@ class Container:
                     if self._session is not None:
                         self._session.close()
                         self._session = None
-                    session = self._get_cached_session()
-                    pack_metadata = {
-                        res[0]: (res[1], res[2], res[3], res[4])
-                        for res in session.query(Obj).filter(Obj.uuid.in_(loose_not_found)).
-                        with_entities(Obj.uuid, Obj.offset, Obj.length, Obj.compressed, Obj.size).order_by(Obj.offset)
-                    }
-                    # These are really missing objects
-                    really_not_found = set(loose_not_found).difference(pack_metadata)
 
-                    for obj_uuid, metadata in pack_metadata.items():
-                        pack_id = self._split_uuid_for_pack(obj_uuid)[0]
-                        pack_path = self._get_pack_path_from_pack_id(pack_id)
+                    packs = defaultdict(list)
+                    session = self._get_cached_session()
+                    query = session.query(Obj).filter(
+                        Obj.uuid.in_(uuids)
+                    ).with_entities(Obj.pack_id, Obj.uuid, Obj.offset, Obj.length, Obj.compressed,
+                                    Obj.size).order_by(Obj.offset)
+                    for res in query:
+                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+
+                    # I will construct here the really missing objects
+                    really_not_found = set(loose_not_found)
+
+                    for pack_int_id, pack_metadata in packs.items():
+                        really_not_found.difference_update(obj.uuid for obj in pack_metadata)
+
+                        pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
 
                         # Close possibly open file - might not be optimised if all
                         # are in the same pack, but as discussed above we should reach
@@ -449,10 +480,14 @@ class Container:
                             if not last_open_file.closed:
                                 last_open_file.close()
                         last_open_file = open(pack_path, mode='rb')
-                        obj_reader = PackedObjectReader(fhandle=last_open_file, offset=metadata[0], length=metadata[1])
-                        if metadata[2]:
-                            obj_reader = StreamDecompresser(obj_reader)
-                        yield obj_uuid, obj_reader, metadata[3]
+
+                        for metadata in pack_metadata:
+                            obj_reader = PackedObjectReader(
+                                fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                            )
+                            if metadata.compressed:
+                                obj_reader = StreamDecompresser(obj_reader)
+                            yield metadata.uuid, obj_reader, metadata.size
 
                     # If there are really missing objects, and skip_if_missing is False, yield them
                     if really_not_found and not skip_if_missing:
@@ -531,11 +566,16 @@ class Container:
 
         return retval
 
-    def _is_valid_pack_id(self, pack_id):
+    @staticmethod
+    def _is_valid_pack_id(pack_id):
         """Return True if the name is a valid pack ID."""
-        if len(pack_id) != self.pack_prefix_len:
+        if not pack_id:
+            # Must be a non-empty string
             return False
-        if not all(char in '0123456789abcdef' for char in pack_id):
+        if pack_id != '0' and pack_id[0] == '0':
+            # The ID must be a valid integer: either zero, or it should not start by zero
+            return False
+        if not all(char in '0123456789' for char in pack_id):
             return False
         return True
 
@@ -697,29 +737,55 @@ class Container:
         This is a maintenance operation, needs to be done only by one process.
         :param compress: if True, compress objects before storing them.
         """
-        packs = defaultdict(list)
-        for loose_uuid in self._list_loose():
-            pack_id = self._split_uuid_for_pack(loose_uuid)[0]
-            packs[pack_id].append(loose_uuid)
-        for pack_id, loose_objects in packs.items():
-            if loose_objects:
-                session = self._get_cached_session()
-                # Avoid concurrent writes
-                with self.lock_pack(pack_id) as pack_handle:
-                    for obj_uuid in loose_objects:
-                        obj = Obj(uuid=obj_uuid)
-                        obj.compressed = compress
-                        obj.offset = pack_handle.tell()
-                        with open(self._get_loose_path_from_uuid(obj_uuid), 'rb') as loose_handle:
-                            obj.size = self._write_data_to_packfile(
-                                pack_handle=pack_handle, read_handle=loose_handle, compress=compress
-                            )
-                        obj.length = pack_handle.tell() - obj.offset
-                        session.add(obj)
-                    # Committing as soon as we are done with one pack
-                    session.commit()
+        # I invert the list order so I can just 'pop' from the bottom that is efficient
+        loose_objects = list(self._list_loose())[::-1]
+        pack_int_id = self._get_pack_id_to_write_to()
+        session = self._get_cached_session()
+
+        # Outer loop: this is used to continue when a new pack file needs to be created
+        while loose_objects:
+            # Store the last pack integer ID, needed to know later if I need to open a new pack
+            last_pack_int_id = pack_int_id
+            # Avoid concurrent writes on the pack file
+            with self.lock_pack(str(pack_int_id)) as pack_handle:
+                loose_objects_this_pack = []
+                # Inner loop: continue until when there is a file, or
+                # if we need to change pack (in this case `break` is called)
+                while loose_objects:
+                    # Check in which pack I need to write to the next object
+                    pack_int_id = self._get_pack_id_to_write_to()
+                    if pack_int_id != last_pack_int_id:
+                        # new pack file needed!
+                        # Break from the inner while loop. This will:
+                        # 1. go down after the while loop, performing commits and
+                        #    final closing operations for this pack file
+                        # 2. close the pack file, that was opened in the with statement
+                        # 3. Iterate again with the outer loop, opening a new file
+                        #    with the new pack_int_id that was just generated
+                        break
+
+                    # Get next UUID to process
+                    loose_uuid = loose_objects.pop()
+                    # Keep track of it for later deletion
+                    loose_objects_this_pack.append(loose_uuid)
+
+                    obj = Obj(uuid=loose_uuid)
+                    obj.pack_id = pack_int_id
+                    obj.compressed = compress
+                    obj.offset = pack_handle.tell()
+                    with open(self._get_loose_path_from_uuid(loose_uuid), 'rb') as loose_handle:
+                        obj.size = self._write_data_to_packfile(
+                            pack_handle=pack_handle, read_handle=loose_handle, compress=compress
+                        )
+                    obj.length = pack_handle.tell() - obj.offset
+                    session.add(obj)
+
+                # Let's commit and do final operations before closing the pack file.
+                # Committing as soon as we are done with one pack
+                session.commit()
+
                 # Clean up loose objects, for each pack
-                for obj_uuid in loose_objects:
+                for obj_uuid in loose_objects_this_pack:
                     os.remove(self._get_loose_path_from_uuid(obj_uuid))
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
@@ -737,35 +803,60 @@ class Container:
             and passing here a number of ``LazyOpener`` objects.
         :return: a list of object UUIDs
         """
-        packs = defaultdict(list)
         uuids = []
 
-        for pos in range(len(stream_list)):
-            obj_uuid = get_new_uuid()
-            uuids.append(obj_uuid)
-            pack_id = self._split_uuid_for_pack(obj_uuid)[0]
-            packs[pack_id].append((pos, obj_uuid))
-        for pack_id, obj_ids in packs.items():
-            if obj_ids:
-                session = self._get_cached_session()
-                # Avoid concurrent writes
-                with self.lock_pack(pack_id) as pack_handle:
-                    for pos, obj_uuid in obj_ids:
-                        obj = Obj(uuid=obj_uuid)
-                        obj.compressed = compress
-                        obj.offset = pack_handle.tell()
-                        if open_streams:
-                            stream_context_manager = stream_list[pos]
-                        else:
-                            stream_context_manager = nullcontext(stream_list[pos])
-                        with stream_context_manager as stream:
-                            obj.size = self._write_data_to_packfile(
-                                pack_handle=pack_handle, read_handle=stream, compress=compress
-                            )
-                        obj.length = pack_handle.tell() - obj.offset
-                        session.add(obj)
-                    # Commit as soon as we are done with one pack
-                    session.commit()
+        # Make a copy of the list and revert its order, so we can pop from the list
+        # without affecting the original list, and it's from the end so it's fast
+        working_stream_list = list(stream_list[::-1])
+        pack_int_id = self._get_pack_id_to_write_to()
+        session = self._get_cached_session()
+
+        # Outer loop: this is used to continue when a new pack file needs to be created
+        while working_stream_list:
+            # Store the last pack integer ID, needed to know later if I need to open a new pack
+            last_pack_int_id = pack_int_id
+            # Avoid concurrent writes on the pack file
+            with self.lock_pack(str(pack_int_id)) as pack_handle:
+                # Inner loop: continue until when there is a file, or
+                # if we need to change pack (in this case `break` is called)
+                while working_stream_list:
+                    # Check in which pack I need to write to the next object
+                    pack_int_id = self._get_pack_id_to_write_to()
+                    if pack_int_id != last_pack_int_id:
+                        # Break from the inner while loop. This will:
+                        # 1. go down after the while loop, performing commits and
+                        #    final closing operations for this pack file
+                        # 2. close the pack file, that was opened in the with statement
+                        # 3. Iterate again with the outer loop, opening a new file
+                        #    with the new pack_int_id that was just generated
+                        break
+
+                    # Get next stream, possibly preparing it to be open, or wrapping it
+                    # if it is already open so it does not get open again
+                    next_stream = working_stream_list.pop()
+                    if open_streams:
+                        stream_context_manager = next_stream
+                    else:
+                        stream_context_manager = nullcontext(next_stream)
+
+                    obj_uuid = get_new_uuid()
+                    obj = Obj(uuid=obj_uuid)
+                    obj.pack_id = pack_int_id
+                    obj.compressed = compress
+                    obj.offset = pack_handle.tell()
+                    with stream_context_manager as stream:
+                        obj.size = self._write_data_to_packfile(
+                            pack_handle=pack_handle, read_handle=stream, compress=compress
+                        )
+                    obj.length = pack_handle.tell() - obj.offset
+                    session.add(obj)
+                    # Append the newly generated UUID to the list of UUIDs to return
+                    uuids.append(obj_uuid)
+
+                # This pack file is complete.
+                # Let's commit before closing the pack file.
+                session.commit()
+
         return uuids
 
     def add_objects_to_pack(self, content_list, compress=False):
