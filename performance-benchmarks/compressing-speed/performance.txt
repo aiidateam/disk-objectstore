@@ -1,0 +1,267 @@
+- The tests are run with different sets of data:
+  - Random data: randomly-generated data, essentially uncompressed.
+  - Random string of only lowercase characters ('a' to 'z')
+  - an actual text file including text and numerical data
+
+Times on a Mac OS X with 2.6 GHz Intel Core i7.
+
+The compression speed depends heavily on the type of data.
+For instance:
+- for random-incompressible data, the time to compress is essentially independent of the level (~27MB/s, except for level zero that does not compress and goes at 1300 MB/s). Time to decompress independent as well (~1020 MB/s, except with level zero that actually gets slower, 880 MB/s). Size remains ~ the same (95MB).
+- for random lower-case strings, compression speed is 40MB/s < level 5, and goes to 24 MB/s for higher levels, but in "steps". Size goes down to 62MB for low levels, 60MB  for high levels.
+- for actual text files, speed decreases smoothly with level (from 95MB/s at level 1 to 16MB/s at level 9); also sizes decrease, from 21MB to 18MB, even if high compression levels are expensive by do not bring much advantage)
+
+
+Below, I check the dependency (fixing level 1 for simplicity) as a function of the number of files (at fixed total size of 95MB), instead.
+
+In general, for all types of data, the speed increases a bit with a few large files. Then it goes down a lot for a lot of small files.
+The compression size is roughly independent of the number of files, except for very many small files (that become hard to compress as there is overhead from the file format, and not much repetition for compression.
+The increase in speed might be due to the fact that the decompress function is called by passing the whole string internally, that possibly requires new allocations of contiguous areas in memeory; one might want to check that using zlib.decompressobj maybe gives different results.
+Instead, for many small objects, the decrease in speed might be due to the time needed by python to loop.
+
+Note that instead the decompression speed does not depend much in the number of files (or just slowly decreases) for few files, and also degrades for too many objects.
+
+See for instance the results for a random string of lowercase characters:
+# number of objects, time_compress, final size MB, compression speed MB/s, time_decompress, decompression speed MB/s
+1, 2.7724506855010986, 62.839332580566406, 34.39824273137182, 0.5383920669555664, 177.13379801433013
+100, 2.9461560249328613, 62.85711669921875, 32.37012257108762, 0.5339188575744629, 178.6178373130876
+1000, 2.4098141193389893, 63.022902488708496, 39.574600744220156, 0.5977120399475098, 159.55414190585827
+10000, 1.8421709537506104, 61.020310401916504, 51.76904534644816, 0.5944950580596924, 160.41753475947195
+100000, 2.867393970489502, 59.87932109832764, 33.259270481183485, 0.7997817993164062, 119.24181285712923
+1000000, 14.549081087112427, 79.99029636383057, 6.554876632387557, 3.0056562423706055, 31.72932097032071
+
+
+SOME CONCLUSIONS:
+- with uncompressible data, it doesn't matter what level we use, it costs (in terms of time) the same
+- for compressible data, they are generally faster in compression, and having lower level is faster, and the slowest (9) gets similar to the uncompressible case (sometimes gets worse).
+
+- Unless one goes to many small objects, the performance mostly depends on the total size and not the number of files.
+- For many files, performance and compression rate degrades a lot. Up to 100'000 files of 1kb size, it's still OK (except for very compressible files, where we start to see some degradation). 1'000'000 files of 100 bytes are really probably not worth compressing. This might be useful for making strategies for compression.
+- Note that in our scenario, as we want to have fast random access to any file, we need anyway to compress any file, an not compress a bit stream.
+
+
+
+RESULTS
+
+############## Random data
+
+./measure.py
+1 objects generated in 2.908051013946533 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 0
+Total time to compress 1 objects: 0.07315611839294434 s (final size: 95.37471389770508 MB, speed: 1303.6152509948213 MB/s)
+Total time to decompress back: 0.10918402671813965 s (speed: 873.4558937528251 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 3.440692186355591 s (final size: 95.39643383026123 MB, speed: 27.717513359321735 MB/s)
+Total time to decompress back: 0.09359884262084961 s (speed: 1018.8954154800781 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 3
+Total time to compress 1 objects: 3.425990104675293 s (final size: 95.39643383026123 MB, speed: 27.83645857893209 MB/s)
+Total time to decompress back: 0.09228992462158203 s (speed: 1033.3460779349612 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 5
+Total time to compress 1 objects: 3.6785569190979004 s (final size: 95.39652919769287 MB, speed: 25.925229305412554 MB/s)
+Total time to decompress back: 0.09377789497375488 s (speed: 1016.950014364419 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 7
+Total time to compress 1 objects: 3.6298282146453857 s (final size: 95.39652919769287 MB, speed: 26.273263086071932 MB/s)
+Total time to decompress back: 0.09402680397033691 s (speed: 1014.2579308631082 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 9
+Total time to compress 1 objects: 3.575817823410034 s (final size: 95.39652919769287 MB, speed: 26.670103554011327 MB/s)
+Total time to decompress back: 0.09165596961975098 s (speed: 1040.4934019712148 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+############## Random string of only lowercase characters
+
+ ./measure.py
+1 objects generated in 46.064619064331055 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 0
+Total time to compress 1 objects: 0.13165616989135742 s (final size: 95.37471389770508 MB, speed: 724.3673556607498 MB/s)
+Total time to decompress back: 0.0738670825958252 s (speed: 1291.068068336233 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 2.3551337718963623 s (final size: 62.83922290802002 MB, speed: 40.49342452587515 MB/s)
+Total time to decompress back: 0.46941184997558594 s (speed: 203.16366458491632 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 3
+Total time to compress 1 objects: 2.34018611907959 s (final size: 62.816184997558594 MB, speed: 40.75207132590532 MB/s)
+Total time to decompress back: 0.46063923835754395 s (speed: 207.03280072420074 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 5
+Total time to compress 1 objects: 3.932784080505371 s (final size: 60.62499713897705 MB, speed: 24.2493433884044 MB/s)
+Total time to decompress back: 0.6259112358093262 s (speed: 152.36574482851617 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 7
+Total time to compress 1 objects: 3.921261787414551 s (final size: 60.62499713897705 MB, speed: 24.320598014320453 MB/s)
+Total time to decompress back: 0.60788893699646 s (speed: 156.88298607938043 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 9
+Total time to compress 1 objects: 3.8875441551208496 s (final size: 60.62499713897705 MB, speed: 24.531536578176915 MB/s)
+Total time to decompress back: 0.6151096820831299 s (speed: 155.04134371231768 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+############## Actual text file of ~100MB
+
+$ ./measure.py
+1 objects generated in 0.25642895698547363 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 0
+Total time to compress 1 objects: 0.07486319541931152 s (final size: 95.37471389770508 MB, speed: 1273.889407291106 MB/s)
+Total time to decompress back: 0.08226704597473145 s (speed: 1159.242203371656 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 0.996492862701416 s (final size: 21.495755195617676 MB, speed: 95.70307546618164 MB/s)
+Total time to decompress back: 0.3048238754272461 s (speed: 312.8607675726072 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 3
+Total time to compress 1 objects: 1.3290460109710693 s (final size: 20.934812545776367 MB, speed: 71.75630554050169 MB/s)
+Total time to decompress back: 0.26078104972839355 s (speed: 365.6992398027053 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 5
+Total time to compress 1 objects: 2.3545141220092773 s (final size: 18.987354278564453 MB, speed: 40.504081393761645 MB/s)
+Total time to decompress back: 0.2722299098968506 s (speed: 350.31944754623123 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 7
+Total time to compress 1 objects: 3.6206488609313965 s (final size: 18.741117477416992 MB, speed: 26.3398731287331 MB/s)
+Total time to decompress back: 0.2735779285430908 s (speed: 348.59329533085423 MB/s)
+------------------------------------------------------------------------
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 9
+Total time to compress 1 objects: 6.070675849914551 s (final size: 18.648781776428223 MB, speed: 15.709524606221128 MB/s)
+Total time to decompress back: 0.27265405654907227 s (speed: 349.77448290214886 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+########################################################################
+###### TEST AT LEVEL 1 AS A FUNCTION OF THE NUMBER OF FILES  ###########
+########################################################################
+
+
+############## Random data
+
+$ ./measure.py
+1 objects generated in 3.6006417274475098 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 4.060683012008667 s (final size: 95.39643383026123 MB, speed: 23.485564216314025 MB/s)
+Total time to decompress back: 0.09551596641540527 s (speed: 998.4449220339321 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100 objects generated in 3.3327598571777344 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100 objects: 3.7143311500549316 s (final size: 95.39709091186523 MB, speed: 25.675532898894758 MB/s)
+Total time to decompress back: 0.03446602821350098 s (speed: 2766.9980146789244 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000 objects generated in 3.1532528400421143 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000 objects: 3.3095569610595703 s (final size: 95.40653228759766 MB, speed: 28.81576983346214 MB/s)
+Total time to decompress back: 0.031599998474121094 s (speed: 3017.956843217142 MB/s)
+------------------------------------------------------------------------
+========================================================================
+10000 objects generated in 3.2185652256011963 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 10000 objects: 1.5723700523376465 s (final size: 95.47233581542969 MB, speed: 60.65202749113798 MB/s)
+Total time to decompress back: 0.024634122848510742 s (speed: 3871.3548774232263 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100000 objects generated in 3.8942768573760986 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100000 objects: 7.280225992202759 s (final size: 96.41647338867188 MB, speed: 13.099515281910902 MB/s)
+Total time to decompress back: 0.16372990608215332 s (speed: 582.4680043044385 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000000 objects generated in 10.872250080108643 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000000 objects: 21.238361120224 s (final size: 105.85784721374512 MB, speed: 4.4903385482890394 MB/s)
+Total time to decompress back: 0.8306610584259033 s (speed: 114.80907967606618 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+############## Random string of only lowercase characters
+
+$ ./measure.py
+1 objects generated in 53.730292081832886 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 2.7724506855010986 s (final size: 62.839332580566406 MB, speed: 34.39824273137182 MB/s)
+Total time to decompress back: 0.5383920669555664 s (speed: 177.13379801433013 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100 objects generated in 14.591155052185059 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100 objects: 2.9461560249328613 s (final size: 62.85711669921875 MB, speed: 32.37012257108762 MB/s)
+Total time to decompress back: 0.5339188575744629 s (speed: 178.6178373130876 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000 objects generated in 14.34500765800476 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000 objects: 2.4098141193389893 s (final size: 63.022902488708496 MB, speed: 39.574600744220156 MB/s)
+Total time to decompress back: 0.5977120399475098 s (speed: 159.55414190585827 MB/s)
+------------------------------------------------------------------------
+========================================================================
+10000 objects generated in 12.023615837097168 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 10000 objects: 1.8421709537506104 s (final size: 61.020310401916504 MB, speed: 51.76904534644816 MB/s)
+Total time to decompress back: 0.5944950580596924 s (speed: 160.41753475947195 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100000 objects generated in 14.432919025421143 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100000 objects: 2.867393970489502 s (final size: 59.87932109832764 MB, speed: 33.259270481183485 MB/s)
+Total time to decompress back: 0.7997817993164062 s (speed: 119.24181285712923 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000000 objects generated in 62.15849184989929 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000000 objects: 14.549081087112427 s (final size: 79.99029636383057 MB, speed: 6.554876632387557 MB/s)
+Total time to decompress back: 3.0056562423706055 s (speed: 31.72932097032071 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+
+############## (The first part of an) actual text file of ~100MB
+
+$ ./measure.py
+1 objects generated in 0.2928488254547119 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1 objects: 1.1742658615112305 s (final size: 21.495755195617676 MB, speed: 81.21451433314357 MB/s)
+Total time to decompress back: 0.32707905769348145 s (speed: 291.57302920322564 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100 objects generated in 0.10412788391113281 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100 objects: 1.035447120666504 s (final size: 19.493579864501953 MB, speed: 92.10265762218569 MB/s)
+Total time to decompress back: 0.2524881362915039 s (speed: 377.7105453007143 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000 objects generated in 0.13344311714172363 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000 objects: 0.9983069896697998 s (final size: 20.90167999267578 MB, speed: 95.52916350126803 MB/s)
+Total time to decompress back: 0.2704768180847168 s (speed: 352.59003827364864 MB/s)
+------------------------------------------------------------------------
+========================================================================
+10000 objects generated in 0.562852144241333 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 10000 objects: 1.0882210731506348 s (final size: 24.204254150390625 MB, speed: 87.63608240420828 MB/s)
+Total time to decompress back: 0.28455495834350586 s (speed: 335.1459141523741 MB/s)
+------------------------------------------------------------------------
+========================================================================
+100000 objects generated in 5.100826025009155 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 100000 objects: 2.841128349304199 s (final size: 64.75448608398438 MB, speed: 33.566745291173056 MB/s)
+Total time to decompress back: 0.7435469627380371 s (speed: 128.260132069458 MB/s)
+------------------------------------------------------------------------
+========================================================================
+1000000 objects generated in 44.46807503700256 s. Total size: 100000000 bytes (~95.367 MB).
+TESTING FOR ZLIB COMPRESSION WITH LEVEL 1
+Total time to compress 1000000 objects: 13.516535997390747 s (final size: 96.32110595703125 MB, speed: 7.055611856398332 MB/s)
+Total time to decompress back: 2.9939017295837402 s (speed: 31.853895102256576 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+

@@ -1,0 +1,74 @@
+Results:
+- all tested hashes (second round of tests) are more or less equally fast, in a range of 300-700MB/s. In any case much faster than disk writing, so we can take the most secure.
+
+- Hashing a lot of small files or only one file has little impact on the speed, within the noise, up to 10'000 objects; for 100'000 we start seeing a factor of 2 slowdown, and we lose 1 order of magnitude for 1'000'000 - this is probably due to the speed (slowness) of python in loops more than the performance of hashing.
+
+- Note that when calculating the hash on 1'000'000 objects, it takes ~2 microseconds, that is less than the time to get a new UUID - so in the end it might be interesting to use some hash (SHA1 or even better some more robust one), instead of the UUID?
+
+
+TESTING FOR HASHING FUNCTION openssl_sha1
+1 objects generated in 2.9287238121032715 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.13505315780639648 s (speed: 706.1473658937883 MB/s)
+------------------------------------------------------------------------
+100 objects generated in 2.9481160640716553 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 100 objects: 0.14347505569458008 s (speed: 664.6969480439631 MB/s)
+------------------------------------------------------------------------
+1000 objects generated in 2.922168016433716 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1000 objects: 0.14273810386657715 s (speed: 668.1287550923938 MB/s)
+------------------------------------------------------------------------
+10000 objects generated in 3.0062472820281982 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 10000 objects: 0.1531987190246582 s (speed: 622.5080225721409 MB/s)
+------------------------------------------------------------------------
+100000 objects generated in 3.5137219429016113 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 100000 objects: 0.286344051361084 s (speed: 333.0519044740528 MB/s)
+------------------------------------------------------------------------
+1000000 objects generated in 8.938827991485596 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1000000 objects: 1.7123980522155762 s (speed: 55.69232662769875 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
+
+
+
+
+TESTING FOR HASHING FUNCTION openssl_md5
+1 objects generated in 2.9460747241973877 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.16471290588378906 s (speed: 578.9918593744572 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION openssl_sha1
+1 objects generated in 2.8841490745544434 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.1441638469696045 s (speed: 661.5211347733546 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION openssl_sha224
+1 objects generated in 2.8424651622772217 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.30089592933654785 s (speed: 316.9449046748581 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION openssl_sha256
+1 objects generated in 2.8666939735412598 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.29676103591918945 s (speed: 321.36102822674593 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION openssl_sha384
+1 objects generated in 2.8801589012145996 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.24504804611206055 s (speed: 389.17850255787573 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION openssl_sha512
+1 objects generated in 2.9483461380004883 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.23977279663085938 s (speed: 397.7408320738207 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION blake2b
+1 objects generated in 2.881521224975586 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.1616828441619873 s (speed: 589.8426152441874 MB/s)
+------------------------------------------------------------------------
+========================================================================
+TESTING FOR HASHING FUNCTION blake2s
+1 objects generated in 2.86034893989563 s. Total size: 100000000 bytes (~95.367 MB).
+Total time to compute hash for 1 objects: 0.19968485832214355 s (speed: 477.5897003005233 MB/s)
+------------------------------------------------------------------------
+========================================================================
+
