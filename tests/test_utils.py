@@ -8,22 +8,8 @@ import zlib
 import psutil
 import pytest
 
-import disk_objectstore.utils as utils
+from disk_objectstore import utils
 import disk_objectstore.exceptions as exc
-
-
-def _assert_is_uuid(possible_uuid):
-    """Check that a string is a valid UUID.
-
-    In particular, it should be 32 hex characters, without dashes."""
-    assert len(possible_uuid) == 32
-    assert all(char in '0123456789abcdef' for char in possible_uuid)
-
-
-def test_get_new_uuid():
-    """Check that the get_new_uuid function returns a UUID composed of 32 hex characters, without dashes."""
-    new_uuid = utils.get_new_uuid()
-    _assert_is_uuid(new_uuid)
 
 
 def test_lazy_opener_read():
@@ -81,8 +67,9 @@ def test_nullcontext():
         assert manager == result
 
 
+@pytest.mark.parametrize('hash_type', ['sha256'])
 @pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
-def test_object_writer(temp_dir, loose_prefix_len):
+def test_object_writer(temp_dir, loose_prefix_len, hash_type):
     """Test the ObjectWriter, directly writing objects (loose, via a sandbox)."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
@@ -97,7 +84,10 @@ def test_object_writer(temp_dir, loose_prefix_len):
     assert not os.listdir(loose_folder)
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type
     )
 
     # Just creating the object should not create files
@@ -115,15 +105,14 @@ def test_object_writer(temp_dir, loose_prefix_len):
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
 
-    obj_uuid = object_writer.get_uuid()
-    _assert_is_uuid(obj_uuid)
+    obj_hashkey = object_writer.get_hashkey()
     # Open manually the file, implicitly checking
     # that the prefix length is the expected one,
     # and that the content is correct
     if loose_prefix_len:
-        loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
+        loose_filename = os.path.join(loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:])
     else:
-        loose_filename = os.path.join(loose_folder, obj_uuid)
+        loose_filename = os.path.join(loose_folder, obj_hashkey)
     with open(loose_filename, 'rb') as fhandle:
         assert fhandle.read() == content
 
@@ -139,7 +128,7 @@ def test_object_writer_with_exc(temp_dir):
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
     )
 
     assert not os.listdir(sandbox_folder)
@@ -175,7 +164,7 @@ def test_object_writer_not_twice(temp_dir):
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
     )
 
     # The first open should go through
@@ -190,8 +179,8 @@ def test_object_writer_not_twice(temp_dir):
         # The exception should not have corrupted the first stream. I write again something
         fhandle.write(content)
 
-    obj_uuid = object_writer.get_uuid()
-    loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
+    obj_hashkey = object_writer.get_hashkey()
+    loose_filename = os.path.join(loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:])
     with open(loose_filename, 'rb') as fhandle:
         # I have written the content twice
         assert fhandle.read() == content + content
@@ -203,30 +192,9 @@ def test_object_writer_not_twice(temp_dir):
     assert 'already stored' in str(excinfo.value)
 
 
-def test_object_writer_existing_obj(temp_dir):
-    """Assert that if a loose object is found with the same UUID, the object_writer crashes."""
-    sandbox_folder = os.path.join(temp_dir, 'sandbox')
-    loose_folder = os.path.join(temp_dir, 'loose')
-    loose_prefix_len = 2
-    os.mkdir(sandbox_folder)
-    os.mkdir(loose_folder)
-
-    object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
-    )
-
-    # Check that this crashes as I am creating
-    # the loose object before exiting the context manager
-    with pytest.raises(exc.ModificationNotAllowed) as excinfo:
-        with object_writer:
-            # Create manually a loose object where the object writer would write it
-            obj_uuid = object_writer.get_uuid()
-            loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
-            os.mkdir(os.path.dirname(loose_filename))
-            with open(loose_filename, 'wb'):
-                # Just write an empty file
-                pass
-    assert 'already exists' in str(excinfo.value)
+def test_object_writer_existing_obj():
+    """Assert that if a loose object is found with the same hash key, the object_writer crashes."""
+    raise ValueError('THIS MUST BE REIMPLEMENTED TO CHECK WHAT HAPPENS WHEN STORING TWICE THE SAME OBJECT')
 
 
 def test_packed_object_reader():

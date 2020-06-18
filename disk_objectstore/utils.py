@@ -3,6 +3,7 @@
 Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
+import hashlib
 import os
 import uuid
 import zlib
@@ -10,16 +11,6 @@ import zlib
 from contextlib import contextmanager
 
 from .exceptions import ModificationNotAllowed
-
-
-def get_new_uuid():
-    """Utility function to generate a new UUID.
-
-    In this way all parts of the code that need to do it, will do it in the same
-    way. Note that this returns the UUID without dashes,
-    so we reduce storage space.
-    """
-    return uuid.uuid4().hex
 
 
 class LazyOpener:
@@ -47,6 +38,16 @@ class LazyOpener:
     def mode(self):
         """The file open mode."""
         return self._mode
+
+    def tell(self):
+        """Return the position in the underlying file object.
+
+        :return: an integer with the position.
+        :raises ValueError: if the file is not open.
+        """
+        if self._fhandle is None:
+            return ValueError('I/O operation on closed file.')
+        return self._fhandle.tell()
 
     def __enter__(self):
         """Open the file when entering the with context manager.
@@ -78,7 +79,7 @@ def nullcontext(enter_result):
 class ObjectWriter:
     """A class to get direct write access for a new object."""
 
-    def __init__(self, sandbox_folder, loose_folder, loose_prefix_len):
+    def __init__(self, sandbox_folder, loose_folder, loose_prefix_len, hash_type):
         """Initialise an object to store a new loose object.
 
         :param sandbox_folder: the folder to store objects while still giving
@@ -92,15 +93,21 @@ class ObjectWriter:
         """
         self._sandbox_folder = sandbox_folder
         self._loose_folder = loose_folder
-        self._uuid = get_new_uuid()
+        self._hash_type = hash_type
+        self._hashkey = None
         self._loose_prefix_len = loose_prefix_len
         self._stored = False
         self._obj_path = None
         self._filehandle = None
 
-    def get_uuid(self):
-        """Return the object ID (it's actually a uuid)."""
-        return self._uuid
+    @property
+    def hash_type(self):
+        """Return the currently used hash type."""
+        return self._hash_type
+
+    def get_hashkey(self):
+        """Return the object hash key. Return None if the stream wasn't opened yet."""
+        return self._hashkey
 
     def __enter__(self):
         """Start creating a new object in a context manager.
@@ -110,11 +117,13 @@ class ObjectWriter:
         :note: Do not close the file, it will be closed automatically.
         """
         if self._filehandle is not None:
-            raise IOError("You have already opened this ObjectWriter instance with UUID '{}'".format(self.get_uuid()))
+            raise IOError('You have already opened this ObjectWriter instance')
         if self._stored:
-            raise ModificationNotAllowed("You have already stored this object '{}'".format(self.get_uuid()))
-        self._obj_path = os.path.join(self._sandbox_folder, self._uuid)
-        self._filehandle = open(self._obj_path, 'wb')
+            raise ModificationNotAllowed("You have already stored this object '{}'".format(self.get_hashkey()))
+        # Create a new uniquely-named file in the sandbox.
+        # It seems faster than using a NamedTemporaryFile, see benchmarks.
+        self._obj_path = os.path.join(self._sandbox_folder, uuid.uuid4().hex)
+        self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
     def __exit__(self, exc_type, value, traceback):
@@ -124,11 +133,12 @@ class ObjectWriter:
         """
         if not self._filehandle.closed:
             self._filehandle.close()
+        self._hashkey = str(self._filehandle.hexdigest())
         self._filehandle = None
 
         if exc_type is None:
             if self._loose_prefix_len:
-                parent_folder = os.path.join(self._loose_folder, self._uuid[:self._loose_prefix_len])
+                parent_folder = os.path.join(self._loose_folder, self._hashkey[:self._loose_prefix_len])
                 # Create parent folder the first time; done with try/except
                 # rather than with if/else to avoid problems at the beginning, for concurrent writing
                 try:
@@ -138,13 +148,13 @@ class ObjectWriter:
                     pass
 
                 dest_loose_object = os.path.join(
-                    self._loose_folder, self._uuid[:self._loose_prefix_len], self._uuid[self._loose_prefix_len:]
+                    self._loose_folder, self._hashkey[:self._loose_prefix_len], self._hashkey[self._loose_prefix_len:]
                 )
             else:  # prefix_len == 0
-                dest_loose_object = os.path.join(self._loose_folder, self._uuid)
+                dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
 
             if os.path.exists(dest_loose_object):
-                raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._uuid))
+                raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._hashkey))
             # This is an atomic operation, at least according to this website:
             # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
             # but needs to be on the same filesystem (this should always be the case for us)
@@ -167,7 +177,7 @@ class PackedObjectReader:
         """Return whether object supports random access."""
         return False
 
-    def seek(self, target, whence=0):  # pylint: disable=no-self-use
+    def seek(self, target, whence=0):  # pylint: disable=no-self-use,unused-argument
         """Change stream position."""
         raise OSError('Object not seekable')
 
@@ -349,3 +359,87 @@ class ZeroStream:
         stream = b'\x00' * bytes_to_fetch
         self._pos += bytes_to_fetch
         return stream
+
+
+def _get_hash(hash_type):
+    """Return a hash class with an update method and a hexdigest method."""
+    known_hashes = {
+        'sha256': hashlib.sha256,
+    }
+
+    try:
+        return known_hashes[hash_type]
+    except KeyError:
+        raise ValueError("Unknown or unsupported hash type '{}'".format(hash_type))
+
+
+class HashWriterWrapper:
+    """A class that gets a stream open in write mode and wraps it in a new class that computes a hash while writing.
+    """
+
+    def __init__(self, write_stream, hash_type):
+        """Create the class from a given compressed bytestream.
+
+        :param write_stream: an open bytes stream that supports the .write() method.
+           Must be a ``bytes`` stream (e.g., a file opened with ``b`` in the mode).
+           Writes to this class will be forwarded to the write_stream, but will first
+           be also passed to a hashlib implementation to compute the hash.
+        """
+        self._write_stream = write_stream
+        assert 'b' in self._write_stream.mode
+        self._hash_type = hash_type
+
+        self._hash = _get_hash(self._hash_type)()
+        self._position = self._write_stream.tell()
+
+    @property
+    def hash_type(self):
+        """Return the currently used hash type."""
+        return self._hash_type
+
+    def flush(self):
+        """Flush the internal I/O buffer."""
+        self._write_stream.flush()
+
+    def write(self, data):
+        """
+        Write binary data to the underlying write_stream object, and compute a hash at the same time.
+        """
+        # This assert is important to avoid that there is an exception while writing.
+        # In this case, the hash function does not get the data, but part of it might have already been
+        # written to disk (e.g. a first chunk of bytes, and then the disk became full).
+        # We want to make sure we are computing the correct hash.
+        assert self._position == self._write_stream.tell(), (
+            'Error in the position ({} vs {}), possibly an error occurred in a previous `write` call. '
+            'This HashWriterMapper object is invalid and should not be used anymore'.format(
+                self._position, self._write_stream.tell()
+            )
+        )
+
+        self._write_stream.write(data)
+        # Update the length after a successful write. Otherwise we will stay at the previous position.
+        # If nothing was written, then the next call will succeed (the position remained the same).
+        # If the call wrote something, the next call will correctly assert (there would be a mismatch
+        # between the data on the write_stream and the one that was hashed).
+        self._position += len(data)
+
+        # Update the hash information
+        self._hash.update(data)
+
+    def hexdigest(self):
+        """Return the hexdigest of the hash computed until now."""
+        return self._hash.hexdigest()
+
+    @property
+    def closed(self):
+        """Return True if the underlying file is closed."""
+        return self._write_stream.closed
+
+    def close(self):
+        """Close the underlying file."""
+        self._write_stream.close()
+
+    @property
+    def mode(self):
+        """Return a string with the mode the file was open with."""
+        return self._write_stream.mode

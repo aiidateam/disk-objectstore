@@ -5,14 +5,13 @@ import os
 import random
 import shutil
 import tempfile
-import uuid
 import zlib
 
 import psutil
 import pytest
 
 from disk_objectstore import Container
-import disk_objectstore.utils as utils
+from disk_objectstore import utils
 import disk_objectstore.exceptions as exc
 
 
@@ -21,6 +20,10 @@ class UnopenableBytesIO(io.BytesIO):
 
     def __enter__(self):
         raise AttributeError('__enter__ method disabled for UnopenableBytesIO')
+
+    @property
+    def mode(self):
+        return 'rb'
 
 
 def _assert_empty_repo(container):
@@ -48,13 +51,13 @@ def _add_objects_loose_loop(container, data):
 
     :param container: a Container
     :param data: a dictionary where the key is an arbitrary identifier, and the value is a byte string.
-    :return: a dictionary where the keys are the object UUIDs as returned by the container, and the values
+    :return: a dictionary where the keys are the object hash keys as returned by the container, and the values
       are the keys in the original ``data`` dictionary.
     """
     retval = {}
     for key, content in data.items():
-        obj_uuid = container.add_object(content)
-        retval[obj_uuid] = key
+        obj_hashkey = container.add_object(content)
+        retval[obj_hashkey] = key
     return retval
 
 
@@ -63,7 +66,7 @@ def _add_objects_directly_to_pack(container, data, compress):
 
     :param container: a Container
     :param data: a dictionary where the key is an arbitrary identifier, and the value is a byte string.
-    :return: a dictionary where the keys are the object UUIDs as returned by the container, and the values
+    :return: a dictionary where the keys are the object hash keys as returned by the container, and the values
       are the keys in the original ``data`` dictionary.
     :param compress: whether to use compression or not.
     """
@@ -71,36 +74,36 @@ def _add_objects_directly_to_pack(container, data, compress):
     keys = list(data.keys())
     values = [data[key] for key in keys]
 
-    obj_uuids = container.add_objects_to_pack(values, compress=compress)
+    obj_hashkeys = container.add_objects_to_pack(values, compress=compress)
 
-    return dict(zip(obj_uuids, keys))
+    return dict(zip(obj_hashkeys, keys))
 
 
-def _get_data_and_md5_loop(container, obj_uuids):
+def _get_data_and_md5_loop(container, obj_hashkeys):
     """Get the MD5 of the data stored under the given container, one at a time in a loop.
 
     :param container: a Container
-    :param obj_uuids: a list of object UUIDs
-    :return: a dictionary where the keys are the object UUIDs and the values are the MD5 hexdigests.
+    :param obj_hashkeys: a list of object hash keys
+    :return: a dictionary where the keys are the object hash keys and the values are the MD5 hexdigests.
     """
     retval = {}
-    for obj_uuid in obj_uuids:
-        retrieved_content = container.get_object_content(obj_uuid)
-        retval[obj_uuid] = hashlib.md5(retrieved_content).hexdigest()
+    for obj_hashkey in obj_hashkeys:
+        retrieved_content = container.get_object_content(obj_hashkey)
+        retval[obj_hashkey] = hashlib.md5(retrieved_content).hexdigest()
     return retval
 
 
-def _get_data_and_md5_bulk(container, obj_uuids):
+def _get_data_and_md5_bulk(container, obj_hashkeys):
     """Get the MD5 of the data stored under the given container as a single bulk operation.
 
     :param container: a Container
-    :param obj_uuids: a list of object UUIDs
-    :return: a dictionary where the keys are the object UUIDs and the values are the MD5 hexdigests.
+    :param obj_hashkeys: a list of object hash keys
+    :return: a dictionary where the keys are the object hash keys and the values are the MD5 hexdigests.
     """
     retval = {}
-    retrieved_contents = container.get_object_contents(obj_uuids)
-    for obj_uuid in retrieved_contents:
-        retval[obj_uuid] = hashlib.md5(retrieved_contents[obj_uuid]).hexdigest()
+    retrieved_contents = container.get_object_contents(obj_hashkeys)
+    for obj_hashkey in retrieved_contents:
+        retval[obj_hashkey] = hashlib.md5(retrieved_contents[obj_hashkey]).hexdigest()
     return retval
 
 
@@ -139,9 +142,9 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
     # Check that the keys are the same
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
 
@@ -183,9 +186,9 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     # Check that the keys are the same
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
 
@@ -220,9 +223,9 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
     # Check that the keys are the same
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
 
@@ -253,7 +256,7 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
                     fhandle.write(content)
                 streams.append(utils.LazyOpener(file_path, mode='rb'))
                 streams_copy.append(utils.LazyOpener(file_path, mode='rb'))
-            obj_uuids = temp_container.add_streamed_objects_to_pack(
+            obj_hashkeys = temp_container.add_streamed_objects_to_pack(
                 streams, compress=use_compression, open_streams=True
             )
             # I check that instead it fails if I forget to open the streams (and that it does not create side effects)
@@ -264,14 +267,16 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     else:
         streams = [UnopenableBytesIO(value) for value in values]
         streams_copy = [UnopenableBytesIO(value) for value in values]
-        obj_uuids = temp_container.add_streamed_objects_to_pack(streams, compress=use_compression, open_streams=False)
+        obj_hashkeys = temp_container.add_streamed_objects_to_pack(
+            streams, compress=use_compression, open_streams=False
+        )
         # I check that instead it fails if I try to open but I am not allowed to
         # (and that it does not create side effects). Note that I disabled explicitly the __enter__ method
         # in the class UnopenableBytesIO to make sure that this raises
         with pytest.raises(AttributeError):
             temp_container.add_streamed_objects_to_pack(streams_copy, compress=use_compression, open_streams=True)
 
-    obj_md5s = dict(zip(obj_uuids, keys))
+    obj_md5s = dict(zip(obj_hashkeys, keys))
 
     counts = temp_container.count_objects()
     assert counts['packed'] == len(data), (
@@ -293,9 +298,9 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     # Check that the keys are the same
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
 
@@ -319,9 +324,13 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
     obj_md5s = _add_objects_loose_loop(container, data)
 
     loose_firstlevel = os.listdir(container._get_loose_folder())  # pylint: disable=protected-access
-    assert len(loose_firstlevel) > 0
+    # Check it's not an empty list
+    assert loose_firstlevel
     if loose_prefix_len == 0:
-        assert all(len(inode) == 32 for inode in loose_firstlevel)
+        all_lengths = set(len(inode) for inode in loose_firstlevel)
+        # The length of the hashkey depends on the algorithm.
+        # Therefore I just check that it's always the same length, not the actual value.
+        assert len(all_lengths) == 1
     else:
         assert all(len(inode) == loose_prefix_len for inode in loose_firstlevel)
 
@@ -337,16 +346,17 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
     # Pack all loose objects
     container.pack_all_loose()
 
     pack_firstlevel = os.listdir(container._get_pack_folder())  # pylint: disable=protected-access
-    assert len(pack_firstlevel) > 0
+    # Check it's not an empty list
+    assert pack_firstlevel
     # Pack IDs are zero-based, so the number of packs should be the current pack ID + 1
     assert len([inode for inode in pack_firstlevel if container._is_valid_pack_id(inode)]  # pylint: disable=protected-access
               ) == container._current_pack_id + 1  # pylint: disable=protected-access
@@ -363,9 +373,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
-    for obj_uuid in obj_md5s:
-        assert obj_md5s[obj_uuid] == retrieved_md5s[obj_uuid], "Object '{}' has wrong MD5s ({} vs {})".format(
-            obj_uuid, obj_md5s[obj_uuid], retrieved_md5s[obj_uuid]
+    for obj_hashkey in obj_md5s:
+        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], "Object '{}' has wrong MD5s ({} vs {})".format(
+            obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
     # Test also the validation functions
@@ -465,8 +475,8 @@ def test_initialisation(temp_dir):
 
 # Only three options: if pack_objects is False, the values of compress_packs is ignored
 @pytest.mark.parametrize('pack_objects,compress_packs', [(True, True), (True, False), (False, False)])
-def test_unknown_uuids(temp_container, generate_random_data, pack_objects, compress_packs):
-    """Put some data in the container, then check that unknown UUIDs raise the correct error."""
+def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, compress_packs):
+    """Put some data in the container, then check that unknown hash keys raise the correct error."""
     # Generate and store some data, just not to have an empty container
     data = generate_random_data()
     obj_md5s = _add_objects_loose_loop(temp_container, data)
@@ -474,77 +484,77 @@ def test_unknown_uuids(temp_container, generate_random_data, pack_objects, compr
     if pack_objects:
         temp_container.pack_all_loose(compress=compress_packs)
 
-    # Pick any valid UUID
-    obj_uuids = list(obj_md5s.keys())
+    # Pick any valid hash key
+    obj_hashkeys = list(obj_md5s.keys())
 
-    # 5 unknown UUIDs + one invalid string
-    unknown_uuids = [uuid.uuid4().hex for _ in range(5)] + ['invalid-uuid-string']
+    # 1 unknown hash key + 1 invalid string
+    unknown_hashkeys = [hashlib.sha256().hexdigest()] + ['invalid--string']
 
     # Loop read
-    for unknown_uuid in unknown_uuids:
+    for unknown_hashkey in unknown_hashkeys:
         with pytest.raises(exc.NotExistent):
-            temp_container.get_object_content(unknown_uuid)
+            temp_container.get_object_content(unknown_hashkey)
 
         # Currently, the exception is actually raised when accessing the stream,
         # not at stream creation
-        stream = temp_container.get_object_stream(unknown_uuid)
+        stream = temp_container.get_object_stream(unknown_hashkey)
         with pytest.raises(exc.NotExistent):
             with stream:
                 pass
 
-    # 6 invalid UUIDs + all valid ones
-    uuids_list = unknown_uuids + obj_uuids
+    # 2 invalid hash keys + all valid ones
+    hashkeys_list = unknown_hashkeys + obj_hashkeys
     # I shuffle so they are really in random order
-    random.shuffle(uuids_list)
+    random.shuffle(hashkeys_list)
 
     ##### Bulk reads from here on
     # skip_if_missing=True, get contents
-    contents = temp_container.get_object_contents(uuids_list, skip_if_missing=True)
+    contents = temp_container.get_object_contents(hashkeys_list, skip_if_missing=True)
     # The retrieved values should be only the valid ones
-    assert set(contents.keys()) == set(obj_uuids)
+    assert set(contents.keys()) == set(obj_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
     assert obj_md5s == check_md5s
 
     # skip_if_missing=True, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_object_streams_and_size(uuids_list, skip_if_missing=True) as triplets:
-        for obj_uuid, stream, size in triplets:
+    with temp_container.get_object_streams_and_size(hashkeys_list, skip_if_missing=True) as triplets:
+        for obj_hashkey, stream, size in triplets:
             if stream is None:
                 assert size == 0
-                missing.append(obj_uuid)
+                missing.append(obj_hashkey)
             else:
-                check_md5s[obj_uuid] = stream.read()
-                assert len(check_md5s[obj_uuid]) == size
+                check_md5s[obj_hashkey] = stream.read()
+                assert len(check_md5s[obj_hashkey]) == size
     # The retrieved values should be only the valid ones
     assert missing == []
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
     assert obj_md5s == check_md5s
 
     # skip_if_missing=False, get objects
-    contents = temp_container.get_object_contents(uuids_list, skip_if_missing=False)
+    contents = temp_container.get_object_contents(hashkeys_list, skip_if_missing=False)
     # There should be only one return value
-    for unknown_uuid in unknown_uuids:
+    for unknown_hashkey in unknown_hashkeys:
         # Check that it's there, that it's noe, and pop it
-        assert contents.pop(unknown_uuid) is None
+        assert contents.pop(unknown_hashkey) is None
     # After popping, I should be left with the same case as above
-    assert set(contents.keys()) == set(obj_uuids)
+    assert set(contents.keys()) == set(obj_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
     assert obj_md5s == check_md5s
 
     # skip_if_missing=False, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_object_streams_and_size(uuids_list, skip_if_missing=False) as triplets:
-        for obj_uuid, stream, size in triplets:
+    with temp_container.get_object_streams_and_size(hashkeys_list, skip_if_missing=False) as triplets:
+        for obj_hashkey, stream, size in triplets:
             if stream is None:
                 assert size == 0
-                missing.append(obj_uuid)
+                missing.append(obj_hashkey)
             else:
-                check_md5s[obj_uuid] = stream.read()
-                assert len(check_md5s[obj_uuid]) == size
+                check_md5s[obj_hashkey] = stream.read()
+                assert len(check_md5s[obj_hashkey]) == size
     # The retrieved values should be only the valid ones
-    assert set(missing) == set(unknown_uuids)
+    assert set(missing) == set(unknown_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
     assert obj_md5s == check_md5s
 

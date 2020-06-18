@@ -15,10 +15,10 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
-from .utils import nullcontext, ObjectWriter, PackedObjectReader, StreamDecompresser, get_new_uuid
+from .utils import nullcontext, HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser
 from .exceptions import NotExistent, NotInitialised
 
-ObjQueryResults = namedtuple('ObjQueryResults', ['uuid', 'offset', 'length', 'compressed', 'size'])
+ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
 
 
 class Container:
@@ -43,6 +43,7 @@ class Container:
         self._loose_prefix_len = None
         self._pack_size_target = None
         self._current_pack_id = None
+        self._hash_type = None
 
     def get_folder(self):
         """Return the path to the folder that will host the object-store container."""
@@ -150,19 +151,19 @@ class Container:
             self._session = self._get_session(create=False, raise_if_missing=True)
         return self._session
 
-    def _get_loose_path_from_uuid(self, uuid):
-        """Return the path of a loose object on disk containing the data of a given UUID.
+    def _get_loose_path_from_hashkey(self, hashkey):
+        """Return the path of a loose object on disk containing the data of a given hash key.
 
-        :param uuid: the UUID of the object to get.
+        :param hashkey: the hashkey of the object to get.
         """
         if self.loose_prefix_len:
             return os.path.join(
                 self._get_loose_folder(),
-                uuid[:self.loose_prefix_len],
-                uuid[self.loose_prefix_len:],
+                hashkey[:self.loose_prefix_len],
+                hashkey[self.loose_prefix_len:],
             )
         # if loose_prefix_len is zero, there is no subfolder
-        return os.path.join(self._get_loose_folder(), uuid)
+        return os.path.join(self._get_loose_folder(), hashkey)
 
     def _get_pack_path_from_pack_id(self, pack_id):
         """Return the path of the pack file on disk for the given pack ID.
@@ -220,7 +221,9 @@ class Container:
                 return False
         return True
 
-    def init_container(self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2):
+    def init_container(  # pylint: disable=bad-continuation
+        self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2, hash_type='sha256'
+    ):
         """Initialise the container folder, if not already done.
 
         If this is called multiple times, it does not corrupt the data,
@@ -233,6 +236,7 @@ class Container:
         :param loose_prefix_len: The length of the prefix of the loose objects.
           The longer the length, the more folders will be used to store loose
           objects. Suggested values: 0 (for not using subfolders) or 2.
+        :param hash_type: a string defining the hash type to use.
         """
         if loose_prefix_len < 0:
             raise ValueError('The loose prefix length can only be zero or a positive integer')
@@ -266,7 +270,8 @@ class Container:
                 {
                     'container_version': 1,  # For future compatibility, this is the version of the format
                     'loose_prefix_len': loose_prefix_len,
-                    'pack_size_target': pack_size_target
+                    'pack_size_target': pack_size_target,
+                    'hash_type': hash_type
                 },
                 fhandle
             )
@@ -304,70 +309,80 @@ class Container:
             self._pack_size_target = self._get_repository_config()['pack_size_target']
         return self._pack_size_target
 
-    def get_object_content(self, uuid):
-        """Get the content of an object with a given UUID.
+    @property
+    def hash_type(self):
+        """Return the length of the prefix of loose objects, when sharding.
 
-        :param uuid: The UUID of the object to retrieve.
+        This is read from the repository configuration.
+        """
+        if self._hash_type is None:
+            self._hash_type = self._get_repository_config()['hash_type']
+        return self._hash_type
+
+    def get_object_content(self, hashkey):
+        """Get the content of an object with a given hash key.
+
+        :param hashkey: The hash key of the object to retrieve.
         :return: a byte stream with the object content.
         """
-        with self.get_object_stream(uuid) as handle:
+        with self.get_object_stream(hashkey) as handle:
             return handle.read()
 
     @contextmanager
-    def get_object_stream(self, uuid):
+    def get_object_stream(self, hashkey):
         """Return a context manager yielding a stream to get the content of an object.
 
         To be used as a context manager::
 
-          with container.get_object_stream(uuid) as fhandle:
+          with container.get_object_stream(hashkey) as fhandle:
               data = fhandle.read()
 
         The returned object supports *at least* the read() method that
         accepts an optional parameter to read the file in chunks, and might
         not be seekable.
-        :param uuid: the UUID of the object to stream.
+        :param hashkey: the hashkey of the object to stream.
         """
-        with self.get_object_streams_and_size(uuids=[uuid], skip_if_missing=False) as triplets:
+        with self.get_object_streams_and_size(hashkeys=[hashkey], skip_if_missing=False) as triplets:
             counter = 0
-            for obj_uuid, stream, _ in triplets:
+            for obj_hashkey, stream, _ in triplets:
                 counter += 1
                 assert counter == 1, 'There is more than one item returned by get_object_streams_and_size'
-                assert obj_uuid == uuid
+                assert obj_hashkey == hashkey
 
                 if stream is None:
-                    raise NotExistent('No object with UUID {}'.format(uuid))
+                    raise NotExistent('No object with hash key {}'.format(hashkey))
 
                 yield stream
 
     @contextmanager
-    def get_object_streams_and_size(self, uuids, skip_if_missing=True):  # pylint: disable=too-many-statements
-        """A context manager returning a generator yielding triplets of (uuid, open stream, size).
+    def get_object_streams_and_size(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
+        """A context manager returning a generator yielding triplets of (hashkey, open stream, size).
 
-        :note: the UUIDs yielded are often in a *different* order than the original
-            ``uuids`` list. This is done for efficiency reasons, to reduce to a minimum
+        :note: the hash keys yielded are often in a *different* order than the original
+            ``hashkeys`` list. This is done for efficiency reasons, to reduce to a minimum
             file opening and to try to read file chunks (for packs) in sequential
             order rather than in random order.
 
         To use it, you should do something like the following::
 
-            with container.get_object_streams_and_size(uuids=uuids) as triplets:
-                for obj_uuid, stream, size in triplets:
+            with container.get_object_streams_and_size(hashkeys=hashkeys) as triplets:
+                for obj_hashkey, stream, size in triplets:
                     if stream is None:
                         # This should happen only if you pass skip_if_missing=False
-                        retrieved[obj_uuid] = None
+                        retrieved[obj_hashkey] = None
                     else:
                         # len(stream.read() will be equal to size
-                        retrieved[obj_uuid] = stream.read()
+                        retrieved[obj_hashkey] = stream.read()
 
-        :param uuids: a list of UUIDs for which we want to get a stream reader
-        :param skip_if_missing: if True, just skip UUIDs that are not in the container
+        :param hashkeys: a list of hash keys for which we want to get a stream reader
+        :param skip_if_missing: if True, just skip hash keys that are not in the container
             (i.e., neither packed nor loose). If False, return ``None`` instead of the
             stream. In this latter case, the length of the generator returned by this context
-            manager has always the same length as the input ``uuids`` list.
+            manager has always the same length as the input ``hashkeys`` list.
         """
 
-        def get_object_stream_generator(uuids, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
-            """Return a generator yielding tripltes of (uuid, open stream, size).
+        def get_object_stream_generator(hashkeys, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
+            """Return a generator yielding triplets of (hashkey, open stream, size).
 
             :note: The stream is already open and at the right position, and can
                 just be read.
@@ -375,8 +390,8 @@ class Container:
             :note: size is the length of the object (uncompressed) when doing a
                ``read()`` on the returned stream
 
-            :param uuids: a list of UUIDs for which we want to get a stream reader
-            :param skip_if_missing: if True, just skip UUIDs that are not in the container
+            :param hashkeys: a list of hash keys for which we want to get a stream reader
+            :param skip_if_missing: if True, just skip hash keys that are not in the container
                 (i.e., neither packed nor loose). If False, return ``None`` instead of the
                 stream.
             """
@@ -387,7 +402,7 @@ class Container:
             last_open_file = None
 
             try:
-                uuids_in_packs = set()
+                hashkeys_in_packs = set()
 
                 packs = defaultdict(list)
                 # Currently ordering in the DB (it's ordered across all packs, but this should not be
@@ -395,14 +410,14 @@ class Container:
                 # to order in python instead
                 session = self._get_cached_session()
                 query = session.query(Obj).filter(
-                    Obj.uuid.in_(uuids)
-                ).with_entities(Obj.pack_id, Obj.uuid, Obj.offset, Obj.length, Obj.compressed,
+                    Obj.hashkey.in_(hashkeys)
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
                                 Obj.size).order_by(Obj.offset)
                 for res in query:
                     packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
                 for pack_int_id, pack_metadata in packs.items():
-                    uuids_in_packs.update(obj.uuid for obj in pack_metadata)
+                    hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
                     pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
                     if last_open_file is not None:
                         if not last_open_file.closed:
@@ -415,19 +430,19 @@ class Container:
                         )
                         if metadata.compressed:
                             obj_reader = StreamDecompresser(obj_reader)
-                        yield metadata.uuid, obj_reader, metadata.size
+                        yield metadata.hashkey, obj_reader, metadata.size
 
-                # Collect loose UUIDS that are not found
+                # Collect loose hash keys that are not found
                 # Reason: a concurrent process might have packed them,
                 # in the meantime.
                 loose_not_found = []
-                for loose_uuid in set(uuids).difference(uuids_in_packs):
-                    obj_path = self._get_loose_path_from_uuid(uuid=loose_uuid)
+                for loose_hashkey in set(hashkeys).difference(hashkeys_in_packs):
+                    obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
                     try:
                         last_open_file = open(obj_path, mode='rb')
-                        yield loose_uuid, last_open_file, os.path.getsize(obj_path)
+                        yield loose_hashkey, last_open_file, os.path.getsize(obj_path)
                     except FileNotFoundError:
-                        loose_not_found.append(loose_uuid)
+                        loose_not_found.append(loose_hashkey)
                         continue
                     if last_open_file is not None:
                         if not last_open_file.closed:
@@ -458,8 +473,8 @@ class Container:
                     packs = defaultdict(list)
                     session = self._get_cached_session()
                     query = session.query(Obj).filter(
-                        Obj.uuid.in_(uuids)
-                    ).with_entities(Obj.pack_id, Obj.uuid, Obj.offset, Obj.length, Obj.compressed,
+                        Obj.hashkey.in_(hashkeys)
+                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
                                     Obj.size).order_by(Obj.offset)
                     for res in query:
                         packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
@@ -468,7 +483,7 @@ class Container:
                     really_not_found = set(loose_not_found)
 
                     for pack_int_id, pack_metadata in packs.items():
-                        really_not_found.difference_update(obj.uuid for obj in pack_metadata)
+                        really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
 
                         pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
 
@@ -487,38 +502,38 @@ class Container:
                             )
                             if metadata.compressed:
                                 obj_reader = StreamDecompresser(obj_reader)
-                            yield metadata.uuid, obj_reader, metadata.size
+                            yield metadata.hashkey, obj_reader, metadata.size
 
                     # If there are really missing objects, and skip_if_missing is False, yield them
                     if really_not_found and not skip_if_missing:
-                        for missing_uuid in really_not_found:
-                            yield missing_uuid, None, 0
+                        for missing_hashkey in really_not_found:
+                            yield missing_hashkey, None, 0
 
             finally:
                 if last_open_file is not None:
                     last_open_file.close()
 
-        yield get_object_stream_generator(uuids=uuids, skip_if_missing=skip_if_missing)
+        yield get_object_stream_generator(hashkeys=hashkeys, skip_if_missing=skip_if_missing)
 
-    def get_object_contents(self, uuids, skip_if_missing=True):
-        """Get the content of a number of objects with given UUIDs.
+    def get_object_contents(self, hashkeys, skip_if_missing=True):
+        """Get the content of a number of objects with given hash keys.
 
         :note: use this method only if you know objects fit in memory.
             Otherwise, use the ``get_object_streams_and_size`` context manager and
             process the objects one by one.
 
-        :param uuids: A list of UUIDs of the objects to retrieve.
-        :return: a dictionary of byte streams where the keys are the UUIDs and the values
+        :param hashkeys: A list of hash kyes of the objects to retrieve.
+        :return: a dictionary of byte streams where the keys are the hash keys and the values
             are the object contents.
         """
         retrieved = {}
-        with self.get_object_streams_and_size(uuids=uuids, skip_if_missing=skip_if_missing) as triplets:
-            for obj_uuid, stream, _ in triplets:
+        with self.get_object_streams_and_size(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
+            for obj_hashkey, stream, _ in triplets:
                 if stream is None:
                     # This should happen only if skip_if_missing is False
-                    retrieved[obj_uuid] = None
+                    retrieved[obj_hashkey] = None
                 else:
-                    retrieved[obj_uuid] = stream.read()
+                    retrieved[obj_hashkey] = stream.read()
         return retrieved
 
     def _new_object_writer(self):
@@ -529,25 +544,26 @@ class Container:
           new_object_writer = repo._new_object_writer()
           with new_object_writer as fhandle:
               fhandle.write(b'something')
-          new_uuid = new_object_writer.uuid()
+          new_hashkey = new_object_writer.get_hashkey()
         """
         return ObjectWriter(
             sandbox_folder=self._get_sandbox_folder(),
             loose_folder=self._get_loose_folder(),
-            loose_prefix_len=self.loose_prefix_len
+            loose_prefix_len=self.loose_prefix_len,
+            hash_type=self.hash_type
         )
 
     def add_object(self, content):
         """Add a loose object.
 
         :param content: a binary stream with the file content.
-        :return: the UUID of the newly created object.
+        :return: the hash key of the newly created object.
         """
         writer = self._new_object_writer()
         with writer as fhandle:
             fhandle.write(content)
 
-        return writer.get_uuid()
+        return writer.get_hashkey()
 
     def count_objects(self):
         """Return a dictionary with the count of objects, keys are 'loose' and 'packed'.
@@ -559,7 +575,7 @@ class Container:
         retval['packed'] = number_packed
 
         retval['loose'] = 0
-        for loose_uuid in self._list_loose():  # pylint: disable=unused-variable
+        for loose_hashkey in self._list_loose():  # pylint: disable=unused-variable
             retval['loose'] += 1
 
         retval['pack_files'] = len(list(self._list_packs()))
@@ -616,8 +632,8 @@ class Container:
         retval['total_size_packindexes_on_disk'] = os.path.getsize(self._get_pack_index_path())
 
         total_size_loose = 0
-        for loose_uuid in self._list_loose():
-            loose_path = self._get_loose_path_from_uuid(loose_uuid)
+        for loose_hashkey in self._list_loose():
+            loose_path = self._get_loose_path_from_hashkey(loose_hashkey)
             total_size_loose += os.path.getsize(loose_path)
         retval['total_size_loose'] = total_size_loose
 
@@ -764,16 +780,16 @@ class Container:
                         #    with the new pack_int_id that was just generated
                         break
 
-                    # Get next UUID to process
-                    loose_uuid = loose_objects.pop()
+                    # Get next hash key to process
+                    loose_hashkey = loose_objects.pop()
                     # Keep track of it for later deletion
-                    loose_objects_this_pack.append(loose_uuid)
+                    loose_objects_this_pack.append(loose_hashkey)
 
-                    obj = Obj(uuid=loose_uuid)
+                    obj = Obj(hashkey=loose_hashkey)
                     obj.pack_id = pack_int_id
                     obj.compressed = compress
                     obj.offset = pack_handle.tell()
-                    with open(self._get_loose_path_from_uuid(loose_uuid), 'rb') as loose_handle:
+                    with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
                         obj.size = self._write_data_to_packfile(
                             pack_handle=pack_handle, read_handle=loose_handle, compress=compress
                         )
@@ -785,8 +801,8 @@ class Container:
                 session.commit()
 
                 # Clean up loose objects, for each pack
-                for obj_uuid in loose_objects_this_pack:
-                    os.remove(self._get_loose_path_from_uuid(obj_uuid))
+                for obj_hashkey in loose_objects_this_pack:
+                    os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
@@ -801,9 +817,9 @@ class Container:
             manager. Otherwise, just read from them (assuming the responsibility of opening
             them is on the caller). Setting to True is useful when reading from many files,
             and passing here a number of ``LazyOpener`` objects.
-        :return: a list of object UUIDs
+        :return: a list of object hash keys
         """
-        uuids = []
+        hashkeys = []
 
         # Make a copy of the list and revert its order, so we can pop from the list
         # without affecting the original list, and it's from the end so it's fast
@@ -839,25 +855,26 @@ class Container:
                     else:
                         stream_context_manager = nullcontext(next_stream)
 
-                    obj_uuid = get_new_uuid()
-                    obj = Obj(uuid=obj_uuid)
+                    obj = Obj()
                     obj.pack_id = pack_int_id
                     obj.compressed = compress
                     obj.offset = pack_handle.tell()
                     with stream_context_manager as stream:
+                        wrapped_pack_handle = HashWriterWrapper(pack_handle, hash_type=self.hash_type)
                         obj.size = self._write_data_to_packfile(
-                            pack_handle=pack_handle, read_handle=stream, compress=compress
+                            pack_handle=wrapped_pack_handle, read_handle=stream, compress=compress
                         )
+                        obj.hashkey = wrapped_pack_handle.hexdigest()
                     obj.length = pack_handle.tell() - obj.offset
                     session.add(obj)
-                    # Append the newly generated UUID to the list of UUIDs to return
-                    uuids.append(obj_uuid)
+                    # Append the new hash key to the list of hash keys to return
+                    hashkeys.append(obj.hashkey)
 
                 # This pack file is complete.
                 # Let's commit before closing the pack file.
                 session.commit()
 
-        return uuids
+        return hashkeys
 
     def add_objects_to_pack(self, content_list, compress=False):
         """Add objects directly to a pack, reading from a list of content byte arrays.
@@ -871,7 +888,7 @@ class Container:
 
         :param content_list: a list of content bytestreams to add.
         :param compress: if True, compress objects before storing them.
-        :return: a list of object UUIDs
+        :return: a list of object hash keys
         """
         stream_list = [io.BytesIO(content) for content in content_list]
         return self.add_streamed_objects_to_pack(stream_list=stream_list, compress=compress)

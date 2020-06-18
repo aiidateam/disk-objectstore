@@ -36,7 +36,7 @@ def main_run(container, size_gb, compress_packs):
     zero_stream = ZeroStream(length=size_bytes)
     start = time.time()
     # Store objects (directly to pack)
-    obj_uuid = container.add_streamed_objects_to_pack(stream_list=[zero_stream], compress=compress_packs)[0]
+    obj_hashkey = container.add_streamed_objects_to_pack(stream_list=[zero_stream], compress=compress_packs)[0]
     tot_time = time.time() - start
     print('Time to store one file of zeros of size {} GB: {:.4} s'.format(size_gb, tot_time))
 
@@ -60,7 +60,7 @@ def main_run(container, size_gb, compress_packs):
     num_bytes_retrieved = 0
 
     start = time.time()
-    with container.get_object_stream(obj_uuid) as retrieved_stream:
+    with container.get_object_stream(obj_hashkey) as retrieved_stream:
         while True:
             data = retrieved_stream.read(chunk_size)
             # Note that this takes ~50% of the time (1s out of 3s)
@@ -145,7 +145,8 @@ def main(size_gb, path, clear, check_memory_measurement, with_line_profiler, com
             }),
             interval=memory_check_interval
         )
-        assert len(memory_report) > 0, (
+        # Check that it's not an empty list
+        assert memory_report, (
             '>> Process too fast for checking memory usage '
             'with interval {} s!!!'.format(memory_check_interval)
         )

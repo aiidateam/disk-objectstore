@@ -23,6 +23,7 @@ import click
 import psutil
 
 from disk_objectstore.container import Container, NotExistent
+from disk_objectstore.models import Obj
 
 
 def timestamp():
@@ -48,7 +49,7 @@ def timestamp():
     default='/tmp/test-container-shared',
     help='The path to a test folder in which all locusts will write the MD5s for others to read. It must already exist.'
 )
-@click.option('-b', '--bulk-read', is_flag=True, help='Whether to use bulk reads, or a loop on each UUID.')
+@click.option('-b', '--bulk-read', is_flag=True, help='Whether to use bulk reads, or a loop on each hash key.')
 @click.help_option('-h', '--help')
 def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_folder, bulk_read):
     """Keep writing loose objects, then read all those written by all locusts, and try to read them back."""
@@ -86,13 +87,13 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             contents.append(content)
 
         # Store objects (loose)
-        uuids = []
+        hashkeys = []
         for content in contents:
-            uuids.append(container.add_object(content))
+            hashkeys.append(container.add_object(content))
 
         md5s = {}
-        for obj_uuid, content in zip(uuids, contents):
-            md5s[obj_uuid] = hashlib.md5(content).hexdigest()
+        for obj_hashkey, content in zip(hashkeys, contents):
+            md5s[obj_hashkey] = hashlib.md5(content).hexdigest()
 
         ## Dump to file
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', dir=shared_folder, delete=False) as fhandle:
@@ -120,32 +121,57 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
 
         ########################################
         # single bulk read
-        all_uuids = list(all_md5s.keys())
-        random.shuffle(all_uuids)
+        all_hashkeys = list(all_md5s.keys())
+        random.shuffle(all_hashkeys)
 
         if bulk_read:
-            retrieved_content = container.get_object_contents(all_uuids, skip_if_missing=False)
+            retrieved_content = container.get_object_contents(all_hashkeys, skip_if_missing=False)
         else:
             retrieved_content = {}
-            for obj_uuid in all_uuids:
+            for obj_hashkey in all_hashkeys:
                 try:
-                    retrieved_content[obj_uuid] = container.get_object_content(obj_uuid)
+                    retrieved_content[obj_hashkey] = container.get_object_content(obj_hashkey)
                 except NotExistent:
-                    retrieved_content[obj_uuid] = None
+                    retrieved_content[obj_hashkey] = None
         retrieved_md5s = {}
-        for obj_uuid, content in retrieved_content.items():
+        for obj_hashkey, content in retrieved_content.items():
             if content is None:
-                raise ValueError('No content returned for object {}!'.format(obj_uuid))
-            retrieved_md5s[obj_uuid] = hashlib.md5(content).hexdigest()
+                raise ValueError('No content returned for object {}!'.format(obj_hashkey))
+            retrieved_md5s[obj_hashkey] = hashlib.md5(content).hexdigest()
 
-        assert retrieved_md5s == all_md5s
+        only_left = set(retrieved_md5s).difference(all_md5s)
+        only_right = set(all_md5s).difference(retrieved_md5s)
+        assert not only_right, 'objects only in all_md5s: {}'.format(only_right)
+        assert not only_left, 'objects only in retrieved_md5s: {}'.format(only_left)
+        for key in retrieved_md5s:
+            assert all_md5s[key] == retrieved_md5s[key], 'Mismatch for {}: {} vs. {}'.format(
+                key, all_md5s[key], retrieved_md5s[key]
+            )
         del retrieved_content
 
-        random.shuffle(all_uuids)
+        random.shuffle(all_hashkeys)
         retrieved_md5s = {}
-        for obj_uuid in all_uuids:
-            retrieved_md5s[obj_uuid] = hashlib.md5(container.get_object_content(obj_uuid)).hexdigest()
-        assert retrieved_md5s == all_md5s
+        for obj_hashkey in all_hashkeys:
+            retrieved_md5s[obj_hashkey] = hashlib.md5(container.get_object_content(obj_hashkey)).hexdigest()
+
+        only_left = set(retrieved_md5s).difference(all_md5s)
+        only_right = set(all_md5s).difference(retrieved_md5s)
+        assert not only_right, 'objects only in all_md5s: {}'.format(only_right)
+        assert not only_left, 'objects only in retrieved_md5s: {}'.format(only_left)
+        for key in retrieved_md5s:
+            try:
+                assert all_md5s[key] == retrieved_md5s[key], 'Mismatch for {}: {} vs. {}'.format(
+                    key, all_md5s[key], retrieved_md5s[key]
+                )
+            except AssertionError:
+                loose_path = container._get_loose_path_from_hashkey(key)  # pylint: disable=protected-access
+                print('Exists Loose: {}'.format(os.path.exists(loose_path)))
+                session = container._get_cached_session()  # pylint: disable=protected-access
+                query = session.query(Obj).filter(
+                    Obj.hashkey == key
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                print(list(query))
+                raise
 
 
 if __name__ == '__main__':
