@@ -15,7 +15,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
-from .utils import nullcontext, HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser
+from .utils import (nullcontext, HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, is_known_hash)
 from .exceptions import NotExistent, NotInitialised
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
@@ -35,7 +35,7 @@ class Container:
     def __init__(self, folder):
         """Create the class that represents the container.
 
-        :param folder: the path to a folder that will host this object-store continer.
+        :param folder: the path to a folder that will host this object-store container.
         """
         self._folder = os.path.realpath(folder)
         self._session = None  # Will be populated by the _get_session function
@@ -242,6 +242,8 @@ class Container:
             raise ValueError('The loose prefix length can only be zero or a positive integer')
         if pack_size_target <= 0:
             raise ValueError('The pack size target can only be a non-zero positive integer')
+        if not is_known_hash(hash_type):
+            raise ValueError('Unknown hash type "{}"'.format(hash_type))
 
         if clear:
             if os.path.exists(self._folder):

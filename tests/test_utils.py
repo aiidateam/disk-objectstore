@@ -25,15 +25,27 @@ def test_lazy_opener_read():
 
         assert lazy.path == fhandle.name
         assert lazy.mode == 'rb'
+        with pytest.raises(ValueError):
+            # This is not open yet
+            lazy.tell()
 
         assert len(current_process.open_files()
                   ) == start_open_files, ('The LazyOpener is not lazy, but axtually opened the file instead!')
         with lazy as fhandle:
+            # Shoul be opened at position zero at the beginnign
+            assert lazy.tell() == 0
             read_content = fhandle.read()
+            # The position should had moved by the right amount
+            assert lazy.tell() == len(read_content)
+
             assert len(current_process.open_files()) == start_open_files + 1, 'The count of open files is wrong!'
             assert read_content == content, 'Unexpected content read from file'
 
         assert len(current_process.open_files()) == start_open_files, 'The LazyOpener did not close the file on exit!'
+
+        with pytest.raises(ValueError):
+            # Should raise again after closing
+            lazy.tell()
     finally:
         os.remove(fhandle.name)
 
@@ -67,14 +79,15 @@ def test_nullcontext():
         assert manager == result
 
 
-@pytest.mark.parametrize('hash_type', ['sha256'])
 @pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
-def test_object_writer(temp_dir, loose_prefix_len, hash_type):
+def test_object_writer(temp_dir, loose_prefix_len):
     """Test the ObjectWriter, directly writing objects (loose, via a sandbox)."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
 
-    content = b'fsddfq232v'
+    hash_type = 'sha256'
+    expected_hash = '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'
+    content = b'some-content-to-hash'
 
     # Create the two folders, make sure they
     # are empty
@@ -106,6 +119,10 @@ def test_object_writer(temp_dir, loose_prefix_len, hash_type):
     assert len(os.listdir(loose_folder)) == 1
 
     obj_hashkey = object_writer.get_hashkey()
+
+    # Check that the hash was computed correctly
+    assert obj_hashkey == expected_hash
+
     # Open manually the file, implicitly checking
     # that the prefix length is the expected one,
     # and that the content is correct
@@ -118,7 +135,7 @@ def test_object_writer(temp_dir, loose_prefix_len, hash_type):
 
 
 def test_object_writer_with_exc(temp_dir):
-    """Test that the ObjectWRite does not write anything if there is an exception."""
+    """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
@@ -154,7 +171,7 @@ def test_object_writer_with_exc(temp_dir):
 
 
 def test_object_writer_not_twice(temp_dir):
-    """Test that the ObjectWRite cannot be opened twice."""
+    """Test that the ObjectWriter cannot be opened twice."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
@@ -192,9 +209,25 @@ def test_object_writer_not_twice(temp_dir):
     assert 'already stored' in str(excinfo.value)
 
 
-def test_object_writer_existing_obj():
-    """Assert that if a loose object is found with the same hash key, the object_writer crashes."""
-    raise ValueError('THIS MUST BE REIMPLEMENTED TO CHECK WHAT HAPPENS WHEN STORING TWICE THE SAME OBJECT')
+def test_unknown_hash_type(temp_dir):
+    """Test that the ObjectWriter does not write anything if there is an exception."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    with pytest.raises(ValueError):
+        object_writer = utils.ObjectWriter(
+            sandbox_folder=sandbox_folder,
+            loose_folder=loose_folder,
+            loose_prefix_len=loose_prefix_len,
+            hash_type='unknown_hash_string'
+        )
+        # The exception is actually raised here
+        with object_writer as fhandle:
+            # Write some content first
+            fhandle.write('something')
 
 
 def test_packed_object_reader():
@@ -345,3 +378,25 @@ def test_zero_stream_multi_read():
     data = b''.join(data_chunks)
     assert len(data) == length, 'The zero stream produced data of the wrong length'
     assert data == b'\x00' * length, 'The zero stream produced non-zero data'
+
+
+# Set as the second parameter the hash of the 'content' string written below
+# inside the test function
+@pytest.mark.parametrize(
+    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b']]
+)
+def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
+    """Test some functionality of the HashWriterWrapper class."""
+    content = b'some-content-to-hash'
+    filename = 'test_file'
+
+    with open(os.path.join(temp_dir, filename), 'wb') as fhandle:
+        wrapped = utils.HashWriterWrapper(fhandle, hash_type=hash_type)
+        wrapped.write(content)
+        # Check that the flush command does not raise
+        wrapped.flush()
+        assert wrapped.hexdigest() == expected_hash
+        assert wrapped.hash_type == hash_type
+
+    with open(os.path.join(temp_dir, filename), 'rb') as fhandle:
+        assert fhandle.read() == content

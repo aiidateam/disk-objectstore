@@ -46,7 +46,7 @@ class LazyOpener:
         :raises ValueError: if the file is not open.
         """
         if self._fhandle is None:
-            return ValueError('I/O operation on closed file.')
+            raise ValueError('I/O operation on closed file.')
         return self._fhandle.tell()
 
     def __enter__(self):
@@ -79,7 +79,7 @@ def nullcontext(enter_result):
 class ObjectWriter:
     """A class to get direct write access for a new object."""
 
-    def __init__(self, sandbox_folder, loose_folder, loose_prefix_len, hash_type):
+    def __init__(self, sandbox_folder, loose_folder, loose_prefix_len, hash_type, trust_existing=False):
         """Initialise an object to store a new loose object.
 
         :param sandbox_folder: the folder to store objects while still giving
@@ -90,6 +90,8 @@ class ObjectWriter:
           0 means store objects flat. Note that objects are always stored flat
           in the sandbox (there shouldn't be too many sandbox objects at the
           same time).
+        :param trust_existing: if True, just continues if a file with the same hashkey is found.
+          Otherwise, check the existing file content and overwrite if wrong.
         """
         self._sandbox_folder = sandbox_folder
         self._loose_folder = loose_folder
@@ -99,6 +101,7 @@ class ObjectWriter:
         self._stored = False
         self._obj_path = None
         self._filehandle = None
+        self._trust_existing = trust_existing
 
     @property
     def hash_type(self):
@@ -126,7 +129,7 @@ class ObjectWriter:
         self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
-    def __exit__(self, exc_type, value, traceback):
+    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches
         """
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
@@ -153,13 +156,53 @@ class ObjectWriter:
             else:  # prefix_len == 0
                 dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
 
+            # At this point, if the destination exists, it means someone already put an object
+            # with the same content/hash key
             if os.path.exists(dest_loose_object):
-                raise ModificationNotAllowed("Destination object '{}' already exists!".format(self._hashkey))
+                if not self._trust_existing:
+                    # I do not trust the object is correct.
+                    # This might still not be perfect: while I check, another
+                    # process might in the meantime rewrite it again, and this might
+                    # be wrong. But this is very difficult to catch
+                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    if existing_checksum != self._hashkey:
+                        # The existing object has the wrong hash! I am going to assume where was a problem
+                        # and I will just remove it and overwrite it.
+                        # This means that the object will *not* be there for some time.
+                        # But this should be ok, because it was corrupted, so nobody should really be
+                        # using it...
+                        os.remove(dest_loose_object)
             # This is an atomic operation, at least according to this website:
             # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
             # but needs to be on the same filesystem (this should always be the case for us)
             # Note that instead shutil.move is not guaranteed to be atomic!
-            os.rename(self._obj_path, dest_loose_object)
+            # Also: on Linux, this performs a silent overwrite if the file exists.
+            # Instead, it raises OSError on Windows if the file exists.
+            # The Linux behavior is ok: in this case, two processes were writing at almost the same time;
+            # we assume it's ok to take either of them (the second winning)
+            # On Windows, we need to take special action
+            try:
+                os.rename(self._obj_path, dest_loose_object)
+            except OSError:
+                # A file with the same name was written in the meantime...
+                # If I trust existing files, there is nothing to do.
+                # Otherwise, I will need to check
+                if not self._trust_existing:
+                    # See comments above
+                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    # I replace the file only if missing
+                    if existing_checksum != self._hashkey:
+                        os.remove(dest_loose_object)
+                        try:
+                            # I could still be in the case in which, while I do this,
+                            # someone else writes the file. I will assume, in this case,
+                            # that the newly written file is OK, in the current implementation
+                            # (otherwise I should start doing a `while True` loop, but I
+                            # need to think carefully that this does not incur in raise conditions
+                            # where two processes start trying to change the file in turns...)
+                            os.rename(self._obj_path, dest_loose_object)
+                        except OSError:
+                            pass
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
@@ -278,7 +321,7 @@ class StreamDecompresser:
             # and return the joined result
             data = []
             while True:
-                next_chunk = self.read(size=self._CHUNKSIZE)
+                next_chunk = self.read(self._CHUNKSIZE)
                 if not next_chunk:
                     # Empty returned value: EOF
                     break
@@ -361,6 +404,15 @@ class ZeroStream:
         return stream
 
 
+def is_known_hash(hash_type):
+    """Return True if the hash_type is known, False otherwise."""
+    try:
+        _get_hash(hash_type)
+        return True
+    except ValueError:
+        return False
+
+
 def _get_hash(hash_type):
     """Return a hash class with an update method and a hexdigest method."""
     known_hashes = {
@@ -371,6 +423,30 @@ def _get_hash(hash_type):
         return known_hashes[hash_type]
     except KeyError:
         raise ValueError("Unknown or unsupported hash type '{}'".format(hash_type))
+
+
+def _compute_hash_for_filename(filename, hash_type):
+    """Return the hash for the given file.
+
+    Will read the file in chunks.
+
+    :param filename: a filename to a file to check.
+    :param hash_type: a valid string as recognised by the _get_hash function
+    :return: the hash hexdigest (the hash key)
+    """
+    _chunksize = 524288
+
+    hasher = _get_hash(hash_type)()
+    with open(filename, 'rb') as fhandle:
+        while True:
+            chunk = fhandle.read(_chunksize)
+            hasher.update(chunk)
+
+            if not chunk:
+                # Empty returned value: EOF
+                break
+
+    return hasher.hexdigest()
 
 
 class HashWriterWrapper:

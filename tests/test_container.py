@@ -423,6 +423,13 @@ def test_invalid_prefix_length(temp_dir, loose_prefix_len):
         container.init_container(clear=True, loose_prefix_len=loose_prefix_len)
 
 
+def test_invalid_hash_type(temp_dir):
+    """Check that the prefix lengths and the size targets."""
+    container = Container(temp_dir)
+    with pytest.raises(ValueError):
+        container.init_container(clear=True, hash_type='unknown-type')
+
+
 def test_initialisation(temp_dir):
     """Test that the initialisation function works as expected."""
     container = Container(temp_dir)
@@ -487,8 +494,10 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     # Pick any valid hash key
     obj_hashkeys = list(obj_md5s.keys())
 
-    # 1 unknown hash key + 1 invalid string
-    unknown_hashkeys = [hashlib.sha256().hexdigest()] + ['invalid--string']
+    # 2 unknown keys, one even with invalid format
+    # I don't use a 'real' SHA checksum as it could be randomly picked by the
+    # randomly generated data
+    unknown_hashkeys = ['281ab9a49afbf4c8996fb92427ae41e4649'] + ['invalid--string']
 
     # Loop read
     for unknown_hashkey in unknown_hashkeys:
@@ -557,6 +566,33 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     assert set(missing) == set(unknown_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
     assert obj_md5s == check_md5s
+
+
+def test_same_object_loose(temp_container, generate_random_data):
+    """Store a lot of times the same bytestream, check that I get only one loose object.
+
+    This is due to the deduplication provided by the hashing function."""
+    # Check that there are no objects
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 0
+
+    num_objects = 100  # Write these many identical objects
+
+    random_data = generate_random_data()
+    test_data = list(random_data.values())[0]
+    obj_hashkeys = []
+    for _ in range(num_objects):
+        obj_hashkeys.append(temp_container.add_object(test_data))
+
+    assert len(set(obj_hashkeys)) == 1, 'Objects are not all identical'
+
+    # Check the number of objects again
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 1
+    assert counts['pack_files'] == 0
 
 
 @pytest.mark.parametrize('compress_packs', [True, False])
