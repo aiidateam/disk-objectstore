@@ -83,7 +83,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         )
         for _ in range(num_files):
             size = random.randint(min_size, max_size)
-            content = bytearray(random.getrandbits(8) for _ in range(size))
+            content = os.urandom(size)
             contents.append(content)
 
         # Store objects (loose)

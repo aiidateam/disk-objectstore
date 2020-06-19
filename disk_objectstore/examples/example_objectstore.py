@@ -56,7 +56,7 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
     for _ in range(num_files):
         filename = 'filename-{}'.format(str(uuid.uuid4()))
         size = random.randint(min_size, max_size)
-        content = bytearray(random.getrandbits(8) for _ in range(size))
+        content = os.urandom(size)
         files[filename] = content
     total_size = sum(len(content) for content in files.values())
     print('Done. Total size: {} bytes (~{:.3f} MB).'.format(total_size, (total_size // 1024) / 1024))

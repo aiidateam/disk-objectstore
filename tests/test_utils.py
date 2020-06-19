@@ -1,7 +1,6 @@
 """Test of the utils wrappers."""
 import io
 import os
-import random
 import tempfile
 import zlib
 
@@ -297,7 +296,7 @@ def test_stream_decompresser():
     original_data_long = b'0123456789abcdef' * 1024 * 128 + b'E'
     # A longish binary string (~4MB) with random data
     # so typically uncompressible (compressed size is typically larger)
-    original_data_long_random = bytearray(random.getrandbits(8) for _ in range(4000000))
+    original_data_long_random = os.urandom(4000000)
 
     original_data = [original_data_short, original_data_long, original_data_long_random]
 
