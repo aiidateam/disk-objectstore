@@ -208,6 +208,64 @@ def test_object_writer_not_twice(temp_dir):
     assert 'already stored' in str(excinfo.value)
 
 
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: disable=invalid-name
+    """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    # Some content that does not match the hash key
+    corrupted_content = b'CORRUPTED CONTENT'
+
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+    with open(loose_file, 'wb') as fhandle:
+        fhandle.write(corrupted_content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    with object_writer as fhandle:
+        # Write some content (this should end up in the same `loose_file` location)
+        fhandle.write(content)
+
+    # Check the end condition:
+    # nothing in the sandbox, nothing new in the loose_folder
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    # Check now the content
+    with open(loose_file, 'rb') as fhandle:
+        object_content = fhandle.read()
+
+    if trust_existing:
+        # If I trust existing files, the content shouldn't have been touched
+        assert object_content == corrupted_content
+    else:
+        # If I don't trust existing files, the content should have been replaced
+        assert object_content == content
+
+
 def test_unknown_hash_type(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')

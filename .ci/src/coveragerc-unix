@@ -1,4 +1,0 @@
-[report]
-exclude_lines =
-    pragma: no cover
-    pragma: no-cover-on-unix

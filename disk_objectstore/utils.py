@@ -129,7 +129,7 @@ class ObjectWriter:
         self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
-    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches
+    def __exit__(self, exc_type, value, traceback):
         """
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
@@ -159,19 +159,32 @@ class ObjectWriter:
             # At this point, if the destination exists, it means someone already put an object
             # with the same content/hash key
             if os.path.exists(dest_loose_object):
-                if not self._trust_existing:
-                    # I do not trust the object is correct.
-                    # This might still not be perfect: while I check, another
-                    # process might in the meantime rewrite it again, and this might
-                    # be wrong. But this is very difficult to catch
-                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
-                    if existing_checksum != self._hashkey:
-                        # The existing object has the wrong hash! I am going to assume where was a problem
-                        # and I will just remove it and overwrite it.
-                        # This means that the object will *not* be there for some time.
-                        # But this should be ok, because it was corrupted, so nobody should really be
-                        # using it...
-                        os.remove(dest_loose_object)  # pragma: no-cover-on-windows
+                if self._trust_existing:
+                    # I trust that the object is correct: I just remove the sandbox file and return
+                    os.remove(self._obj_path)
+                    return
+                # I do not trust the object is correct.
+                # This might still not be perfect: while I check, another
+                # process might in the meantime rewrite it again, and this might
+                # be wrong. But this is very difficult to catch
+                existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                if existing_checksum == self._hashkey:
+                    # The existing object has the correct hash,
+                    # I just remove the sandbox file and return.
+                    os.remove(self._obj_path)
+                    return
+                # The existing object has the wrong hash! I am going to assume where was a problem
+                # and I will just remove it and overwrite it.
+                # This means that the object will *not* be there for some time.
+                # But this should be ok, because it was corrupted, so nobody should really be
+                # using it...
+                # Note: this would really be needed only on Windows, on Unix os.rename will silently replace
+                # the existing file
+                # Note that in reality I could end up deleting a 'good' file written by another process
+                # performing the exact same operation. But I will write it again below so this will only
+                # create a small window of time in which it does not exist (and I don't know if there is
+                # a way around it). This anyway happens only for existing but corrupted loose objects.
+                os.remove(dest_loose_object)
             # This is an atomic operation, at least according to this website:
             # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
             # but needs to be on the same filesystem (this should always be the case for us)
@@ -183,28 +196,13 @@ class ObjectWriter:
             # On Windows, we need to take special action
             try:
                 os.rename(self._obj_path, dest_loose_object)
-            except OSError:  # pragma: no-cover-on-unix
-                # A file with the same name was written in the meantime...
-                # If I trust existing files, there is nothing to do.
-                # Otherwise, I will need to check
-                if not self._trust_existing:  # pragma: no-cover-on-unix
-                    # See comments above
-                    existing_checksum = _compute_hash_for_filename(  # pragma: no-cover-on-unix
-                        filename=dest_loose_object, hash_type=self.hash_type  # pragma: no-cover-on-unix
-                    )  # pragma: no-cover-on-unix
-                    # I replace the file only if missing
-                    if existing_checksum != self._hashkey:  # pragma: no-cover-on-unix
-                        os.remove(dest_loose_object)  # pragma: no-cover-on-unix
-                        try:  # pragma: no-cover-on-unix
-                            # I could still be in the case in which, while I do this,
-                            # someone else writes the file. I will assume, in this case,
-                            # that the newly written file is OK, in the current implementation
-                            # (otherwise I should start doing a `while True` loop, but I
-                            # need to think carefully that this does not incur in raise conditions
-                            # where two processes start trying to change the file in turns...)
-                            os.rename(self._obj_path, dest_loose_object)  # pragma: no-cover-on-unix
-                        except OSError:  # pragma: no-cover-on-unix
-                            pass  # pragma: no-cover-on-unix
+            except OSError:
+                # A file with the same name was written in the meantime by someone else...
+                # I will assume, in this case, that the newly written file is OK in the current implementation
+                # (otherwise I should start doing a `while True` loop, but I
+                # need to think carefully that this does not incur in raise conditions
+                # where two processes start trying to change the file in turns...)
+                pass
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
