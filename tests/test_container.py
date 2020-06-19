@@ -124,9 +124,10 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
         'The container should have no packed objects '
         '(but there are {} instead)'.format(counts['packed'])
     )
-    assert counts['loose'] == len(obj_md5s), (
+    # I check with the length of the set because I could have picked to random identical objects
+    assert counts['loose'] == len(set(obj_md5s)), (
         'The container should have {} loose objects '
-        '(but there are {} instead)'.format(len(obj_md5s), counts['loose'])
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['loose'])
     )
 
     # Retrieve objects (loose), in random order
@@ -164,9 +165,9 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     temp_container.pack_all_loose(compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(obj_md5s), (
+    assert counts['packed'] == len(set(obj_md5s)), (
         'The container should have {} packed objects '
-        '(but there are {} instead)'.format(len(obj_md5s), counts['packed'])
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['packed'])
     )
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '
@@ -204,9 +205,9 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
     obj_md5s = _add_objects_directly_to_pack(temp_container, data, compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(data), (
+    assert counts['packed'] == len(set(data)), (
         'The container should have {} packed objects '
-        '(but there are {} instead)'.format(len(data), counts['packed'])
+        '(but there are {} instead)'.format(len(set(data)), counts['packed'])
     )
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '
@@ -279,9 +280,9 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     obj_md5s = dict(zip(obj_hashkeys, keys))
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(data), (
+    assert counts['packed'] == len(set(data)), (
         'The container should have {} packed objects '
-        '(but there are {} instead)'.format(len(data), counts['packed'])
+        '(but there are {} instead)'.format(len(set(data)), counts['packed'])
     )
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '
@@ -339,9 +340,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
         'The container should have 0 packed objects '
         '(but there are {} instead)'.format(counts['packed'])
     )
-    assert counts['loose'] == len(obj_md5s), (
+    assert counts['loose'] == len(set(obj_md5s)), (
         'The container should have {} loose objects '
-        '(but there are {} instead)'.format(len(obj_md5s), counts['loose'])
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['loose'])
     )
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
@@ -362,9 +363,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
               ) == container._current_pack_id + 1  # pylint: disable=protected-access
 
     counts = container.count_objects()
-    assert counts['packed'] == len(obj_md5s), (
+    assert counts['packed'] == len(set(obj_md5s)), (
         'The container should have {} packed objects '
-        '(but there are {} instead)'.format(len(obj_md5s), counts['packed'])
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['packed'])
     )
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '

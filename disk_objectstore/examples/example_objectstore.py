@@ -76,10 +76,11 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
         assert counts['loose'] == start_counts['loose'], 'Mismatch (loose in packed case): {} != {}'.format(
             start_counts['loose'], counts['loose']
         )
-        assert counts['packed'
-                     ] == start_counts['packed'] + num_files, 'Mismatch (packed in packed case): {} + {} != {}'.format(
-                         start_counts['packed'], num_files, counts['packed']
-                     )
+        ## Cannot do this with the hash key implenentation - I might have stored the same object twice
+        #assert counts['packed'
+        #             ] == start_counts['packed'] + num_files, 'Mismatch (packed in packed case): {} + {} != {}'.format(
+        #                 start_counts['packed'], num_files, counts['packed']
+        #             )
     else:
         # Store objects (loose)
         start = time.time()
@@ -108,10 +109,11 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
 
         # Check that num_files new loose files are present now
         counts = container.count_objects()
-        assert counts['loose'
-                     ] == start_counts['loose'] + num_files, 'Mismatch (loose in unpacked case): {} + {} != {}'.format(
-                         start_counts['loose'], num_files, counts['loose']
-                     )
+        ## I cannot do this because I could have overlap if the object is identical and has the same hash key
+        #assert counts['loose'
+        #             ] == start_counts['loose'] + num_files, 'Mismatch (loose in unpacked case): {} + {} != {}'.format(
+        #                 start_counts['loose'], num_files, counts['loose']
+        #             )
 
         # Print container size info (before packing)
         size_info = container.get_total_size()
