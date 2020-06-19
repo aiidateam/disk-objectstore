@@ -595,6 +595,85 @@ def test_same_object_loose(temp_container, generate_random_data):
     assert counts['pack_files'] == 0
 
 
+def test_same_object_direct_pack(temp_container, generate_random_data):
+    """Store a lot of times the same bytestream directly in the packs, check that I get only one loose object.
+
+    This is due to the deduplication provided by the hashing function."""
+    # Check that there are no objects
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 0
+
+    num_objects = 100  # Write these many identical objects
+
+    random_data = generate_random_data()
+    test_data = list(random_data.values())[0]
+    # many times the same string
+    all_test_data = [test_data] * num_objects
+
+    # Append all of them; it should understand it always the same
+    obj_hashkeys = temp_container.add_objects_to_pack(all_test_data)
+    assert len(set(obj_hashkeys)) == 1, 'Objects are not all identical'
+
+    # Check the number of objects again
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 1
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 1
+
+    # Do it again; the object is already there
+    new_obj_hashkeys = temp_container.add_objects_to_pack(all_test_data)
+    assert len(set(obj_hashkeys)) == 1, 'Objects are not all identical'
+    assert obj_hashkeys[0] == new_obj_hashkeys[0], 'In the second insertion, it generated a different hash key'
+
+    # Check the number of objects again
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 1
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 1
+
+
+def test_same_object_loose_and_pack(temp_container, generate_random_data):
+    """Store the same object first as loose, then pack all, then readd the same object and repack."""
+    # Check that there are no objects
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 0
+
+    random_data = generate_random_data()
+    test_data = list(random_data.values())[0]
+    obj_hashkey = temp_container.add_object(test_data)
+
+    # Check the number of objects: there should be a single loose object
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 1
+    assert counts['pack_files'] == 0
+
+    temp_container.pack_all_loose()
+    # Check the number of objects again; there should be only a single packed object in one pack file
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 1
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 1
+
+    new_obj_hashkey = temp_container.add_object(test_data)
+    assert new_obj_hashkey == obj_hashkey
+
+    # We don't check the behavior here.
+    # For now, for efficiency, we just store again a loose object.
+    # This will be deleted as the first thing upon packing.
+
+    # Pack again; no new packed object should appear
+    temp_container.pack_all_loose()
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 1
+    assert counts['loose'] == 0
+    assert counts['pack_files'] == 1
+
+
 @pytest.mark.parametrize('compress_packs', [True, False])
 def test_sizes(temp_container, generate_random_data, compress_packs):
     """Check that the information on size is reliable."""

@@ -755,10 +755,31 @@ class Container:
         This is a maintenance operation, needs to be done only by one process.
         :param compress: if True, compress objects before storing them.
         """
-        # I invert the list order so I can just 'pop' from the bottom that is efficient
-        loose_objects = list(self._list_loose())[::-1]
+        loose_objects = set(self._list_loose())
         pack_int_id = self._get_pack_id_to_write_to()
         session = self._get_cached_session()
+
+        # I first skip all loose hashkeys that already exist in the pack.
+        # Packing should be performed by a single process at a given time as a
+        # maintenance operation, so I don't have to worry about concurrency:
+        # If I don't find it here, is should not appear midway during the rest of the process
+
+        # I check the hash keys that are already in the pack
+        existing_packed_hashkeys = session.query(Obj).filter(Obj.hashkey.in_(loose_objects)).with_entities(Obj.hashkey
+                                                                                                          ).all()
+        # The query returns a list of length-1 tuples,
+        # and we need to unpack them
+        existing_packed_hashkeys = [value for value, in existing_packed_hashkeys]
+        # I remove them from the loose_objects list
+        loose_objects.difference_update(existing_packed_hashkeys)
+        # Now, I should be left only with objects with hash keys that are not yet known.
+        # I can then continue
+
+        # Clean up loose objects that are already in the packs
+        # Here, we assume that if it's already packed, it's safe to assume it's uncorrupted.
+        # If we want to do checks, they should be done here before deleting
+        for obj_hashkey in existing_packed_hashkeys:
+            os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while loose_objects:
@@ -800,6 +821,7 @@ class Container:
 
                 # Let's commit and do final operations before closing the pack file.
                 # Committing as soon as we are done with one pack
+                # Note: because of the logic above, in theory this should not raise an IntegrityError!
                 session.commit()
 
                 # Clean up loose objects, for each pack
@@ -857,20 +879,50 @@ class Container:
                     else:
                         stream_context_manager = nullcontext(next_stream)
 
-                    obj = Obj()
-                    obj.pack_id = pack_int_id
-                    obj.compressed = compress
-                    obj.offset = pack_handle.tell()
+                    #obj = Obj()
+                    obj_dict = {}
+                    obj_dict['pack_id'] = pack_int_id
+                    obj_dict['compressed'] = compress
+                    obj_dict['offset'] = pack_handle.tell()
                     with stream_context_manager as stream:
                         wrapped_pack_handle = HashWriterWrapper(pack_handle, hash_type=self.hash_type)
-                        obj.size = self._write_data_to_packfile(
+                        obj_dict['size'] = self._write_data_to_packfile(
                             pack_handle=wrapped_pack_handle, read_handle=stream, compress=compress
                         )
-                        obj.hashkey = wrapped_pack_handle.hexdigest()
-                    obj.length = pack_handle.tell() - obj.offset
-                    session.add(obj)
+                        obj_dict['hashkey'] = wrapped_pack_handle.hexdigest()
+                    obj_dict['length'] = pack_handle.tell() - obj_dict['offset']
+                    # Here, we have appended the object to the pack file.
+                    # And now that we are done, we know the hash key.
+                    # However, we have to cope with the fact that an object with the same hash key
+                    # could be already inside the object.
+                    # We cannot do a query for each object, it would be too expensive and inefficient.
+                    # We need instead to rely of the unique constraint on the DB.
+                    # However, the IntegrityError is raised not during the `add` call, but at the final
+                    # `commit`.
+                    # One option is to use this, instead of a session.add()
+                    insert_command = Obj.__table__.insert().prefix_with('OR IGNORE').values(obj_dict)
+                    session.execute(insert_command)
+                    # Now, I have two options.
+                    # 1. I just leave in the unused bits, and we do a re-packing later.
+                    #    This is ok for efficiency, but might be problematic if you put a lot of
+                    #    very similar objects, and get close to the hard-drive disk limit.
+                    #    In this case, it becomes very hard to create a new 'vacuumed' pack.
+                    # 2. We do a check (but this must be done object by object), performing another query,
+                    #    and checking if we get the same object or a different one. If it's a different one,
+                    #    we go back in the file and truncate it (or simply start writing again from there).
+                    #    This might be slow as you have to do a query per object, and also risks that if you
+                    #    are writing a lot of times objects that already exist, you 'burn' your hard-drive
+                    #    by writing in the very same spot.
+                    # 3. We do a very first query at the beginning to get *all hashes*, and we use it to drop
+                    #    immediately. However, it's risky as one might run out of memory.
+                    #    3a. An option could be not to store the *whole* hash key, but just the first part of the
+                    #    hash. This should reduce the memory requirements, and we can do the query only if there
+                    #    are potential conflicts.
+                    # For now, I just go with option 1 - it's simpler to code, and still safe unless you
+                    # end out of space. I would try next 3a, in case.
+
                     # Append the new hash key to the list of hash keys to return
-                    hashkeys.append(obj.hashkey)
+                    hashkeys.append(obj_dict['hashkey'])
 
                 # This pack file is complete.
                 # Let's commit before closing the pack file.

@@ -11,7 +11,9 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
 
     id = Column(Integer, primary_key=True)  # pylint: disable=invalid-name
 
-    hashkey = Column(String, nullable=False, index=True)
+    # Important: there are parts of the code that rely on the fact that this field is unique.
+    # If you really do not want a uniqueness field, you will need to adapt the code.
+    hashkey = Column(String, nullable=False, unique=True, index=True)
     compressed = Column(Boolean, nullable=False)
     size = Column(Integer, nullable=False)  # uncompressed size; if uncompressed, size == length
     offset = Column(Integer, nullable=False)
