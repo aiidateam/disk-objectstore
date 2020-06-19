@@ -51,6 +51,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e .
         pip install -r dev-requirements.txt
+    - name: setup the correct .coveragerc to ignore lines that exist only on one OS
+      run: |
+        cp .ci/coveragerc-${{ matrix.os }} .coveragerc
     - name: Test with pytest
       run: |
         pytest --cov=disk_objectstore

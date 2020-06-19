@@ -171,7 +171,7 @@ class ObjectWriter:
                         # This means that the object will *not* be there for some time.
                         # But this should be ok, because it was corrupted, so nobody should really be
                         # using it...
-                        os.remove(dest_loose_object)
+                        os.remove(dest_loose_object)  # pragma: no-cover-on-windows
             # This is an atomic operation, at least according to this website:
             # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
             # but needs to be on the same filesystem (this should always be the case for us)
@@ -183,26 +183,28 @@ class ObjectWriter:
             # On Windows, we need to take special action
             try:
                 os.rename(self._obj_path, dest_loose_object)
-            except OSError:
+            except OSError:  # pragma: no-cover-on-unix
                 # A file with the same name was written in the meantime...
                 # If I trust existing files, there is nothing to do.
                 # Otherwise, I will need to check
-                if not self._trust_existing:
+                if not self._trust_existing:  # pragma: no-cover-on-unix
                     # See comments above
-                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    existing_checksum = _compute_hash_for_filename(  # pragma: no-cover-on-unix
+                        filename=dest_loose_object, hash_type=self.hash_type  # pragma: no-cover-on-unix
+                    )  # pragma: no-cover-on-unix
                     # I replace the file only if missing
-                    if existing_checksum != self._hashkey:
-                        os.remove(dest_loose_object)
-                        try:
+                    if existing_checksum != self._hashkey:  # pragma: no-cover-on-unix
+                        os.remove(dest_loose_object)  # pragma: no-cover-on-unix
+                        try:  # pragma: no-cover-on-unix
                             # I could still be in the case in which, while I do this,
                             # someone else writes the file. I will assume, in this case,
                             # that the newly written file is OK, in the current implementation
                             # (otherwise I should start doing a `while True` loop, but I
                             # need to think carefully that this does not incur in raise conditions
                             # where two processes start trying to change the file in turns...)
-                            os.rename(self._obj_path, dest_loose_object)
-                        except OSError:
-                            pass
+                            os.rename(self._obj_path, dest_loose_object)  # pragma: no-cover-on-unix
+                        except OSError:  # pragma: no-cover-on-unix
+                            pass  # pragma: no-cover-on-unix
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
