@@ -304,6 +304,9 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
             obj_hashkey, obj_md5s[obj_hashkey], retrieved_md5s[obj_hashkey]
         )
 
+    # I close the container, as this is needed on Windows
+    temp_container.close()
+
 
 @pytest.mark.parametrize(
     'loose_prefix_len,pack_size_target', [(0, 1000), (2, 1000), (3, 1000), (0, 40000000), (2, 40000000), (3, 40000000)]
