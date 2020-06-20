@@ -4,5 +4,5 @@ codecov:
   coverage:
     precision: 2
     round: down
-    range: "100...100"
-    threshold: 0%
+    range: "99...100"
+    threshold: 0.5%
