@@ -134,12 +134,17 @@ class ObjectWriter:
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
         """
-        if not self._filehandle.closed:
-            self._filehandle.close()
-        self._hashkey = str(self._filehandle.hexdigest())
-        self._filehandle = None
-
         if exc_type is None:
+            if self._filehandle.closed:
+                raise RuntimeError('You cannot close the file handle yourself!')
+            # Flush out of the buffer, then fsync so it's written to disk; see e.g.
+            # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+            self._filehandle.flush()
+            os.fsync(self._filehandle.fileno())
+            self._filehandle.close()
+            self._hashkey = str(self._filehandle.hexdigest())
+            self._filehandle = None
+
             if self._loose_prefix_len:
                 parent_folder = os.path.join(self._loose_folder, self._hashkey[:self._loose_prefix_len])
                 # Create parent folder the first time; done with try/except
@@ -156,6 +161,7 @@ class ObjectWriter:
             else:  # prefix_len == 0
                 dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
 
+            dest_parent_folder = os.path.dirname(dest_loose_object)
             # At this point, if the destination exists, it means someone already put an object
             # with the same content/hash key
             if os.path.exists(dest_loose_object):
@@ -203,6 +209,11 @@ class ObjectWriter:
                 # need to think carefully that this does not incur in raise conditions
                 # where two processes start trying to change the file in turns...)
                 pass
+            # Flush also the parent directory, see e.g.
+            # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+            dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
+            os.fsync(dirfd)
+            os.close(dirfd)
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
@@ -519,3 +530,7 @@ class HashWriterWrapper:
     def mode(self):
         """Return a string with the mode the file was open with."""
         return self._write_stream.mode
+
+    def fileno(self):
+        """Return the integer file descriptor of the underlying file object."""
+        return self._write_stream.fileno()
