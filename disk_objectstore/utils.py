@@ -211,9 +211,10 @@ class ObjectWriter:
                 pass
             # Flush also the parent directory, see e.g.
             # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
-            dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
-            os.fsync(dirfd)
-            os.close(dirfd)
+            if os.name == 'posix':
+                dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
+                os.fsync(dirfd)
+                os.close(dirfd)
             self._stored = True
         else:
             if os.path.exists(self._obj_path):
