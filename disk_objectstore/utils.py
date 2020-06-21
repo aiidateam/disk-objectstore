@@ -129,7 +129,7 @@ class ObjectWriter:
         self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
-    def __exit__(self, exc_type, value, traceback):
+    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches
         """
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
@@ -217,6 +217,8 @@ class ObjectWriter:
                 os.close(dirfd)
             self._stored = True
         else:
+            if not self._filehandle.closed:
+                self._filehandle.close()
             if os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
 
