@@ -130,10 +130,11 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
         # Check that all loose files are gone
         counts = container.count_objects()
         assert not counts['loose'], 'loose objects left: {}'.format(os.listdir(container._get_loose_folder()))  # pylint: disable=protected-access
-        assert counts['packed'] == start_counts['packed'] + start_counts[
-            'loose'] + num_files, 'Mismatch (post-pack): {} + {} + {} != {}'.format(
-                start_counts['packed'], start_counts['loose'], num_files, counts['packed']
-            )
+        ## I cannot do this because I could have overlap if the object is identical and has the same hash key
+        #assert counts['packed'] == start_counts['packed'] + start_counts[
+        #    'loose'] + num_files, 'Mismatch (post-pack): {} + {} + {} != {}'.format(
+        #        start_counts['packed'], start_counts['loose'], num_files, counts['packed']
+        #    )
 
     # print container size info
     size_info = container.get_total_size()
