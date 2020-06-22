@@ -344,11 +344,11 @@ class Container:
         not be seekable.
         :param hashkey: the hashkey of the object to stream.
         """
-        with self.get_object_streams_and_size(hashkeys=[hashkey], skip_if_missing=False) as triplets:
+        with self.get_objects_stream_and_size(hashkeys=[hashkey], skip_if_missing=False) as triplets:
             counter = 0
             for obj_hashkey, stream, _ in triplets:
                 counter += 1
-                assert counter == 1, 'There is more than one item returned by get_object_streams_and_size'
+                assert counter == 1, 'There is more than one item returned by get_objects_stream_and_size'
                 assert obj_hashkey == hashkey
 
                 if stream is None:
@@ -357,7 +357,7 @@ class Container:
                 yield stream
 
     @contextmanager
-    def get_object_streams_and_size(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
+    def get_objects_stream_and_size(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
         """A context manager returning a generator yielding triplets of (hashkey, open stream, size).
 
         :note: the hash keys yielded are often in a *different* order than the original
@@ -367,7 +367,7 @@ class Container:
 
         To use it, you should do something like the following::
 
-            with container.get_object_streams_and_size(hashkeys=hashkeys) as triplets:
+            with container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
                 for obj_hashkey, stream, size in triplets:
                     if stream is None:
                         # This should happen only if you pass skip_if_missing=False
@@ -517,11 +517,11 @@ class Container:
 
         yield get_object_stream_generator(hashkeys=hashkeys, skip_if_missing=skip_if_missing)
 
-    def get_object_contents(self, hashkeys, skip_if_missing=True):
+    def get_objects_content(self, hashkeys, skip_if_missing=True):
         """Get the content of a number of objects with given hash keys.
 
         :note: use this method only if you know objects fit in memory.
-            Otherwise, use the ``get_object_streams_and_size`` context manager and
+            Otherwise, use the ``get_objects_stream_and_size`` context manager and
             process the objects one by one.
 
         :param hashkeys: A list of hash kyes of the objects to retrieve.
@@ -529,7 +529,7 @@ class Container:
             are the object contents.
         """
         retrieved = {}
-        with self.get_object_streams_and_size(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
+        with self.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
             for obj_hashkey, stream, _ in triplets:
                 if stream is None:
                     # This should happen only if skip_if_missing is False

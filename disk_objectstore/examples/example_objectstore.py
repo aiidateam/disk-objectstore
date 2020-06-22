@@ -163,7 +163,7 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
         """A function to read the data in bulk.
 
         It's defined as a functon so it can be profiled."""
-        return container.get_object_contents(hashkey_list, skip_if_missing=False)
+        return container.get_objects_content(hashkey_list, skip_if_missing=False)
 
     all_hashkeys = [hashkey_mapping[filename] for filename in random_keys]
     start = time.time()
@@ -197,7 +197,7 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
 
     # Retrieve in num_bulk_call chunks
     for chunk_of_hashkeys in split_iterator:
-        raw_retrieved.update(container.get_object_contents(chunk_of_hashkeys, skip_if_missing=False))
+        raw_retrieved.update(container.get_objects_content(chunk_of_hashkeys, skip_if_missing=False))
 
     tot_time = time.time() - start
     print(

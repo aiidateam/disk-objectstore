@@ -125,7 +125,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         random.shuffle(all_hashkeys)
 
         if bulk_read:
-            retrieved_content = container.get_object_contents(all_hashkeys, skip_if_missing=False)
+            retrieved_content = container.get_objects_content(all_hashkeys, skip_if_missing=False)
         else:
             retrieved_content = {}
             for obj_hashkey in all_hashkeys:
