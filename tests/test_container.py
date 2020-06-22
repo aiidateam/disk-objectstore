@@ -230,6 +230,66 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
         )
 
 
+def test_num_packs_with_target_size(temp_dir, generate_random_data):
+    """Add a number of objects directly to packs, with a small pack_size_target.
+
+    Check that packs are properly generated."""
+    pack_size_target = 10000
+    # 100 objects, each of which of at least 100 bytes.
+    num_files = 100
+    min_size = 100
+    data = generate_random_data(num_files=num_files, min_size=min_size, max_size=3000)
+    # Append a different set of bytes (a string repr of the current index)
+    # To be sure they are different, and there is no risk of duplicates, that stored
+    # together if they have the same hash key
+    data = [datum + str(idx).encode() for idx, datum in enumerate(data.values())]
+    # This is true if there are enough small files; if it was 1 file of 10000 bytes, one would get only 1 pack
+    min_expected_num_packs = (num_files * min_size) // pack_size_target
+
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    counts = temp_container.count_objects()
+    assert counts['pack_files'] == 0
+
+    temp_container.add_objects_to_pack(data, compress=False)
+
+    # Check that enough packs were created
+    counts = temp_container.count_objects()
+    assert counts['pack_files'] >= min_expected_num_packs
+    current_num_packfiles = counts['pack_files']
+
+    # Create a new object of 2*the pack_size_target, as a 'template'.
+    # Because of the length, they are surely different from previous data
+    # Also, it's bigger than the pack_size_target.
+    new_obj = list(
+        generate_random_data(num_files=1, min_size=pack_size_target * 2, max_size=pack_size_target * 2).values()
+    )[0]
+    # Create three objects from this template, with different suffix, so hash key is different
+    new_obj1 = new_obj + b'1'
+    new_obj2 = new_obj + b'2'
+    new_obj3 = new_obj + b'3'
+    # Put the first two objects
+    temp_container.add_objects_to_pack([new_obj1, new_obj2], compress=False)
+
+    # Check that at least one new pack has been created (probably the first one might have ended
+    # up in the previous incomplete pack, but the second one must go definitely in a new pack)
+    counts = temp_container.count_objects()
+    assert counts['pack_files'] >= current_num_packfiles + 1
+
+    # Update the current number of pack files
+    current_num_packfiles = counts['pack_files']
+
+    # Adding a new object must create a new pack, since the previous one is for sure full (it contains
+    # only one object, whose size is larger than the pack_size_target)
+    temp_container.add_objects_to_pack([new_obj3], compress=False)
+    counts = temp_container.count_objects()
+    assert counts['pack_files'] == current_num_packfiles + 1
+
+    # I close the container, as this is needed on Windows
+    temp_container.close()
+
+
 # Try a large and a small one
 @pytest.mark.parametrize('pack_size_target', [1000, 40000000])
 @pytest.mark.parametrize('use_compression,open_streams', [(True, True), (True, False), (False, True), (False, False)])
