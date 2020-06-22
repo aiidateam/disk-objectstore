@@ -297,17 +297,16 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         # I renamed this at module load to avoid infinite recursion
         os._actual_remove_function(path)  # pylint: disable=protected-access
         if os.path.realpath(path) == os.path.realpath(protected_path):
+            # Write back the file, with possibly a different content
             with open(path, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
-            # Return without actually deleting it
-            return
 
     new_bytes_content = corrupted_content if reappears_corrupted else content
     monkeypatch.setattr(
         os, 'remove', functools.partial(mockremove, protected_path=loose_file, new_bytes_content=new_bytes_content)
     )
 
-    if os.name == 'nt' and reappears_corrupted:
+    if os.name == 'nt' and not trust_existing and reappears_corrupted:
         # On windows, I am not sure it's possible to do an atomic overwrite.
         # Currently this library implements logic such that if the file reappears,
         # but its content is correct, no error is raised. But if the file reappears
@@ -339,9 +338,14 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         # (and the logic for reappears_corrupted is not really triggered)
         assert object_content == corrupted_content
     else:
-        # If I don't trust existing files, the content should have been replaced,
-        # and this should be guaranteed independently of the file reappearing corrupted or not
-        assert object_content == content
+        if os.name == 'nt' and not trust_existing and reappears_corrupted:
+            # Here I am just checking the current behavior: if the exception was raised,
+            # the corrupted file is left in place
+            assert object_content == corrupted_content
+        else:
+            # In all other cases, if I don't trust existing files, the content should have been replaced,
+            # and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
+            assert object_content == content
 
 
 @pytest.mark.parametrize('trust_existing', [True, False])
