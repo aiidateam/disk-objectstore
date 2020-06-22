@@ -153,8 +153,9 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
     ## If you want to flush to disk and drop all disk caches, uncomment this part
     ## (note that this works on Linux only, and this requires that `sudo` has already
     ## been run earlier, so it does not ask for a password):
-    # os.system("sync")
-    # os.system("sudo echo 3 > /proc/sys/vm/drop_caches")
+    # import subprocess
+    # subprocess.check_output(["sync"])
+    # subprocess.check_output(["sudo", "bash", "-c", "echo 3 > /proc/sys/vm/drop_caches"])
 
     ########################################
     # FIRST: single bulk read
