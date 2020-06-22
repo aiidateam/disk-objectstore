@@ -10,7 +10,7 @@ import zlib
 
 from contextlib import contextmanager
 
-from .exceptions import ModificationNotAllowed
+from .exceptions import ModificationNotAllowed, ClosingNotAllowed, DynamicInconsistentContent
 
 
 class LazyOpener:
@@ -134,90 +134,96 @@ class ObjectWriter:
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
         """
-        if exc_type is None:
-            if self._filehandle.closed:
-                raise RuntimeError('You cannot close the file handle yourself!')
-            # Flush out of the buffer, then fsync so it's written to disk; see e.g.
-            # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
-            self._filehandle.flush()
-            os.fsync(self._filehandle.fileno())
-            self._filehandle.close()
-            self._hashkey = str(self._filehandle.hexdigest())
-            self._filehandle = None
+        try:
+            if exc_type is None:
+                if self._filehandle.closed:
+                    raise ClosingNotAllowed('You cannot close the file handle yourself!')
+                # Flush out of the buffer, then fsync so it's written to disk; see e.g.
+                # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+                self._filehandle.flush()
+                os.fsync(self._filehandle.fileno())
+                self._filehandle.close()
+                self._hashkey = str(self._filehandle.hexdigest())
+                self._filehandle = None
 
-            if self._loose_prefix_len:
-                parent_folder = os.path.join(self._loose_folder, self._hashkey[:self._loose_prefix_len])
-                # Create parent folder the first time; done with try/except
-                # rather than with if/else to avoid problems at the beginning, for concurrent writing
+                if self._loose_prefix_len:
+                    parent_folder = os.path.join(self._loose_folder, self._hashkey[:self._loose_prefix_len])
+                    # Create parent folder the first time; done with try/except
+                    # rather than with if/else to avoid problems at the beginning, for concurrent writing
+                    try:
+                        os.mkdir(parent_folder)
+                    except FileExistsError:
+                        # The folder already exists, great! No work to do
+                        pass
+
+                    dest_loose_object = os.path.join(
+                        self._loose_folder, self._hashkey[:self._loose_prefix_len],
+                        self._hashkey[self._loose_prefix_len:]
+                    )
+                else:  # prefix_len == 0
+                    dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
+
+                dest_parent_folder = os.path.dirname(dest_loose_object)
+                # At this point, if the destination exists, it means someone already put an object
+                # with the same content/hash key
+                if os.path.exists(dest_loose_object):
+                    if self._trust_existing:
+                        # I trust that the object is correct: I just return
+                        return
+                    # I do not trust the object is correct.
+                    # This might still not be perfect: while I check, another
+                    # process might in the meantime rewrite it again, and this might
+                    # be wrong. But this is very difficult to catch
+                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    if existing_checksum == self._hashkey:
+                        # The existing object has the correct hash, I just return.
+                        return
+                    # The existing object has the wrong hash! I am going to assume where was a problem
+                    # and I will just remove it and overwrite it.
+                    # This means that the object will *not* be there for some time.
+                    # But this should be ok, because it was corrupted, so nobody should really be
+                    # using it...
+                    # Note: this would really be needed only on Windows, on Unix os.rename will silently replace
+                    # the existing file
+                    # Note that in reality I could end up deleting a 'good' file written by another process
+                    # performing the exact same operation. But I will write it again below so this will only
+                    # create a small window of time in which it does not exist (and I don't know if there is
+                    # a way around it). This anyway happens only for existing but corrupted loose objects.
+                    os.remove(dest_loose_object)
+                # This is an atomic operation, at least according to this website:
+                # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
+                # but needs to be on the same filesystem (this should always be the case for us)
+                # Note that instead shutil.move is not guaranteed to be atomic!
+                # Also: on Linux, this performs a silent overwrite if the file exists.
+                # Instead, it raises OSError on Windows if the file exists.
+                # The Linux behavior is ok: in this case, two processes were writing at almost the same time;
+                # we assume it's ok to take either of them (the second winning)
+                # On Windows, we need to take special action
                 try:
-                    os.mkdir(parent_folder)
-                except FileExistsError:
-                    # The folder already exists, great! No work to do
-                    pass
+                    os.rename(self._obj_path, dest_loose_object)
+                except OSError:
+                    # NOTE! This branch only happens on Windows, see above
+                    # A file with the same name was written in the meantime by someone else...
+                    # We do a final check of its content
+                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    if existing_checksum == self._hashkey:
+                        # The existing object that has appeared in the meantime is OK. Fine, has the correct hash,
+                        # I just return.
+                        return
+                    raise DynamicInconsistentContent(
+                        "I am trying to create loose object with hash key '{}', "
+                        'but it keeps reappearing with wrong content!'.format(self._hashkey)
+                    )
 
-                dest_loose_object = os.path.join(
-                    self._loose_folder, self._hashkey[:self._loose_prefix_len], self._hashkey[self._loose_prefix_len:]
-                )
-            else:  # prefix_len == 0
-                dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
-
-            dest_parent_folder = os.path.dirname(dest_loose_object)
-            # At this point, if the destination exists, it means someone already put an object
-            # with the same content/hash key
-            if os.path.exists(dest_loose_object):
-                if self._trust_existing:
-                    # I trust that the object is correct: I just remove the sandbox file and return
-                    os.remove(self._obj_path)
-                    return
-                # I do not trust the object is correct.
-                # This might still not be perfect: while I check, another
-                # process might in the meantime rewrite it again, and this might
-                # be wrong. But this is very difficult to catch
-                existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
-                if existing_checksum == self._hashkey:
-                    # The existing object has the correct hash,
-                    # I just remove the sandbox file and return.
-                    os.remove(self._obj_path)
-                    return
-                # The existing object has the wrong hash! I am going to assume where was a problem
-                # and I will just remove it and overwrite it.
-                # This means that the object will *not* be there for some time.
-                # But this should be ok, because it was corrupted, so nobody should really be
-                # using it...
-                # Note: this would really be needed only on Windows, on Unix os.rename will silently replace
-                # the existing file
-                # Note that in reality I could end up deleting a 'good' file written by another process
-                # performing the exact same operation. But I will write it again below so this will only
-                # create a small window of time in which it does not exist (and I don't know if there is
-                # a way around it). This anyway happens only for existing but corrupted loose objects.
-                os.remove(dest_loose_object)
-            # This is an atomic operation, at least according to this website:
-            # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
-            # but needs to be on the same filesystem (this should always be the case for us)
-            # Note that instead shutil.move is not guaranteed to be atomic!
-            # Also: on Linux, this performs a silent overwrite if the file exists.
-            # Instead, it raises OSError on Windows if the file exists.
-            # The Linux behavior is ok: in this case, two processes were writing at almost the same time;
-            # we assume it's ok to take either of them (the second winning)
-            # On Windows, we need to take special action
-            try:
-                os.rename(self._obj_path, dest_loose_object)
-            except OSError:
-                # A file with the same name was written in the meantime by someone else...
-                # I will assume, in this case, that the newly written file is OK in the current implementation
-                # (otherwise I should start doing a `while True` loop, but I
-                # need to think carefully that this does not incur in raise conditions
-                # where two processes start trying to change the file in turns...)
-                pass
-            # Flush also the parent directory, see e.g.
-            # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
-            if os.name == 'posix':
-                dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
-                os.fsync(dirfd)
-                os.close(dirfd)
-            self._stored = True
-        else:
-            if not self._filehandle.closed:
+                # Flush also the parent directory, see e.g.
+                # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+                if os.name == 'posix':
+                    dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
+                    os.fsync(dirfd)
+                    os.close(dirfd)
+                self._stored = True
+        finally:
+            if self._filehandle is not None and not self._filehandle.closed:
                 self._filehandle.close()
             if os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
