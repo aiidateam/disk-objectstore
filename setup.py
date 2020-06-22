@@ -47,6 +47,7 @@ setup(
     ],
     long_description=io.open(os.path.join(FOLDER, 'README.md'), encoding='utf-8').read(),
     long_description_content_type='text/markdown',
+    python_requires='>=3.5',
     classifiers=[
         'Programming Language :: Python :: 3', 'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6', 'Programming Language :: Python :: 3.7',
