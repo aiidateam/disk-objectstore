@@ -1,29 +1,14 @@
 """Test of the utils wrappers."""
 import io
 import os
-import random
 import tempfile
 import zlib
 
 import psutil
 import pytest
 
-import disk_objectstore.utils as utils
+from disk_objectstore import utils
 import disk_objectstore.exceptions as exc
-
-
-def _assert_is_uuid(possible_uuid):
-    """Check that a string is a valid UUID.
-
-    In particular, it should be 32 hex characters, without dashes."""
-    assert len(possible_uuid) == 32
-    assert all(char in '0123456789abcdef' for char in possible_uuid)
-
-
-def test_get_new_uuid():
-    """Check that the get_new_uuid function returns a UUID composed of 32 hex characters, without dashes."""
-    new_uuid = utils.get_new_uuid()
-    _assert_is_uuid(new_uuid)
 
 
 def test_lazy_opener_read():
@@ -39,15 +24,27 @@ def test_lazy_opener_read():
 
         assert lazy.path == fhandle.name
         assert lazy.mode == 'rb'
+        with pytest.raises(ValueError):
+            # This is not open yet
+            lazy.tell()
 
         assert len(current_process.open_files()
                   ) == start_open_files, ('The LazyOpener is not lazy, but axtually opened the file instead!')
         with lazy as fhandle:
+            # Shoul be opened at position zero at the beginnign
+            assert lazy.tell() == 0
             read_content = fhandle.read()
+            # The position should had moved by the right amount
+            assert lazy.tell() == len(read_content)
+
             assert len(current_process.open_files()) == start_open_files + 1, 'The count of open files is wrong!'
             assert read_content == content, 'Unexpected content read from file'
 
         assert len(current_process.open_files()) == start_open_files, 'The LazyOpener did not close the file on exit!'
+
+        with pytest.raises(ValueError):
+            # Should raise again after closing
+            lazy.tell()
     finally:
         os.remove(fhandle.name)
 
@@ -87,7 +84,9 @@ def test_object_writer(temp_dir, loose_prefix_len):
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
 
-    content = b'fsddfq232v'
+    hash_type = 'sha256'
+    expected_hash = '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'
+    content = b'some-content-to-hash'
 
     # Create the two folders, make sure they
     # are empty
@@ -97,7 +96,10 @@ def test_object_writer(temp_dir, loose_prefix_len):
     assert not os.listdir(loose_folder)
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type
     )
 
     # Just creating the object should not create files
@@ -115,21 +117,24 @@ def test_object_writer(temp_dir, loose_prefix_len):
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
 
-    obj_uuid = object_writer.get_uuid()
-    _assert_is_uuid(obj_uuid)
+    obj_hashkey = object_writer.get_hashkey()
+
+    # Check that the hash was computed correctly
+    assert obj_hashkey == expected_hash
+
     # Open manually the file, implicitly checking
     # that the prefix length is the expected one,
     # and that the content is correct
     if loose_prefix_len:
-        loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
+        loose_filename = os.path.join(loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:])
     else:
-        loose_filename = os.path.join(loose_folder, obj_uuid)
+        loose_filename = os.path.join(loose_folder, obj_hashkey)
     with open(loose_filename, 'rb') as fhandle:
         assert fhandle.read() == content
 
 
 def test_object_writer_with_exc(temp_dir):
-    """Test that the ObjectWRite does not write anything if there is an exception."""
+    """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
@@ -139,7 +144,7 @@ def test_object_writer_with_exc(temp_dir):
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
     )
 
     assert not os.listdir(sandbox_folder)
@@ -165,7 +170,7 @@ def test_object_writer_with_exc(temp_dir):
 
 
 def test_object_writer_not_twice(temp_dir):
-    """Test that the ObjectWRite cannot be opened twice."""
+    """Test that the ObjectWriter cannot be opened twice."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
@@ -175,7 +180,7 @@ def test_object_writer_not_twice(temp_dir):
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
+        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
     )
 
     # The first open should go through
@@ -190,8 +195,8 @@ def test_object_writer_not_twice(temp_dir):
         # The exception should not have corrupted the first stream. I write again something
         fhandle.write(content)
 
-    obj_uuid = object_writer.get_uuid()
-    loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
+    obj_hashkey = object_writer.get_hashkey()
+    loose_filename = os.path.join(loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:])
     with open(loose_filename, 'rb') as fhandle:
         # I have written the content twice
         assert fhandle.read() == content + content
@@ -203,30 +208,83 @@ def test_object_writer_not_twice(temp_dir):
     assert 'already stored' in str(excinfo.value)
 
 
-def test_object_writer_existing_obj(temp_dir):
-    """Assert that if a loose object is found with the same UUID, the object_writer crashes."""
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: disable=invalid-name
+    """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    # Some content that does not match the hash key
+    corrupted_content = b'CORRUPTED CONTENT'
+
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+    with open(loose_file, 'wb') as fhandle:
+        fhandle.write(corrupted_content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    with object_writer as fhandle:
+        # Write some content (this should end up in the same `loose_file` location)
+        fhandle.write(content)
+
+    # Check the end condition:
+    # nothing in the sandbox, nothing new in the loose_folder
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    # Check now the content
+    with open(loose_file, 'rb') as fhandle:
+        object_content = fhandle.read()
+
+    if trust_existing:
+        # If I trust existing files, the content shouldn't have been touched
+        assert object_content == corrupted_content
+    else:
+        # If I don't trust existing files, the content should have been replaced
+        assert object_content == content
+
+
+def test_unknown_hash_type(temp_dir):
+    """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
 
-    object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len
-    )
-
-    # Check that this crashes as I am creating
-    # the loose object before exiting the context manager
-    with pytest.raises(exc.ModificationNotAllowed) as excinfo:
-        with object_writer:
-            # Create manually a loose object where the object writer would write it
-            obj_uuid = object_writer.get_uuid()
-            loose_filename = os.path.join(loose_folder, obj_uuid[:loose_prefix_len], obj_uuid[loose_prefix_len:])
-            os.mkdir(os.path.dirname(loose_filename))
-            with open(loose_filename, 'wb'):
-                # Just write an empty file
-                pass
-    assert 'already exists' in str(excinfo.value)
+    with pytest.raises(ValueError):
+        object_writer = utils.ObjectWriter(
+            sandbox_folder=sandbox_folder,
+            loose_folder=loose_folder,
+            loose_prefix_len=loose_prefix_len,
+            hash_type='unknown_hash_string'
+        )
+        # The exception is actually raised here
+        with object_writer as fhandle:
+            # Write some content first
+            fhandle.write('something')
 
 
 def test_packed_object_reader():
@@ -296,7 +354,7 @@ def test_stream_decompresser():
     original_data_long = b'0123456789abcdef' * 1024 * 128 + b'E'
     # A longish binary string (~4MB) with random data
     # so typically uncompressible (compressed size is typically larger)
-    original_data_long_random = bytearray(random.getrandbits(8) for _ in range(4000000))
+    original_data_long_random = os.urandom(4000000)
 
     original_data = [original_data_short, original_data_long, original_data_long_random]
 
@@ -377,3 +435,25 @@ def test_zero_stream_multi_read():
     data = b''.join(data_chunks)
     assert len(data) == length, 'The zero stream produced data of the wrong length'
     assert data == b'\x00' * length, 'The zero stream produced non-zero data'
+
+
+# Set as the second parameter the hash of the 'content' string written below
+# inside the test function
+@pytest.mark.parametrize(
+    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b']]
+)
+def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
+    """Test some functionality of the HashWriterWrapper class."""
+    content = b'some-content-to-hash'
+    filename = 'test_file'
+
+    with open(os.path.join(temp_dir, filename), 'wb') as fhandle:
+        wrapped = utils.HashWriterWrapper(fhandle, hash_type=hash_type)
+        wrapped.write(content)
+        # Check that the flush command does not raise
+        wrapped.flush()
+        assert wrapped.hexdigest() == expected_hash
+        assert wrapped.hash_type == hash_type
+
+    with open(os.path.join(temp_dir, filename), 'rb') as fhandle:
+        assert fhandle.read() == content

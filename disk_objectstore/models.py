@@ -6,13 +6,16 @@ Base = declarative_base()  # pylint: disable=invalid-name,useless-suppression
 
 
 class Obj(Base):  # pylint: disable=too-few-public-methods
-    """The main (and only) table to store object metadata (uuid, offset, length, ...)."""
+    """The main (and only) table to store object metadata (hashkey, offset, length, ...)."""
     __tablename__ = 'db_object'
 
     id = Column(Integer, primary_key=True)  # pylint: disable=invalid-name
-    # 32 is the length of the UUID *without* dashes
-    uuid = Column(String(32), nullable=False, index=True)
+
+    # Important: there are parts of the code that rely on the fact that this field is unique.
+    # If you really do not want a uniqueness field, you will need to adapt the code.
+    hashkey = Column(String, nullable=False, unique=True, index=True)
     compressed = Column(Boolean, nullable=False)
     size = Column(Integer, nullable=False)  # uncompressed size; if uncompressed, size == length
     offset = Column(Integer, nullable=False)
     length = Column(Integer, nullable=False)
+    pack_id = Column(Integer, nullable=False)  # integer ID of the pack in which this entry is stored

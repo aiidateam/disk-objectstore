@@ -15,6 +15,9 @@ The goal of this project is to have a very efficient implementation of an "objec
 that works directly on a disk folder, does not require a server to run, and addresses
 a number of performance issues, discussed also below.
 
+This project targets objects that range from very few bytes up to tens of GB each, with
+performance tuned to support tens of millions of objects or more.
+
 This project originated from the requirements needed by an efficient repository
 implementation in [AiiDA](http://www.aiida.net) (note, however, that this
 package is completely independent of AiiDA).
@@ -38,73 +41,107 @@ This implementation, in particular, addresses the following aspects:
   This gives maximum performance when writing a file, and ensures that many writers
   can write at the same time without data corruption.
 
-- loose objects are stored in a one-level sharding format: aa/bbccddeeff00...
+- the key of the object is its hash key. While support for multiple types of cryptographically
+  strong hash keys is trivial, in the current version only `sha256` is used.
+  The package assumes that there will never be hash collision.
+  At a small cost for computing the hash (that is anyway small, see performance tests)
+  one gets automatic de-duplication of objects written in the object store (git does something very
+  similar).
+  In addition, it automatically provides a way to check for corrupted data.
+
+- loose objects are stored in a one-level sharding format: `aa/bbccddeeff00...`
+  where `aabbccddeeff00...` is the hash key of the file.
   Current experience (with AiiDA) shows that it's actually not so good to use two
   levels of nesting.
   And anyway when there are too many loose objects, the idea
   is that we will pack them in few files (see below).
   The number of characters in the first part can be chosen, but a good compromise is
-  2 (default, also used by git)
+  2 (default, also used by git).
 
 - for maximum performance, loose objects are simply written as they are,
-  without compression, hashing, ...
+  without compression.
   They are actually written first to a sandbox folder (in the same filesystem),
-  and then moved in place with the correct UUID only when the file is closed.
+  and then moved in place with the correct key (being the hash key) only when the file is closed.
   This should prevent having leftover objects if the process dies, and
   the move operation should be hopefully a fast atomic operation on most filesystems.
 
 - When the user wants, loose objects are repacked in a few pack files. Indeed,
   just the fact of storing too many files is quite expensive
   (e.g. storing 65536 empty files in the same folder took over 3 minutes to write
-  and over 4 minutes to delete on a Mac SSD).
+  and over 4 minutes to delete on a Mac SSD). This is the main reason for implementing
+  this package, and not just storing each object as a file.
 
 - packing can be triggered by the user periodically.
-  It is even possible (to be stress tested, though) to pack while the object store
-  is in use (this might temporarily impact read performance, though).
-  This operation takes all loose objects and puts them in a controllable number
-  of packs. The name of the packs is given by the first few letters of the UUID
-  (by default: 2, so 256 packs in total; configurable). A value of 2 is a good balance
-  between the size of each pack (on average, ~4GB/pack for a 1TB repository) and
-  the number of packs (having many packs means that, even when performing bulk access,
-  many different files need to be open, which slows down performance).
 
-- pack files are just concatenation of bytes of the packed objects. Any new object
+  **Note**: only one process can act on packs at a given time.
+
+  **Note**: while the goal is to make it possible to pack while the object store
+  is in use (possibly only with a temporary impact read performance), this is not
+  yet supported (see discussion in [#4](https://github.com/giovannipizzi/disk-objectstore/issues/4)).
+
+  This packing operation takes all loose objects and puts them together in packs.
+  Pack files are just concatenation of bytes of the packed objects. Any new object
   is appended to the pack (thanks to the efficiency of opening a file for appending).
   The information for the offset and length of each pack is kept in a single SQLite
   database.
 
-- For each object, the SQLite database contains: the `uuid`, the `offset` (starting
+- The name of the packs is a sequential integer. A new pack is generated when the
+  pack size becomes larger than a per-container configurable target size.
+  (`pack_size_target`, default: 4GB).
+  This means that (except for the "last" pack), packs will always have a dimension
+  larger or equal than this target size (typically around the target size, but
+  it could be much larger if the last object that is added to the pack is very big).
+
+- For each packed object, the SQLite database contains: the `uuid`, the `offset` (starting
   position of the bytestream in the file), the `length` (number of bytes to read),
   a boolean `compressed` flag, meaning if the bytestream has been zlib-compressed,
   and the `size` of the actual data (equal to `length` if `compressed` is false,
-  otherwise the size of the uncompressed stream, useful for statistics).
+  otherwise the size of the uncompressed stream, useful for statistics), and an integer
+  specifying in which pack it is stored. **Note** that the SQLite DB tracks only packed
+  objects. Instead, loose objects are not tracked, and their sole presence in the
+  loose folder marks their existence in the container.
 
 - Note that compression is on a per-object level. This allows much greater flexibility
   (the API still does not allow for this, but this is very easy to implement).
-  One could also think to clever logic to try to compress a file, but then store it
-  uncompressed if it turns out that the compression ratio is not worth the time
-  needed to further uncompress it later.
+  The current implementation only supports zlib compression with a default hardcoded
+  level of 1 (good compression at affordable computational cost).
+  Future extensions envision the possibility to choose the compression algorithm.
 
 - the repository configuration is kept in a top-level json (number of nesting levels
-  for loose objects and for packs, ...)
+  for loose objects, hashing algorithm, target pack size, ...)
 
 - API exists both to get and write a single object, but also to write directly
-  to pack files (this cannot be done by multiple processes at the same time, though),
+  to pack files (this **cannot** be done by multiple processes at the same time, though),
   and to read in bulk a given number of objects.
   This is particularly convenient when using the object store for bulk import and
   export, and very fast. Also, it is useful when getting all files of a given node.
 
   In normal operation, however, we expect the client to write loose objects,
-  to be repacked  periodically (e.g. once a week).
+  to be repacked periodically (e.g. once a week).
 
-  Some reference results for bulk operations:
-  Storing 100'000 small objects directly to the packs takes about 10s.
-  The time to retrieve all of them is ~2.2s when using a single bulk call,
-  compared to ~44.5s when using 100'000 independent calls (still probably acceptable).
-  Moreover, even getting, in 10 bulk calls, 10 random chunks of the objects (eventually
-  covering the whole set of 100'000 objects) only takes ~3.4s. This should demonstrate
-  that exporting a subset of the graph should be efficient (and the object store format
-  could be used also inside the export file).
+- **PERFORMANCE**: Some reference results for bulk operations, performed on a
+  Ubuntu 16.04 machine, 16 cores, 64GBs of RAM, with two SSD disks in RAID1 configuration),
+  using the `examples/example_objectstore.py` script.
+  - Storing 100'000 small objects (with random size between 0 and 1000 bytes, so a total size of around
+    50 MB) directly to the packs takes about 21s.
+  - The time to retrieve all of them is ~3.1s when using a single bulk call,
+    compared to ~54s when using 100'000 independent calls (still probably acceptable).
+    Moreover, even getting, in 10 bulk calls, 10 random chunks of the objects (eventually
+    covering the whole set of 100'000 objects) is equally efficient as getting them
+    all in one shot (note that for this size, only one pack file is created with the default
+    configuration settings). This should demonstrate that exporting a subset of the graph should
+    be efficient (and the object store format could be used also inside the export file).
+
+    **Note**: these times are measured without flushing any disk cache.
+    In any case, there is only a single pack file of about 50MB, so the additional time to
+    fetch it back from disk is small. Anyway, for completeness, if we instead flush the caches
+    after writing and before reading, so data needs to be read back from disk:
+    - the time to retrieve 100000 packed objects in random order with a single bulk call is
+      of about 3.8s, and in 10 bulk calls (by just doing this operation
+      right after flushing the cache) is ~3.5s.
+    - the time to retrieve 100000 packed objects in random order, one by one (right after
+      flushing the cache, without doing other reads that would put the data in the cache already)
+      is of about 56s.
 
 - All operations internally (storing to a loose object, storing to a pack, reading
   from a loose object or from a pack, compression) are all happening via streaming.
@@ -117,39 +154,29 @@ This implementation, in particular, addresses the following aspects:
 
 In addition, the following design choices have been made:
 
-- Each given object will get a random UUID (its generation cost is negligible, about
-  4 microseconds per UUID).
+- Each given object is tracked with its hash key.
   It's up to the caller to track this into a filename or a folder structure.
-  The UUID is generated by the implementation and cannot be passed from the outside.
-  This guarantees random distribution of objects in packs, and avoids to have to
-  check for files already existing.
+  To guarantee correctness, the hash is computed by the implementation
+  and cannot be passed from the outside.
 
-- Pack naming and strategy is not determined by the user. Anyway it would be difficult
-  to provide easy options to the user to customize the behavior, while implementing
-  a packing strategy that is efficient. Moreover, with the current packing strategy,
-  it is immediate to know in which pack to check without having to keep also an index
-  of the packs (this, however, would be possible in case we want to extend the behavior,
-  since anyway we have an index). But at the moment it does not seem necessary.
+- Pack naming and strategy is not determined by the user, except for the specification
+  of a `pack_size_target`. Pack are stored consecutively, so that when a pack file
+  is "full", new ones will be used. In this way, once a pack it's full, it's not changed
+  anymore (unless a full repack is performed), meaning that when performing backups using
+  rsync, those full packs don't need to be checked every time.
 
-- A single index file is used. Having one pack index per file, while reducing a bit
-  the size of the index (one could skip storing the first part of the UUID, determined
-  by the pack naming) turns out not to be very effective. Either one would keep all
-  indexes open (but then one quickly hits the maximum number of open files, that e.g.
-  on Mac OS is of the order of ~256), or open the index, at every request, that risks to
+- A single index file is used. Having one pack index per file turns out not
+  to be very effective, mostly because for efficiency one would need to keep all
+  indexes open (but then one quickly hits the maximum number of open files for a big repo with
+  many pack files; this limit is small e.g. on Mac OS, where it is of the order of ~256).
+  Otherwise, one would need to open the correct index at every request, that risks to
   be quite inefficient (not only to open, but also to load the DB, perform the query,
-  return the results, and close again the file). Also for bulk requests, anyway, this
-  would prevent making very few DB requests (unless you keep all files open, that
-  again is not feasible).
-
-- I tried a different way of storing the UUID on the DB (two long long ints rather than
-  1 UUID string). I put a combined index on the two columns.
-  I hoped in a speed up, using ints rather than strings, but (beside making the logic
-  much more cumbersome and error prone) the performance actually decreased.
-  So I reverted to a UUID indexed string column.
+  return the results, and close again the file).
 
 - Deletion (not implemented yet), can just occur as a deletion of the loose object or
   a removal from the index file. Later repacking of the packs can be used to recover
-  the disk space still occupied in the pack files.
+  the disk space still occupied in the pack files (care needs to be taken if concurrent
+  processes are using the container, though).
 
 - The current packing format is `rsync`-friendly. `rsync` has an algorithm to just
   send the new part of a file, when appending. Actually, `rsync` has a clever rolling

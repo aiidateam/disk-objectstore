@@ -1,5 +1,6 @@
 """Configuration file for pytest tests."""
 import hashlib
+import os
 import random
 import shutil
 import tempfile
@@ -57,7 +58,7 @@ def generate_random_data():
         files = {}
         for _ in range(num_files):
             size = random.randint(min_size, max_size)
-            content = bytearray(random.getrandbits(8) for _ in range(size))
+            content = os.urandom(size)
             md5 = hashlib.md5(content).hexdigest()
             files[md5] = content
         return files

@@ -12,7 +12,9 @@ contents = []
 start = time.time()
 for fileid in range(count):
     size = random.randint(1, average_file_size * 2)
-    contents.append(bytearray(random.getrandbits(8) for _ in range(size)))
+    # This is slow, better to use the following line
+    #contents.append(bytearray(random.getrandbits(8) for _ in range(size)))
+    contents.append(os.urandom(size))
 tot_time = time.time() - start
 print('Files created in memory in {:.2f} s'.format(tot_time))
 
