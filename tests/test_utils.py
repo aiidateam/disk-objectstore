@@ -1,4 +1,5 @@
 """Test of the utils wrappers."""
+import functools
 import io
 import os
 import tempfile
@@ -9,6 +10,8 @@ import pytest
 
 from disk_objectstore import utils
 import disk_objectstore.exceptions as exc
+
+os._actual_remove_function = os.remove  # pylint: disable=protected-access
 
 
 def test_lazy_opener_read():
@@ -169,6 +172,42 @@ def test_object_writer_with_exc(temp_dir):
     assert not os.listdir(loose_folder)
 
 
+def test_object_writer_manual_close(temp_dir):
+    """Test that the ObjectWriter does not allow manually closing the stream."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
+    )
+
+    assert not os.listdir(sandbox_folder)
+    assert not os.listdir(loose_folder)
+
+    # The first open should go through
+    with pytest.raises(exc.ClosingNotAllowed) as excinfo:
+        with object_writer as fhandle:
+            # Write some content first
+            fhandle.write(content)
+
+            assert len(os.listdir(sandbox_folder)) == 1
+            assert not os.listdir(loose_folder)
+            fhandle.close()
+
+    assert 'You cannot close' in str(excinfo.value)
+
+    # Since the exception was raised, both
+    # the sandbox folder and the loose folder should
+    # still be empty
+    assert not os.listdir(sandbox_folder)
+    assert not os.listdir(loose_folder)
+
+
 def test_object_writer_not_twice(temp_dir):
     """Test that the ObjectWriter cannot be opened twice."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
@@ -206,6 +245,107 @@ def test_object_writer_not_twice(temp_dir):
         with object_writer:
             pass
     assert 'already stored' in str(excinfo.value)
+
+
+@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-name
+        temp_dir, trust_existing, reappears_corrupted, monkeypatch
+    ):
+    """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object.
+
+    Moreover, if the corrupted file is deleted and it quickly reappears, make sure that the code does not crash.
+    In this test, the `os.remove` call is patched for the specific loose file. If reappears_corrupted is True,
+    the file that will reappear as soon as it's deleted internally is going still to be corrupted. Otherwise,
+    it will be a correct content (i.e., with the correct hash key, as if another process has created it at the same
+    time)."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    # Some content that does not match the hash key
+    corrupted_content = b'CORRUPTED CONTENT'
+
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+    with open(loose_file, 'wb') as fhandle:
+        fhandle.write(corrupted_content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    def mockremove(path, protected_path, new_bytes_content):
+        """Remove a file, mocking the os.remove functionality."""
+        # I renamed this at module load to avoid infinite recursion
+        os._actual_remove_function(path)  # pylint: disable=protected-access
+        if os.path.realpath(path) == os.path.realpath(protected_path):
+            # Write back the file, with possibly a different content
+            with open(path, 'wb') as fhandle:
+                fhandle.write(new_bytes_content)
+
+    new_bytes_content = corrupted_content if reappears_corrupted else content
+    monkeypatch.setattr(
+        os, 'remove', functools.partial(mockremove, protected_path=loose_file, new_bytes_content=new_bytes_content)
+    )
+
+    if os.name == 'nt' and not trust_existing and reappears_corrupted:
+        # On windows, I am not sure it's possible to do an atomic overwrite.
+        # Currently this library implements logic such that if the file reappears,
+        # but its content is correct, no error is raised. But if the file reappears
+        # and its content is corrupted, an exception is raised (this should really
+        # never happen, and if it happens, it means there is something really wrong!)
+        with pytest.raises(exc.DynamicInconsistentContent):
+            with object_writer as fhandle:
+                # Write some content (this should end up in the same `loose_file` location)
+                fhandle.write(content)
+    else:
+        # On POSIX, the os.rename is going to silently overwrite the existing file.
+        # Therefore, I expect that the file write will go through without exceptions.
+        with object_writer as fhandle:
+            # Write some content (this should end up in the same `loose_file` location)
+            fhandle.write(content)
+
+    # Check the end condition:
+    # nothing in the sandbox, nothing new in the loose_folder
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    # Check now the content
+    with open(loose_file, 'rb') as fhandle:
+        object_content = fhandle.read()
+
+    if trust_existing:
+        # If I trust existing files, the content shouldn't have been touched
+        # (and the logic for reappears_corrupted is not really triggered)
+        assert object_content == corrupted_content
+    else:
+        if os.name == 'nt' and not trust_existing and reappears_corrupted:
+            # Here I am just checking the current behavior: if the exception was raised,
+            # the corrupted file is left in place
+            assert object_content == corrupted_content
+        else:
+            # In all other cases, if I don't trust existing files, the content should have been replaced,
+            # and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
+            assert object_content == content
 
 
 @pytest.mark.parametrize('trust_existing', [True, False])
