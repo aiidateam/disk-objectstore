@@ -9,7 +9,7 @@ from profilehooks import profile
 from disk_objectstore import Container
 
 
-@click.command()
+@click.command(context_settings=dict(show_default=True))
 @click.option('-n', '--num-files', default=100, help='Number of files to create.')
 @click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
 @click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
@@ -149,6 +149,12 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
 
     # Will be needed later
     reverse_hashkey_mapping = {v: k for k, v in hashkey_mapping.items()}
+
+    ## If you want to flush to disk and drop all disk caches, uncomment this part
+    ## (note that this works on Linux only, and this requires that `sudo` has already
+    ## been run earlier, so it does not ask for a password):
+    # os.system("sync")
+    # os.system("sudo echo 3 > /proc/sys/vm/drop_caches")
 
     ########################################
     # FIRST: single bulk read
