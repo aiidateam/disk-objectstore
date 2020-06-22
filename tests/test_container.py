@@ -101,7 +101,7 @@ def _get_data_and_md5_bulk(container, obj_hashkeys):
     :return: a dictionary where the keys are the object hash keys and the values are the MD5 hexdigests.
     """
     retval = {}
-    retrieved_contents = container.get_object_contents(obj_hashkeys)
+    retrieved_contents = container.get_objects_content(obj_hashkeys)
     for obj_hashkey in retrieved_contents:
         retval[obj_hashkey] = hashlib.md5(retrieved_contents[obj_hashkey]).hexdigest()
     return retval
@@ -582,7 +582,7 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
 
     ##### Bulk reads from here on
     # skip_if_missing=True, get contents
-    contents = temp_container.get_object_contents(hashkeys_list, skip_if_missing=True)
+    contents = temp_container.get_objects_content(hashkeys_list, skip_if_missing=True)
     # The retrieved values should be only the valid ones
     assert set(contents.keys()) == set(obj_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
@@ -591,7 +591,7 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     # skip_if_missing=True, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_object_streams_and_size(hashkeys_list, skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_size(hashkeys_list, skip_if_missing=True) as triplets:
         for obj_hashkey, stream, size in triplets:
             if stream is None:
                 assert size == 0
@@ -605,7 +605,7 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     assert obj_md5s == check_md5s
 
     # skip_if_missing=False, get objects
-    contents = temp_container.get_object_contents(hashkeys_list, skip_if_missing=False)
+    contents = temp_container.get_objects_content(hashkeys_list, skip_if_missing=False)
     # There should be only one return value
     for unknown_hashkey in unknown_hashkeys:
         # Check that it's there, that it's noe, and pop it
@@ -618,7 +618,7 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     # skip_if_missing=False, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_object_streams_and_size(hashkeys_list, skip_if_missing=False) as triplets:
+    with temp_container.get_objects_stream_and_size(hashkeys_list, skip_if_missing=False) as triplets:
         for obj_hashkey, stream, size in triplets:
             if stream is None:
                 assert size == 0
@@ -753,7 +753,7 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
     obj_md5s = _add_objects_loose_loop(temp_container, data)
     # Try to count size after retrieving, just to be sure
     assert sum(
-        len(content) for content in temp_container.get_object_contents(obj_md5s.keys()).values()
+        len(content) for content in temp_container.get_objects_content(obj_md5s.keys()).values()
     ) == total_object_size
 
     # Check the size for loose objects
@@ -768,7 +768,7 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
     temp_container.pack_all_loose(compress=compress_packs)
     # Try to count size after retrieving, just to be sure
     assert sum(
-        len(content) for content in temp_container.get_object_contents(obj_md5s.keys()).values()
+        len(content) for content in temp_container.get_objects_content(obj_md5s.keys()).values()
     ) == total_object_size
 
     if compress_packs:
@@ -798,29 +798,29 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
         assert size_info['total_size_loose'] == 0
 
 
-def test_get_object_streams_closes(temp_container, generate_random_data):
-    """Test that get_object_streams_and_size closes intermediate streams."""
+def test_get_objects_stream_closes(temp_container, generate_random_data):
+    """Test that get_objects_stream_and_size closes intermediate streams."""
     data = generate_random_data()
     # Store
     obj_md5s = _add_objects_loose_loop(temp_container, data)
 
     # I get all objects first - this will actually internally go through the same function
-    # `get_object_streams_and_size`, but I need to do it as this might open additional files,
+    # `get_objects_stream_and_size`, but I need to do it as this might open additional files,
     # namely the SQLite DB (possibly more than one file due to the fact it's open in WAL mode).
     # The following checks are still meaningful, I check that if I do it again I don't open more files.
-    temp_container.get_object_contents(obj_md5s.keys())
+    temp_container.get_objects_content(obj_md5s.keys())
 
     current_process = psutil.Process()
     start_open_files = len(current_process.open_files())
 
-    with temp_container.get_object_streams_and_size(obj_md5s.keys(), skip_if_missing=True):
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True):
         # I don't use the triplets
         pass
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
 
     print(current_process.open_files())
-    with temp_container.get_object_streams_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
             pass
@@ -829,7 +829,7 @@ def test_get_object_streams_closes(temp_container, generate_random_data):
     assert len(current_process.open_files()) == start_open_files
 
     # I actually read the content
-    with temp_container.get_object_streams_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
             stream.read()
@@ -839,17 +839,17 @@ def test_get_object_streams_closes(temp_container, generate_random_data):
     ##### Same test after packing
     temp_container.pack_all_loose()
     # I get all objects first, again - this is because it might have closed the DB files while packing
-    temp_container.get_object_contents(obj_md5s.keys())
+    temp_container.get_objects_content(obj_md5s.keys())
     # I now update the count
     start_open_files = len(current_process.open_files())
 
-    with temp_container.get_object_streams_and_size(obj_md5s.keys()):
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys()):
         # I don't use the triplets
         pass
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
 
-    with temp_container.get_object_streams_and_size(obj_md5s.keys()) as triplets:
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys()) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
             pass
@@ -857,7 +857,7 @@ def test_get_object_streams_closes(temp_container, generate_random_data):
     assert len(current_process.open_files()) == start_open_files
 
     # I actually read the content
-    with temp_container.get_object_streams_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
             stream.read()
