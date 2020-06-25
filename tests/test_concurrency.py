@@ -3,8 +3,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 from disk_objectstore import Container
 
 THIS_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -13,7 +11,6 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-@pytest.mark.xfail(reason='I know this is not yet working. This is tracked in #4')
 def test_concurrency(temp_dir):
     """Test to run concurrently many workers creating objects, and at the same time one packer.
 
@@ -51,12 +48,24 @@ def test_concurrency(temp_dir):
         )
 
     packer_out, packer_err = packer_proc.communicate()
+    if packer_out:
+        print('** STDOUT OF PACKER')
+        print(packer_out.decode('utf8'))
+    if packer_err:
+        print('** STDERR OF PACKER')
+        print(packer_err.decode('utf8'), file=sys.stderr)
     worker_outs = []
     worker_errs = []
-    for worker_proc in worker_procs:
+    for worker_id, worker_proc in enumerate(worker_procs):
         worker_out, worker_err = worker_proc.communicate()
         worker_outs.append(worker_out)
         worker_errs.append(worker_err)
+        if worker_out:
+            print('** STDOUT OF WORKER {}'.format(worker_id))
+            print(worker_out.decode('utf8'))
+        if worker_err:
+            print('** STDERR OF WORKER {}'.format(worker_id), file=sys.stderr)
+            print(worker_err.decode('utf8'), file=sys.stderr)
 
     error_messages = []
 

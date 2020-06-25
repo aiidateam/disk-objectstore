@@ -328,7 +328,11 @@ class Container:
         :return: a byte stream with the object content.
         """
         with self.get_object_stream(hashkey) as handle:
-            return handle.read()
+            content = handle.read()
+            if not content and hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
+                raise ValueError('empty data returned! {}, type={}'.format(hashkey, type(handle)))
+
+            return content
 
     @contextmanager
     def get_object_stream(self, hashkey):
@@ -819,14 +823,21 @@ class Container:
                     obj.length = pack_handle.tell() - obj.offset
                     session.add(obj)
 
-                # Let's commit and do final operations before closing the pack file.
-                # Committing as soon as we are done with one pack
-                # Note: because of the logic above, in theory this should not raise an IntegrityError!
-                session.commit()
+                # flush and sync to disk before closing
+                pack_handle.flush()
+                os.fsync(pack_handle.fileno())
 
-                # Clean up loose objects, for each pack
-                for obj_hashkey in loose_objects_this_pack:
-                    os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            # OK, if we are here, file was flushed, synced to disk and closed.
+            # Let's commit then the information to the DB, so it's officially a
+            # packed object. Note: committing as soon as we are done with one pack,
+            # so if there's a problem with one pack we don't start operating on the next one
+            # Note: because of the logic above, in theory this should not raise an IntegrityError!
+            session.commit()
+
+            # If we are here, things should be guaranteed by SQLite to be written to disk.
+            # Then, it's safe to do some clean up loose objects, for each pack.
+            for obj_hashkey in loose_objects_this_pack:
+                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
@@ -924,9 +935,16 @@ class Container:
                     # Append the new hash key to the list of hash keys to return
                     hashkeys.append(obj_dict['hashkey'])
 
-                # This pack file is complete.
-                # Let's commit before closing the pack file.
-                session.commit()
+                # flush and sync to disk before closing
+                pack_handle.flush()
+                os.fsync(pack_handle.fileno())
+
+            # OK, if we are here, file was flushed, synced to disk and closed.
+            # Let's commit then the information to the DB, so it's officially a
+            # packed object. Note: committing as soon as we are done with one pack,
+            # so if there's a problem with one pack we don't start operating on the next one
+            # Note: because of the logic above, in theory this should not raise an IntegrityError!
+            session.commit()
 
         return hashkeys
 
