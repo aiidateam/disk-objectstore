@@ -463,7 +463,9 @@ class Container:
                     obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
                     try:
                         last_open_file = open(obj_path, mode='rb')
-                        yield loose_hashkey, last_open_file, os.path.getsize(obj_path)
+                        # I do not use os.path.getsize in case the file has just
+                        # been deleted by a concurrent writer
+                        yield loose_hashkey, last_open_file, os.fstat(last_open_file.fileno()).st_size
                     except FileNotFoundError:
                         loose_not_found.add(loose_hashkey)
                         continue

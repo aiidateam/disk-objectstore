@@ -77,6 +77,11 @@ def test_deletion_while_open(temp_dir):
         # In either case (I got an exception on Windows, I could delete the file on POSIX)
         # I should still be able to read the correct content.
         # Notably, on POSIX I can read even if the file is not there anymore.
+
+        # I first check that I can get its size
+        assert os.fstat(fhandle.fileno()).st_size == len(content)
+
+        # And that I can read the content
         read_content = fhandle.read()
         assert read_content == content
 
