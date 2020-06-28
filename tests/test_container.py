@@ -1,4 +1,5 @@
 """Test of the object-store container module."""
+# pylint: disable=too-many-lines
 import hashlib
 import io
 import os
@@ -6,6 +7,7 @@ import random
 import shutil
 import tempfile
 import zlib
+import pathlib
 
 import psutil
 import pytest
@@ -982,3 +984,81 @@ def test_very_long_hashkeys_list(temp_container):
     expected_values.update(dict(zip(direct_pack_hashkeys, direct_pack_data)))
     values = temp_container.get_objects_content(hashkeys + direct_pack_hashkeys)
     assert values == expected_values
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing."""
+    content = b'abc'
+    hashkey = temp_container.add_object(content)
+
+    loose_dir_path = pathlib.Path(temp_container._get_loose_folder())  # pylint: disable=protected-access
+    with temp_container.get_object_stream(hashkey) as fhandle:
+        fname = fhandle.name
+        # Check that this is a loose object (i.e. that it is in the loose folder)
+        assert loose_dir_path in pathlib.Path(fname).parents
+        assert fhandle.read(1) == b'a'
+        temp_container.pack_all_loose(compress=compress)
+        assert fhandle.read() == b'bc'
+
+    # On Windows, the loose file might still be there because I cannot delete an open file
+    # Still, this is a valid situation and I should be able to get the correct content anyway
+    # The following line should be read from the pack file. Anyway, the important thing to test
+    # is that the content is properly returned
+    with temp_container.get_object_stream(hashkey) as fhandle:
+        assert fhandle.read() == b'abc'
+
+    temp_container.pack_all_loose(compress=compress)
+    # After a second packing, the loose file *must* have been removed
+    assert not os.path.exists(fname)
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing."""
+    content1 = b'abc'
+    content2 = b'def'
+    hashkey1 = temp_container.add_object(content1)
+    hashkey2 = temp_container.add_object(content2)
+    data = {hashkey1: content1, hashkey2: content2}
+
+    loose_dir_path = pathlib.Path(temp_container._get_loose_folder())  # pylint: disable=protected-access
+    with temp_container.get_objects_stream_and_size([hashkey1, hashkey2]) as triplets:
+        counter = 0
+
+        for obj_hashkey, stream, size in triplets:
+            if counter == 0:
+                # In the first step, I always pack the rest
+                fname = stream.name
+                # Check that this is a loose object (i.e. that it is in the loose folder)
+                assert loose_dir_path in pathlib.Path(fname).parents
+                if obj_hashkey == hashkey1:
+                    assert stream.read(1) == b'a'
+                    temp_container.pack_all_loose(compress=compress)
+                    assert stream.read() == b'bc'
+                elif obj_hashkey == hashkey2:
+                    assert stream.read(1) == b'd'
+                    temp_container.pack_all_loose(compress=compress)
+                    assert stream.read() == b'ef'
+                else:
+                    # Should not happen!
+                    raise ValueError('Unknown hash key {}'.format(obj_hashkey))
+            elif counter == 1:
+                # This should be the other object
+                # This was loose when get_objects_stream_and_size was called, but was packed in the meantime
+                # I should still be able to get it correctly
+                assert data[obj_hashkey] == stream.read()
+            else:
+                # Should not happen!
+                raise ValueError('There should be only two objects!')
+            counter += 1
+
+    # On Windows, the loose file might still be there because I cannot delete an open file
+    # Still, this is a valid situation and I should be able to get the correct content anyway
+    # The following line should be read from the pack file. Anyway, the important thing to test
+    # is that the content is properly returned
+    assert data == temp_container.get_objects_content([hashkey1, hashkey2])
+
+    temp_container.pack_all_loose(compress=compress)
+    # After a second packing, the loose file *must* have been removed
+    assert not os.path.exists(fname)
