@@ -863,3 +863,122 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
+
+
+def test_length_get_objects(temp_container):
+    """Check that the iterator to get the object streams does not perform unnecessary operations.
+
+    This is mostly to check for efficiency and that I don't iterate by mistake multiple times on the same object.
+    """
+    # Note: I created different data, so these 4 hashkeys will always be different
+    data = [b'1', b'2', b'3', b'4']
+    data_dict = {}
+    for val in data:
+        hashkey = temp_container.add_object(val)
+        data_dict[hashkey] = val
+
+    # Test 1: I pass all the known hashkeys: I iterate (in some order) on all of them
+    hashkeys = list(data_dict)
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    assert sorted(iterated_hashkeys) == sorted(hashkeys)
+
+    # Test 2: I pass half the known hashkeys: I iterate (in some order) on all of them
+    hashkeys = list(data_dict)[:2]
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    assert sorted(iterated_hashkeys) == sorted(hashkeys)
+
+    # Test 3: I pass half the known hashkeys, twice: I iterate (in some order) on all of them, BUT ONLY ONCE
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(partial_hashkeys)
+
+    # Test 4A: I pass half the known hashkeys, twice, PLUS SOME UNKNOWN HASHKEY, also twice
+    # If skip_if_missing=False, I should iterate on ALL of them, BUT ONLY ONCE
+    unknown_hashkeys = ['unk1', 'unk2']
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=False) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(set(hashkeys))
+
+    # Test 4B: I pass half the known hashkeys, twice, PLUS SOME UNKNOWN HASHKEY, also twice
+    # If skip_if_missing=True, I should iterate ONLY on the known one, BUT ONLY ONCE
+    unknown_hashkeys = ['unk1', 'unk2']
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=True) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(set(partial_hashkeys))
+
+
+def test_very_long_hashkeys_list(temp_container):
+    """Test that even when asking for *a lot* of hashkeys in one shot, this does not fail.
+
+    Indeed, in SQLite, there is a maximum number of paramaters in a given query. And SQLAlchemy
+    converts `.in_()` filters to parameters.
+    In the code, we chunk any request to make sure it does not crash because we're asking more
+    entries than SQLite can support (the limit unfortunately is decided at compile-time (of SQLite)
+    and so it's not under our control).
+    """
+    # A bit more than 10 times the internal maximum length of SQL queries
+    # This is ~9500, and should exceed the hardcoded limits of 999 on at least some platforms
+    # I put +3 to have something that is NOT a multiple
+    # Note: this is already a relatively large number and the test takes a few seconds
+    # (because I'm writing loose objects as well)
+    num_objects = temp_container._IN_SQL_MAX_LENGTH * 10 + 3  # pylint: disable=protected-access
+    # Generate a long list of objects with *different* data, so they are not deduplicated
+    data = [str(i).encode('ascii') for i in range(num_objects)]
+
+    # The container is empty: let's check that asking for unknown objects work
+    # NOTE: I just generate some random 'unknown' hash key
+    res = temp_container.get_objects_content(['unk{}'.format(i) for i in range(num_objects)])
+    assert not res
+
+    # I now add all objects
+    hashkeys = []
+    for val in data:
+        hashkeys.append(temp_container.add_object(val))
+
+    # This should always be true! I am just appending different objects
+    assert len(hashkeys) == num_objects
+
+    # Let's ask for all of them; this should work even if they are many
+    values = temp_container.get_objects_content(hashkeys)
+    assert values == dict(zip(hashkeys, data))
+
+    # Let's pack everything. This should work even if there are many objects
+    # (also in here there are .in_ calls)
+    temp_container.pack_all_loose()
+
+    # Let's ask back again all data, now that it's packed
+    # Also for packed objects, asking for a lot of data should be OK
+    values = temp_container.get_objects_content(hashkeys)
+    assert values == dict(zip(hashkeys, data))
+
+    # Create more data, different than the one before and add directly to packs, this time.
+    # This should also work
+    direct_pack_data = ['P{}'.format(i).encode('ascii') for i in range(num_objects)]
+    direct_pack_hashkeys = temp_container.add_objects_to_pack(direct_pack_data)
+
+    # Finally, ask back everything and check
+    expected_values = dict(zip(hashkeys, data))
+    expected_values.update(dict(zip(direct_pack_hashkeys, direct_pack_data)))
+    values = temp_container.get_objects_content(hashkeys + direct_pack_hashkeys)
+    assert values == expected_values

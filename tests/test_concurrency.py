@@ -32,14 +32,14 @@ def test_concurrency(temp_dir):
     os.mkdir(shared_dir)
 
     # Start the packer
-    packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '5', '-w', '0.83'],
+    packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '7', '-w', '0.83'],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
 
     # Start the workers
     worker_procs = []
     for worker_id in range(NUM_WORKERS):
-        options = ['-r', '4', '-w', '0', '-p', container_dir, '-s', shared_dir]
+        options = ['-r', '6', '-w', '0', '-p', container_dir, '-s', shared_dir]
         if worker_id % 2:
             # One every two will read in bulk, the other within a loop
             options += ['-b']
