@@ -342,11 +342,7 @@ class Container:
         :return: a byte stream with the object content.
         """
         with self.get_object_stream(hashkey) as handle:
-            content = handle.read()
-            if not content and hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
-                raise ValueError('empty data returned! {}, type={}'.format(hashkey, type(handle)))
-
-            return content
+            return handle.read()
 
     @contextmanager
     def get_object_stream(self, hashkey):
