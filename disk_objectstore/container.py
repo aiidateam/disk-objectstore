@@ -15,7 +15,9 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
-from .utils import (nullcontext, HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, is_known_hash)
+from .utils import (
+    HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext
+)
 from .exceptions import NotExistent, NotInitialised
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
@@ -31,6 +33,18 @@ class Container:
     # Size in bytes of each of the chunks used when (internally) reading or writing in chunks, e.g.
     # when packing.
     _CHUNKSIZE = 65536
+
+    # When performing an `in_` query in SQLite, this is converted to something like
+    # 'SELECT * FROM db_object WHERE db_object.hashkey IN (?, ?)' with parameters = ('hash1', 'hash2')
+    # Now, the maximum number of parameters is limited in SQLite, see variable SQLITE_MAX_VARIABLE_NUMBER
+    # as described in https://www.sqlite.org/limits.html
+    # Now, until recently (at the moment of writing) this defaults to 999 for SQLite versions
+    # prior to 3.32.0 (2020-05-22) or 32766 for SQLite versions after 3.32.0.
+    # So we need to assume that we cannot put more than 999 elements in the `.in_` parameter.
+    # Note that on some OSs, the value is increased at compile time. E.g. on my Mac OS X with python 3.6
+    # compiled with HomeBrew, the limit (I tested it) is 250000.
+    # See also e.g. this comment https://bugzilla.redhat.com/show_bug.cgi?id=1798134
+    _IN_SQL_MAX_LENGTH = 950
 
     def __init__(self, folder):
         """Create the class that represents the container.
@@ -403,6 +417,9 @@ class Container:
             # The try/finally block makes sure we close it at the end, if any was open.
             last_open_file = None
 
+            # Operate on a set - only return once per required hashkey, even if required more than once
+            hashkeys_set = set(hashkeys)
+
             try:
                 hashkeys_in_packs = set()
 
@@ -411,12 +428,16 @@ class Container:
                 # a problem as we then split them by pack). To be checked, performance-wise, if it's better
                 # to order in python instead
                 session = self._get_cached_session()
-                query = session.query(Obj).filter(
-                    Obj.hashkey.in_(hashkeys)
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                Obj.size).order_by(Obj.offset)
-                for res in query:
-                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+
+                # Operate in chunks, due to the SQLite limits
+                # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
+                for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
+                    query = session.query(Obj).filter(
+                        Obj.hashkey.in_(chunk)
+                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                                    Obj.size).order_by(Obj.offset)
+                    for res in query:
+                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
                 for pack_int_id, pack_metadata in packs.items():
                     hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
@@ -437,14 +458,16 @@ class Container:
                 # Collect loose hash keys that are not found
                 # Reason: a concurrent process might have packed them,
                 # in the meantime.
-                loose_not_found = []
-                for loose_hashkey in set(hashkeys).difference(hashkeys_in_packs):
+                loose_not_found = set()
+                for loose_hashkey in hashkeys_set.difference(hashkeys_in_packs):
                     obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
                     try:
                         last_open_file = open(obj_path, mode='rb')
-                        yield loose_hashkey, last_open_file, os.path.getsize(obj_path)
+                        # I do not use os.path.getsize in case the file has just
+                        # been deleted by a concurrent writer
+                        yield loose_hashkey, last_open_file, os.fstat(last_open_file.fileno()).st_size
                     except FileNotFoundError:
-                        loose_not_found.append(loose_hashkey)
+                        loose_not_found.add(loose_hashkey)
                         continue
                     if last_open_file is not None:
                         if not last_open_file.closed:
@@ -456,11 +479,6 @@ class Container:
                 # are by now in the pack.
                 # If they are not, the object does not exist.
                 if loose_not_found:
-                    # In this case, I do *not* sort them - I expect
-                    # this situation to happen quite rarely, only while
-                    # packing, and it's ok to lose a bit of performance
-                    # in this rare case, but keep the code simpler.
-
                     # IMPORTANT. I need to close the session (and flush the
                     # self._session cache) to refresh the DB, otherwise since I am
                     # reading in WAL mode, I will be keeping to read from the "old"
@@ -474,17 +492,20 @@ class Container:
 
                     packs = defaultdict(list)
                     session = self._get_cached_session()
-                    query = session.query(Obj).filter(
-                        Obj.hashkey.in_(hashkeys)
-                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                    Obj.size).order_by(Obj.offset)
-                    for res in query:
-                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                    for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
+                        query = session.query(Obj).filter(
+                            Obj.hashkey.in_(chunk)
+                        ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                                        Obj.size).order_by(Obj.offset)
+                        for res in query:
+                            packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
-                    # I will construct here the really missing objects
-                    really_not_found = set(loose_not_found)
+                    # I will construct here the really missing objects.
+                    # I make a copy of the set.
+                    really_not_found = loose_not_found.copy()
 
                     for pack_int_id, pack_metadata in packs.items():
+                        # I remove those that I found
                         really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
 
                         pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
@@ -764,12 +785,12 @@ class Container:
         # maintenance operation, so I don't have to worry about concurrency:
         # If I don't find it here, is should not appear midway during the rest of the process
 
-        # I check the hash keys that are already in the pack
-        existing_packed_hashkeys = session.query(Obj).filter(Obj.hashkey.in_(loose_objects)).with_entities(Obj.hashkey
-                                                                                                          ).all()
-        # The query returns a list of length-1 tuples,
-        # and we need to unpack them
-        existing_packed_hashkeys = [value for value, in existing_packed_hashkeys]
+        existing_packed_hashkeys = []
+
+        for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
+            # I check the hash keys that are already in the pack
+            for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                existing_packed_hashkeys.append(res[0])
         # I remove them from the loose_objects list
         loose_objects.difference_update(existing_packed_hashkeys)
         # Now, I should be left only with objects with hash keys that are not yet known.
@@ -819,14 +840,30 @@ class Container:
                     obj.length = pack_handle.tell() - obj.offset
                     session.add(obj)
 
-                # Let's commit and do final operations before closing the pack file.
-                # Committing as soon as we are done with one pack
-                # Note: because of the logic above, in theory this should not raise an IntegrityError!
-                session.commit()
+                # flush and sync to disk before closing
+                pack_handle.flush()
+                os.fsync(pack_handle.fileno())
 
-                # Clean up loose objects, for each pack
-                for obj_hashkey in loose_objects_this_pack:
+            # OK, if we are here, file was flushed, synced to disk and closed.
+            # Let's commit then the information to the DB, so it's officially a
+            # packed object. Note: committing as soon as we are done with one pack,
+            # so if there's a problem with one pack we don't start operating on the next one
+            # Note: because of the logic above, in theory this should not raise an IntegrityError!
+            session.commit()
+
+            # If we are here, things should be guaranteed by SQLite to be written to disk.
+            # Then, it's safe to do some clean up loose objects, for each pack.
+            for obj_hashkey in loose_objects_this_pack:
+                try:
                     os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+                except PermissionError:
+                    # On Windows, I could get a "PermissionError: [WinError 32] The process cannot access the file
+                    # because it is begin used by another process: '<filename>'" if, while packing, some process is
+                    # reading the loose object.
+                    # In this case, I just ignore this and continue. The object is now packed, and there is still
+                    # the corresponding loose object, but this is not an error.
+                    # At the next packing operation the loose object will be inexpensively deleted.
+                    pass
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
@@ -924,9 +961,16 @@ class Container:
                     # Append the new hash key to the list of hash keys to return
                     hashkeys.append(obj_dict['hashkey'])
 
-                # This pack file is complete.
-                # Let's commit before closing the pack file.
-                session.commit()
+                # flush and sync to disk before closing
+                pack_handle.flush()
+                os.fsync(pack_handle.fileno())
+
+            # OK, if we are here, file was flushed, synced to disk and closed.
+            # Let's commit then the information to the DB, so it's officially a
+            # packed object. Note: committing as soon as we are done with one pack,
+            # so if there's a problem with one pack we don't start operating on the next one
+            # Note: because of the logic above, in theory this should not raise an IntegrityError!
+            session.commit()
 
         return hashkeys
 

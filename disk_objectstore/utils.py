@@ -4,6 +4,7 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 import hashlib
+import itertools
 import os
 import uuid
 import zlib
@@ -543,3 +544,18 @@ class HashWriterWrapper:
     def fileno(self):
         """Return the integer file descriptor of the underlying file object."""
         return self._write_stream.fileno()
+
+
+def chunk_iterator(iterator, size):
+    """Given an iterator, split it in chunks of size `size` (except the last one, that can be shorter).
+
+    Examples:
+
+    - `list(chunk_iterator(range(10), 3))` returns `[(0, 1, 2), (3, 4, 5), (6, 7, 8), (9,)]`
+    - `list(chunk_iterator(range(9), 3))` returns `[(0, 1, 2), (3, 4, 5), (6, 7, 8)]`
+
+    :param iterator: an iterator to divide in chunks
+    :param size: the size of each chunk
+    """
+    iterator = iter(iterator)
+    return iter(lambda: tuple(itertools.islice(iterator, size)), ())

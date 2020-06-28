@@ -8,14 +8,13 @@ same time, to check if there are issues while all of these work at the same time
 
 The script will also write the objects it created (in a safe way also when there is concurrency) in a folder
 (defined by the -s option). Then each locust will try to read back *all* files written by *all* locusts (including
-itself) and check if the MD5s are correct.
+itself) and check if the checksums are correct.
 """
 import datetime
 import hashlib
 import json
 import os
 import random
-import shutil
 import tempfile
 import time
 
@@ -47,7 +46,8 @@ def timestamp():
     '-s',
     '--shared-folder',
     default='/tmp/test-container-shared',
-    help='The path to a test folder in which all locusts will write the MD5s for others to read. It must already exist.'
+    help=
+    'The path to a test folder in which all locusts will write the checksums for others to read. It must already exist.'
 )
 @click.option('-b', '--bulk-read', is_flag=True, help='Whether to use bulk reads, or a loop on each hash key.')
 @click.help_option('-h', '--help')
@@ -57,6 +57,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
     if not os.path.isdir(shared_folder):
         raise ValueError("Create the folder '{}' first!".format(shared_folder))
     container = Container(path)
+    # In the tests we pass it already initialised, so this is never called
     if not container.is_initialised:
         print('Initialising the container...')
         container.init_container()
@@ -91,37 +92,45 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         for content in contents:
             hashkeys.append(container.add_object(content))
 
-        md5s = {}
+        checksums = {}
         for obj_hashkey, content in zip(hashkeys, contents):
-            md5s[obj_hashkey] = hashlib.md5(content).hexdigest()
+            # I use the same sha256 algo, to check more easily which one is corrupt
+            checksum = hashlib.sha256(content).hexdigest()
+            try:
+                # If I already found the same hash key, check that also the checksum is the same
+                assert checksums[obj_hashkey] == checksum
+            except KeyError:
+                # Not found yet, it's OK
+                pass
+            checksums[obj_hashkey] = checksum
 
         ## Dump to file
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', dir=shared_folder, delete=False) as fhandle:
             fname = fhandle.name
-            json.dump(md5s, fhandle)
+            json.dump(checksums, fhandle)
         # Atomic move in place (so other locusts don't try to read partially written files)
-        shutil.move(fname, '{}.md5'.format(fname))
+        os.rename(fname, '{}.sha'.format(fname))
 
         # Re-read everything, also from other processes
-        all_md5s = {}
+        all_checksums = {}
         file_count = 0
         for fname in os.listdir(shared_folder):
-            if not fname.endswith('.md5'):
+            if not fname.endswith('.sha'):
                 continue
             file_count += 1
             with open(os.path.join(shared_folder, fname)) as fhandle:
-                chunk_md5s = json.load(fhandle)
-            all_md5s.update(chunk_md5s)
+                chunk_checksums = json.load(fhandle)
+            all_checksums.update(chunk_checksums)
         print(
-            '[{} {}] {} object MD5s read from {} files ({}).'.format(
-                proc_id, timestamp(), len(all_md5s), file_count,
+            '[{} {}] {} object checksums read from {} files ({}).'.format(
+                proc_id, timestamp(), len(all_checksums), file_count,
                 'with bulk reads' if bulk_read else 'with single-object reads'
             )
         )
 
         ########################################
         # single bulk read
-        all_hashkeys = list(all_md5s.keys())
+        all_hashkeys = list(all_checksums.keys())
         random.shuffle(all_hashkeys)
 
         if bulk_read:
@@ -133,35 +142,40 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                     retrieved_content[obj_hashkey] = container.get_object_content(obj_hashkey)
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
-        retrieved_md5s = {}
+        retrieved_checksums = {}
         for obj_hashkey, content in retrieved_content.items():
             if content is None:
                 raise ValueError('No content returned for object {}!'.format(obj_hashkey))
-            retrieved_md5s[obj_hashkey] = hashlib.md5(content).hexdigest()
+            if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
+                print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
+            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
 
-        only_left = set(retrieved_md5s).difference(all_md5s)
-        only_right = set(all_md5s).difference(retrieved_md5s)
-        assert not only_right, 'objects only in all_md5s: {}'.format(only_right)
-        assert not only_left, 'objects only in retrieved_md5s: {}'.format(only_left)
-        for key in retrieved_md5s:
-            assert all_md5s[key] == retrieved_md5s[key], 'Mismatch for {}: {} vs. {}'.format(
-                key, all_md5s[key], retrieved_md5s[key]
+        only_left = set(retrieved_checksums).difference(all_checksums)
+        only_right = set(all_checksums).difference(retrieved_checksums)
+        assert not only_right, 'objects only in all_checksums: {}'.format(only_right)
+        assert not only_left, 'objects only in retrieved_checksums: {}'.format(only_left)
+        for key in retrieved_checksums:
+            assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}'.format(
+                key, all_checksums[key], retrieved_checksums[key]
             )
         del retrieved_content
 
         random.shuffle(all_hashkeys)
-        retrieved_md5s = {}
+        retrieved_checksums = {}
         for obj_hashkey in all_hashkeys:
-            retrieved_md5s[obj_hashkey] = hashlib.md5(container.get_object_content(obj_hashkey)).hexdigest()
+            content = container.get_object_content(obj_hashkey)
+            if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
+                print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
+            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
 
-        only_left = set(retrieved_md5s).difference(all_md5s)
-        only_right = set(all_md5s).difference(retrieved_md5s)
-        assert not only_right, 'objects only in all_md5s: {}'.format(only_right)
-        assert not only_left, 'objects only in retrieved_md5s: {}'.format(only_left)
-        for key in retrieved_md5s:
+        only_left = set(retrieved_checksums).difference(all_checksums)
+        only_right = set(all_checksums).difference(retrieved_checksums)
+        assert not only_right, 'objects only in all_checksums: {}'.format(only_right)
+        assert not only_left, 'objects only in retrieved_checksums: {}'.format(only_left)
+        for key in retrieved_checksums:
             try:
-                assert all_md5s[key] == retrieved_md5s[key], 'Mismatch for {}: {} vs. {}'.format(
-                    key, all_md5s[key], retrieved_md5s[key]
+                assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}'.format(
+                    key, all_checksums[key], retrieved_checksums[key]
                 )
             except AssertionError:
                 loose_path = container._get_loose_path_from_hashkey(key)  # pylint: disable=protected-access
