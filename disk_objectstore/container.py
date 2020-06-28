@@ -852,7 +852,16 @@ class Container:
             # If we are here, things should be guaranteed by SQLite to be written to disk.
             # Then, it's safe to do some clean up loose objects, for each pack.
             for obj_hashkey in loose_objects_this_pack:
-                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+                try:
+                    os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+                except PermissionError:
+                    # On Windows, I could get a "PermissionError: [WinError 32] The process cannot access the file
+                    # because it is begin used by another process: '<filename>'" if, while packing, some process is
+                    # reading the loose object.
+                    # In this case, I just ignore this and continue. The object is now packed, and there is still
+                    # the corresponding loose object, but this is not an error.
+                    # At the next packing operation the loose object will be inexpensively deleted.
+                    pass
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
