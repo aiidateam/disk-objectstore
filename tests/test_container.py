@@ -1,4 +1,5 @@
 """Test of the object-store container module."""
+# pylint: disable=too-many-lines
 import hashlib
 import io
 import os
@@ -6,6 +7,7 @@ import random
 import shutil
 import tempfile
 import zlib
+import pathlib
 
 import psutil
 import pytest
@@ -863,3 +865,200 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
+
+
+def test_length_get_objects(temp_container):
+    """Check that the iterator to get the object streams does not perform unnecessary operations.
+
+    This is mostly to check for efficiency and that I don't iterate by mistake multiple times on the same object.
+    """
+    # Note: I created different data, so these 4 hashkeys will always be different
+    data = [b'1', b'2', b'3', b'4']
+    data_dict = {}
+    for val in data:
+        hashkey = temp_container.add_object(val)
+        data_dict[hashkey] = val
+
+    # Test 1: I pass all the known hashkeys: I iterate (in some order) on all of them
+    hashkeys = list(data_dict)
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    assert sorted(iterated_hashkeys) == sorted(hashkeys)
+
+    # Test 2: I pass half the known hashkeys: I iterate (in some order) on all of them
+    hashkeys = list(data_dict)[:2]
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    assert sorted(iterated_hashkeys) == sorted(hashkeys)
+
+    # Test 3: I pass half the known hashkeys, twice: I iterate (in some order) on all of them, BUT ONLY ONCE
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(partial_hashkeys)
+
+    # Test 4A: I pass half the known hashkeys, twice, PLUS SOME UNKNOWN HASHKEY, also twice
+    # If skip_if_missing=False, I should iterate on ALL of them, BUT ONLY ONCE
+    unknown_hashkeys = ['unk1', 'unk2']
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=False) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(set(hashkeys))
+
+    # Test 4B: I pass half the known hashkeys, twice, PLUS SOME UNKNOWN HASHKEY, also twice
+    # If skip_if_missing=True, I should iterate ONLY on the known one, BUT ONLY ONCE
+    unknown_hashkeys = ['unk1', 'unk2']
+    partial_hashkeys = list(data_dict)[:2]
+    hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
+    iterated_hashkeys = []
+    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=True) as triplets:
+        for obj_hashkey, _, _ in triplets:
+            iterated_hashkeys.append(obj_hashkey)
+    # I should iterate on them ONLY ONCE
+    assert sorted(iterated_hashkeys) == sorted(set(partial_hashkeys))
+
+
+def test_very_long_hashkeys_list(temp_container):
+    """Test that even when asking for *a lot* of hashkeys in one shot, this does not fail.
+
+    Indeed, in SQLite, there is a maximum number of paramaters in a given query. And SQLAlchemy
+    converts `.in_()` filters to parameters.
+    In the code, we chunk any request to make sure it does not crash because we're asking more
+    entries than SQLite can support (the limit unfortunately is decided at compile-time (of SQLite)
+    and so it's not under our control).
+    """
+    # A bit more than 10 times the internal maximum length of SQL queries
+    # This is ~9500, and should exceed the hardcoded limits of 999 on at least some platforms
+    # I put +3 to have something that is NOT a multiple
+    # Note: this is already a relatively large number and the test takes a few seconds
+    # (because I'm writing loose objects as well)
+    num_objects = temp_container._IN_SQL_MAX_LENGTH * 10 + 3  # pylint: disable=protected-access
+    # Generate a long list of objects with *different* data, so they are not deduplicated
+    data = [str(i).encode('ascii') for i in range(num_objects)]
+
+    # The container is empty: let's check that asking for unknown objects work
+    # NOTE: I just generate some random 'unknown' hash key
+    res = temp_container.get_objects_content(['unk{}'.format(i) for i in range(num_objects)])
+    assert not res
+
+    # I now add all objects
+    hashkeys = []
+    for val in data:
+        hashkeys.append(temp_container.add_object(val))
+
+    # This should always be true! I am just appending different objects
+    assert len(hashkeys) == num_objects
+
+    # Let's ask for all of them; this should work even if they are many
+    values = temp_container.get_objects_content(hashkeys)
+    assert values == dict(zip(hashkeys, data))
+
+    # Let's pack everything. This should work even if there are many objects
+    # (also in here there are .in_ calls)
+    temp_container.pack_all_loose()
+
+    # Let's ask back again all data, now that it's packed
+    # Also for packed objects, asking for a lot of data should be OK
+    values = temp_container.get_objects_content(hashkeys)
+    assert values == dict(zip(hashkeys, data))
+
+    # Create more data, different than the one before and add directly to packs, this time.
+    # This should also work
+    direct_pack_data = ['P{}'.format(i).encode('ascii') for i in range(num_objects)]
+    direct_pack_hashkeys = temp_container.add_objects_to_pack(direct_pack_data)
+
+    # Finally, ask back everything and check
+    expected_values = dict(zip(hashkeys, data))
+    expected_values.update(dict(zip(direct_pack_hashkeys, direct_pack_data)))
+    values = temp_container.get_objects_content(hashkeys + direct_pack_hashkeys)
+    assert values == expected_values
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing."""
+    content = b'abc'
+    hashkey = temp_container.add_object(content)
+
+    loose_dir_path = pathlib.Path(temp_container._get_loose_folder())  # pylint: disable=protected-access
+    with temp_container.get_object_stream(hashkey) as fhandle:
+        fname = fhandle.name
+        # Check that this is a loose object (i.e. that it is in the loose folder)
+        assert loose_dir_path in pathlib.Path(fname).parents
+        assert fhandle.read(1) == b'a'
+        temp_container.pack_all_loose(compress=compress)
+        assert fhandle.read() == b'bc'
+
+    # On Windows, the loose file might still be there because I cannot delete an open file
+    # Still, this is a valid situation and I should be able to get the correct content anyway
+    # The following line should be read from the pack file. Anyway, the important thing to test
+    # is that the content is properly returned
+    with temp_container.get_object_stream(hashkey) as fhandle:
+        assert fhandle.read() == b'abc'
+
+    temp_container.pack_all_loose(compress=compress)
+    # After a second packing, the loose file *must* have been removed
+    assert not os.path.exists(fname)
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing."""
+    content1 = b'abc'
+    content2 = b'def'
+    hashkey1 = temp_container.add_object(content1)
+    hashkey2 = temp_container.add_object(content2)
+    data = {hashkey1: content1, hashkey2: content2}
+
+    loose_dir_path = pathlib.Path(temp_container._get_loose_folder())  # pylint: disable=protected-access
+    with temp_container.get_objects_stream_and_size([hashkey1, hashkey2]) as triplets:
+        counter = 0
+
+        for obj_hashkey, stream, size in triplets:
+            if counter == 0:
+                # In the first step, I always pack the rest
+                fname = stream.name
+                # Check that this is a loose object (i.e. that it is in the loose folder)
+                assert loose_dir_path in pathlib.Path(fname).parents
+                if obj_hashkey == hashkey1:
+                    assert stream.read(1) == b'a'
+                    temp_container.pack_all_loose(compress=compress)
+                    assert stream.read() == b'bc'
+                elif obj_hashkey == hashkey2:
+                    assert stream.read(1) == b'd'
+                    temp_container.pack_all_loose(compress=compress)
+                    assert stream.read() == b'ef'
+                else:
+                    # Should not happen!
+                    raise ValueError('Unknown hash key {}'.format(obj_hashkey))
+            elif counter == 1:
+                # This should be the other object
+                # This was loose when get_objects_stream_and_size was called, but was packed in the meantime
+                # I should still be able to get it correctly
+                assert data[obj_hashkey] == stream.read()
+            else:
+                # Should not happen!
+                raise ValueError('There should be only two objects!')
+            counter += 1
+
+    # On Windows, the loose file might still be there because I cannot delete an open file
+    # Still, this is a valid situation and I should be able to get the correct content anyway
+    # The following line should be read from the pack file. Anyway, the important thing to test
+    # is that the content is properly returned
+    assert data == temp_container.get_objects_content([hashkey1, hashkey2])
+
+    temp_container.pack_all_loose(compress=compress)
+    # After a second packing, the loose file *must* have been removed
+    assert not os.path.exists(fname)

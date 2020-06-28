@@ -105,7 +105,9 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
 
         # Check that the content is correct
         for filename in retrieved:
-            assert retrieved[filename] == files[filename], 'Mismatch (content) for {}'.format(filename)
+            assert retrieved[filename] == files[filename], 'Mismatch (content) for {}, {} vs {}'.format(
+                filename, retrieved[filename], files[filename]
+            )
 
         # Check that num_files new loose files are present now
         counts = container.count_objects()
@@ -212,6 +214,7 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
     ########################################
     # THIRD: a lot of independent reads, one per object
     random.shuffle(random_keys)
+    retrieved = {}
     start = time.time()
     for filename in random_keys:
         obj_hashkey = hashkey_mapping[filename]
@@ -221,7 +224,9 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
     print('Time to retrieve {} packed objects in random order: {} s'.format(num_files, tot_time))
 
     for filename in retrieved:
-        assert retrieved[filename] == files[filename], 'Mismatch for {}'.format(filename)
+        assert retrieved[filename] == files[filename], 'Mismatch (content) for {}, {} vs {}'.format(
+            filename, retrieved[filename], files[filename]
+        )
 
     print('All tests passed')
 

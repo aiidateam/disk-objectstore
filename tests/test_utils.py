@@ -597,3 +597,16 @@ def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
 
     with open(os.path.join(temp_dir, filename), 'rb') as fhandle:
         assert fhandle.read() == content
+
+
+def test_chunk_iterator():
+    """Test the correct functionality of the chunk iterator."""
+    # Using `iter(range())` that is an iterator and does not have a length or allows
+    # getting an element by index (i.e., `iter(range(10))` does not work), to make
+    # sure this works also for iterators and not only for lists or similar
+
+    # Check for lengths exactly multiple of the size
+    assert list(utils.chunk_iterator(iter(range(9)), 3)) == [(0, 1, 2), (3, 4, 5), (6, 7, 8)]
+
+    # Check for lengths that give a remainder
+    assert list(utils.chunk_iterator(iter(range(10)), 3)) == [(0, 1, 2), (3, 4, 5), (6, 7, 8), (9,)]
