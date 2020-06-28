@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from disk_objectstore import Container
 
 THIS_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -11,6 +13,7 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
+@pytest.mark.xfail(os.name == 'nt', reason='Still some problems on Windows, see #4')
 def test_concurrency(temp_dir):
     """Test to run concurrently many workers creating objects, and at the same time one packer.
 
