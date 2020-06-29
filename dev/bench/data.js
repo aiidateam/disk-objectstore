@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593430098529,
+  "lastUpdate": 1593430125382,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -268,6 +268,44 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.036399749657266105",
             "extra": "mean: 548.181876200001 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "8f93a1e9914e96e2a8892402c1faf6df2e5febb4",
+          "message": "Returning more metadata when iterating over objects\n\nWe now don't return only the size, but a set of metadata.\nNote that this a backward-incompatible change (for those who\nwere using the internal get_objects_stream_and_meta (that anyway\nused to be called get_objects_stream_and_size, and does not exist anymore).\nTherefore, I upped the version to 0.4.0.\n\nI also added a get_object_stream_and_meta (at the singular) for a single object.",
+          "timestamp": "2020-06-29T12:08:47+02:00",
+          "tree_id": "3dfddd917f5aa1bec1e88f60b058390b416a8997",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/8f93a1e9914e96e2a8892402c1faf6df2e5febb4"
+        },
+        "date": 1593430124790,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.32093395931193996,
+            "unit": "iter/sec",
+            "range": "stddev: 0.017890063746770643",
+            "extra": "mean: 3.115905846 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.6262218459714695,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007752487368555455",
+            "extra": "mean: 380.77514340000033 msec\nrounds: 5"
           }
         ]
       }
