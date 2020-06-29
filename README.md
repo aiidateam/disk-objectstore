@@ -150,6 +150,9 @@ This implementation, in particular, addresses the following aspects:
   Convenience methods are available, anyway, to get directly an object content, if
   the user wants.
 
+- A number of streamins APIs are exposed to the users, who are encouraged to use this if they
+  are not sure of the size of the objects and want to avoid out-of-memory crashes.
+
 ## Further design choices
 
 In addition, the following design choices have been made:
