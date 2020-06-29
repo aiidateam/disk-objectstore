@@ -52,6 +52,7 @@ jobs:
         pip install -e .
         pip install -r dev-requirements.txt
     - name: Test with pytest
+      # No need to run the benchmarks, they will run in a different workflow
       run: pytest --cov=disk_objectstore --benchmark-skip
     - name: Create xml coverage
       run: coverage xml
@@ -62,20 +63,3 @@ jobs:
         name: disk-objectstore
         ## Commenting the following lines - if often fails, and if at least one manages to push, it should be enough
         # fail_ci_if_error: true
-    - name: Run benchmarks
-      run: pytest --benchmark-only --benchmark-json output.json
-    - name: Store benchmark result
-      # Run only on push on develop! Otherwise people (or other branches) might access to the github-actions branch
-      if: "github.event_name == 'push' && github.ref == 'refs/heads/develop'"
-      uses: rhysd/github-action-benchmark@v1
-      with:
-        name: "Benchmark on ${{ matrix.os }} with Python ${{ matrix.python-version }}"
-        tool: "pytest"
-        output-file-path: output.json
-        # Use personal access token instead of GITHUB_TOKEN due to https://github.community/t5/GitHub-Actions/Github-action-not-triggering-gh-pages-upon-push/td-p/26869/highlight/false
-        github-token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
-        auto-push: true
-        # Show alert with commit comment on detecting possible performance regression
-        alert-threshold: '200%'
-        comment-on-alert: true
-        fail-on-alert: true
