@@ -1,6 +1,7 @@
 """
 The main implementation of the ``Container`` class of the object store.
 """
+# pylint: disable=too-many-lines
 import io
 import json
 import os
@@ -358,21 +359,42 @@ class Container:
         not be seekable.
         :param hashkey: the hashkey of the object to stream.
         """
-        with self.get_objects_stream_and_size(hashkeys=[hashkey], skip_if_missing=False) as triplets:
+        with self.get_object_stream_and_meta(hashkey=hashkey) as (fhandle, _):
+            yield fhandle
+
+    @contextmanager
+    def get_object_stream_and_meta(self, hashkey):
+        """Return a context manager yielding a stream to get the content of an object, and a metadata dictionary.
+
+        To be used as a context manager::
+
+          with container.get_object_stream(hashkey) as (fhandle, meta):
+              data = fhandle.read()
+              assert len(data) == meta['size']
+
+        The returned file-handle object supports *at least* the read() method that
+        accepts an optional parameter to read the file in chunks, and might
+        not be seekable.
+        The schema of the returned metadata `meta` dict is documented in the docstring
+        of `get_objects_stream_and_meta`).
+
+        :param hashkey: the hashkey of the object to stream.
+        """
+        with self.get_objects_stream_and_meta(hashkeys=[hashkey], skip_if_missing=False) as triplets:
             counter = 0
-            for obj_hashkey, stream, _ in triplets:
+            for obj_hashkey, stream, meta in triplets:
                 counter += 1
-                assert counter == 1, 'There is more than one item returned by get_objects_stream_and_size'
+                assert counter == 1, 'There is more than one item returned by get_objects_stream_and_meta'
                 assert obj_hashkey == hashkey
 
                 if stream is None:
                     raise NotExistent('No object with hash key {}'.format(hashkey))
 
-                yield stream
+                yield stream, meta
 
     @contextmanager
-    def get_objects_stream_and_size(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
-        """A context manager returning a generator yielding triplets of (hashkey, open stream, size).
+    def get_objects_stream_and_meta(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
+        """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
         :note: the hash keys yielded are often in a *different* order than the original
             ``hashkeys`` list. This is done for efficiency reasons, to reduce to a minimum
@@ -381,14 +403,27 @@ class Container:
 
         To use it, you should do something like the following::
 
-            with container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
-                for obj_hashkey, stream, size in triplets:
+            with container.get_objects_stream_and_meta(hashkeys=hashkeys) as triplets:
+                for obj_hashkey, stream, meta in triplets:
                     if stream is None:
                         # This should happen only if you pass skip_if_missing=False
                         retrieved[obj_hashkey] = None
                     else:
                         # len(stream.read() will be equal to size
                         retrieved[obj_hashkey] = stream.read()
+
+        `meta` is a dictionary containing a number of keys. These include:
+
+        - `type`: always present. It can be one of the following strings: `loose`, `packed`, `none`, where
+          `missing` is returned for missing objects if `skip_if_missing` is False.
+        - `size`: the size of the object in bytes (i.e., `len(stream.read())`). Always present, set to None if
+          `type` is `missing`.
+        - `pack_id`: the ID of the pack in which this object is stored. Set to `None` if `type` is not `packed`.
+        - `pack_compressed`: a boolean indicating if the object has been stored as compressed on disk or not
+        - `pack_offset`: the offset in the pack file. Set to `None` if `type` is not `packed`.
+        - `pack_length`: the size *on disk* of the object within the pack, in bytes.
+           It is equal to `size` if `pack_compressed` is False, otherwise it can be different (in general smaller,
+           but for small or uncompressible objects, even larger). Set to `None` if `type` is not `packed`.
 
         :param hashkeys: a list of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
@@ -397,7 +432,7 @@ class Container:
             manager has always the same length as the input ``hashkeys`` list.
         """
 
-        def get_object_stream_generator(hashkeys, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements
+        def get_object_stream_generator(hashkeys, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
             """Return a generator yielding triplets of (hashkey, open stream, size).
 
             :note: The stream is already open and at the right position, and can
@@ -453,7 +488,15 @@ class Container:
                         )
                         if metadata.compressed:
                             obj_reader = StreamDecompresser(obj_reader)
-                        yield metadata.hashkey, obj_reader, metadata.size
+                        meta = {
+                            'type': 'packed',
+                            'size': metadata.size,
+                            'pack_id': pack_int_id,
+                            'pack_compressed': metadata.compressed,
+                            'pack_offset': metadata.offset,
+                            'pack_length': metadata.length,
+                        }
+                        yield metadata.hashkey, obj_reader, meta
 
                 # Collect loose hash keys that are not found
                 # Reason: a concurrent process might have packed them,
@@ -465,7 +508,16 @@ class Container:
                         last_open_file = open(obj_path, mode='rb')
                         # I do not use os.path.getsize in case the file has just
                         # been deleted by a concurrent writer
-                        yield loose_hashkey, last_open_file, os.fstat(last_open_file.fileno()).st_size
+                        meta = {
+                            'type': 'loose',
+                            'size': os.fstat(last_open_file.fileno()).st_size,
+                            'pack_id': None,
+                            'pack_compressed': None,
+                            'pack_offset': None,
+                            'pack_length': None,
+                        }
+
+                        yield loose_hashkey, last_open_file, meta
                     except FileNotFoundError:
                         loose_not_found.add(loose_hashkey)
                         continue
@@ -525,12 +577,28 @@ class Container:
                             )
                             if metadata.compressed:
                                 obj_reader = StreamDecompresser(obj_reader)
-                            yield metadata.hashkey, obj_reader, metadata.size
+                            meta = {
+                                'type': 'packed',
+                                'size': metadata.size,
+                                'pack_id': pack_int_id,
+                                'pack_compressed': metadata.compressed,
+                                'pack_offset': metadata.offset,
+                                'pack_length': metadata.length,
+                            }
+                            yield metadata.hashkey, obj_reader, meta
 
                     # If there are really missing objects, and skip_if_missing is False, yield them
                     if really_not_found and not skip_if_missing:
                         for missing_hashkey in really_not_found:
-                            yield missing_hashkey, None, 0
+                            meta = {
+                                'type': 'missing',
+                                'size': None,
+                                'pack_id': None,
+                                'pack_compressed': None,
+                                'pack_offset': None,
+                                'pack_length': None,
+                            }
+                            yield missing_hashkey, None, meta
 
             finally:
                 if last_open_file is not None:
@@ -542,7 +610,7 @@ class Container:
         """Get the content of a number of objects with given hash keys.
 
         :note: use this method only if you know objects fit in memory.
-            Otherwise, use the ``get_objects_stream_and_size`` context manager and
+            Otherwise, use the ``get_objects_stream_and_meta`` context manager and
             process the objects one by one.
 
         :param hashkeys: A list of hash kyes of the objects to retrieve.
@@ -550,7 +618,7 @@ class Container:
             are the object contents.
         """
         retrieved = {}
-        with self.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
+        with self.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
             for obj_hashkey, stream, _ in triplets:
                 if stream is None:
                     # This should happen only if skip_if_missing is False

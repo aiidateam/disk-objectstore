@@ -593,14 +593,14 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     # skip_if_missing=True, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_objects_stream_and_size(hashkeys_list, skip_if_missing=True) as triplets:
-        for obj_hashkey, stream, size in triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys_list, skip_if_missing=True) as triplets:
+        for obj_hashkey, stream, meta in triplets:
             if stream is None:
-                assert size == 0
+                assert meta['size'] is None
                 missing.append(obj_hashkey)
             else:
                 check_md5s[obj_hashkey] = stream.read()
-                assert len(check_md5s[obj_hashkey]) == size
+                assert len(check_md5s[obj_hashkey]) == meta['size']
     # The retrieved values should be only the valid ones
     assert missing == []
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
@@ -620,14 +620,14 @@ def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, co
     # skip_if_missing=False, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_objects_stream_and_size(hashkeys_list, skip_if_missing=False) as triplets:
-        for obj_hashkey, stream, size in triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys_list, skip_if_missing=False) as triplets:
+        for obj_hashkey, stream, meta in triplets:
             if stream is None:
-                assert size == 0
+                assert meta['size'] is None
                 missing.append(obj_hashkey)
             else:
                 check_md5s[obj_hashkey] = stream.read()
-                assert len(check_md5s[obj_hashkey]) == size
+                assert len(check_md5s[obj_hashkey]) == meta['size']
     # The retrieved values should be only the valid ones
     assert set(missing) == set(unknown_hashkeys)
     check_md5s = {key: hashlib.md5(val).hexdigest() for key, val in contents.items()}
@@ -801,13 +801,13 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
 
 
 def test_get_objects_stream_closes(temp_container, generate_random_data):
-    """Test that get_objects_stream_and_size closes intermediate streams."""
+    """Test that get_objects_stream_and_meta closes intermediate streams."""
     data = generate_random_data()
     # Store
     obj_md5s = _add_objects_loose_loop(temp_container, data)
 
     # I get all objects first - this will actually internally go through the same function
-    # `get_objects_stream_and_size`, but I need to do it as this might open additional files,
+    # `get_objects_stream_and_meta`, but I need to do it as this might open additional files,
     # namely the SQLite DB (possibly more than one file due to the fact it's open in WAL mode).
     # The following checks are still meaningful, I check that if I do it again I don't open more files.
     temp_container.get_objects_content(obj_md5s.keys())
@@ -815,14 +815,14 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     current_process = psutil.Process()
     start_open_files = len(current_process.open_files())
 
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True):
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True):
         # I don't use the triplets
         pass
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
 
     print(current_process.open_files())
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
             pass
@@ -831,7 +831,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     assert len(current_process.open_files()) == start_open_files
 
     # I actually read the content
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
             stream.read()
@@ -845,13 +845,13 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     # I now update the count
     start_open_files = len(current_process.open_files())
 
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys()):
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
         # I don't use the triplets
         pass
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
 
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys()) as triplets:
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
             pass
@@ -859,12 +859,91 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     assert len(current_process.open_files()) == start_open_files
 
     # I actually read the content
-    with temp_container.get_objects_stream_and_size(obj_md5s.keys(), skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
+
+
+@pytest.mark.parametrize('compress', [True, False])
+@pytest.mark.parametrize('skip_if_missing', [True, False])
+def test_stream_meta(temp_container, compress, skip_if_missing):
+    """Validate the meta dictionary returned by the get_objects_stream_and_meta and get_object_stream_and_meta."""
+    # This is the list of all known meta keys.
+    # I do also an explicit check that all and only these are present
+    # This is implicit since I will later also compare the exact dictionaries and not only their keys,
+    # but I put this here to make sure in the future, if I change the interface and adapt the keys, I don't break
+    # this guarantee if I forget to adapt the test.
+    known_meta_keys = ['type', 'size', 'pack_id', 'pack_compressed', 'pack_offset', 'pack_length']
+
+    content_packed = b'sffssdf383939'
+    content_loose = b'v9fpaM'
+    hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
+    hashkey_loose = temp_container.add_object(content_loose)
+    hashkey_missing = 'unknown'
+    # Assuming only zlib compression for now. Needs to be adapted when changing the possible compression libraries
+    object_pack_length = len(content_packed) if not compress else len(
+        zlib.compress(content_packed, level=temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
+    )
+
+    expected_skip_missing_true = {
+        hashkey_packed: {
+            'content': content_packed,
+            'meta': {
+                'type': 'packed',
+                'size': len(content_packed),
+                'pack_id': 0,  # First pack, it's a new container
+                'pack_compressed': compress,
+                'pack_offset': 0,  # Only one object in the pack, must start from zero
+                'pack_length': object_pack_length,
+            }
+        },
+        hashkey_loose: {
+            'content': content_loose,
+            'meta': {
+                'type': 'loose',
+                'size': len(content_loose),
+                'pack_id': None,
+                'pack_compressed': None,
+                'pack_offset': None,
+                'pack_length': None,
+            }
+        }
+    }
+
+    expected_skip_missing_false = expected_skip_missing_true.copy()
+    expected_skip_missing_false[hashkey_missing] = {
+        'content': None,
+        'meta': {
+            'type': 'missing',
+            'size': None,
+            'pack_id': None,
+            'pack_compressed': None,
+            'pack_offset': None,
+            'pack_length': None,
+        }
+    }
+
+    check_dict = {}
+    with temp_container.get_objects_stream_and_meta([hashkey_packed, hashkey_loose, hashkey_missing],
+                                                    skip_if_missing=skip_if_missing) as triplets:
+        # I loop over the triplets, but I don't do anything
+        for hashkey, stream, meta in triplets:
+            retdict = {'meta': meta}
+            # In any case I should return all these meta, and no more
+            assert set(meta.keys()) == set(known_meta_keys)
+            if stream is None:
+                retdict['content'] = None
+            else:
+                retdict['content'] = stream.read()
+            check_dict[hashkey] = retdict
+
+    if skip_if_missing:
+        assert check_dict == expected_skip_missing_true
+    else:
+        assert check_dict == expected_skip_missing_false
 
 
 def test_length_get_objects(temp_container):
@@ -882,7 +961,7 @@ def test_length_get_objects(temp_container):
     # Test 1: I pass all the known hashkeys: I iterate (in some order) on all of them
     hashkeys = list(data_dict)
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     assert sorted(iterated_hashkeys) == sorted(hashkeys)
@@ -890,7 +969,7 @@ def test_length_get_objects(temp_container):
     # Test 2: I pass half the known hashkeys: I iterate (in some order) on all of them
     hashkeys = list(data_dict)[:2]
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     assert sorted(iterated_hashkeys) == sorted(hashkeys)
@@ -899,7 +978,7 @@ def test_length_get_objects(temp_container):
     partial_hashkeys = list(data_dict)[:2]
     hashkeys = partial_hashkeys + partial_hashkeys
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     # I should iterate on them ONLY ONCE
@@ -911,7 +990,7 @@ def test_length_get_objects(temp_container):
     partial_hashkeys = list(data_dict)[:2]
     hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=False) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=False) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     # I should iterate on them ONLY ONCE
@@ -923,7 +1002,7 @@ def test_length_get_objects(temp_container):
     partial_hashkeys = list(data_dict)[:2]
     hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_size(hashkeys=hashkeys, skip_if_missing=True) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=True) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     # I should iterate on them ONLY ONCE
@@ -1023,10 +1102,10 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
     data = {hashkey1: content1, hashkey2: content2}
 
     loose_dir_path = pathlib.Path(temp_container._get_loose_folder())  # pylint: disable=protected-access
-    with temp_container.get_objects_stream_and_size([hashkey1, hashkey2]) as triplets:
+    with temp_container.get_objects_stream_and_meta([hashkey1, hashkey2]) as triplets:
         counter = 0
 
-        for obj_hashkey, stream, size in triplets:
+        for obj_hashkey, stream, meta in triplets:
             if counter == 0:
                 # In the first step, I always pack the rest
                 fname = stream.name
@@ -1045,7 +1124,7 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
                     raise ValueError('Unknown hash key {}'.format(obj_hashkey))
             elif counter == 1:
                 # This should be the other object
-                # This was loose when get_objects_stream_and_size was called, but was packed in the meantime
+                # This was loose when get_objects_stream_and_meta was called, but was packed in the meantime
                 # I should still be able to get it correctly
                 assert data[obj_hashkey] == stream.read()
             else:
@@ -1082,10 +1161,10 @@ def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, comp
     # Object 2 is stored loose
     assert os.path.exists(loosepath2)
 
-    with temp_container.get_objects_stream_and_size([hashkey1, hashkey2]) as triplets:
+    with temp_container.get_objects_stream_and_meta([hashkey1, hashkey2]) as triplets:
         counter = 0
 
-        for obj_hashkey, stream, size in triplets:
+        for obj_hashkey, stream, meta in triplets:
             if counter == 0:
                 # The first one should be the one that is aleady packed
                 assert obj_hashkey == hashkey1

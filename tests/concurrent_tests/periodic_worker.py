@@ -133,19 +133,30 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         all_hashkeys = list(all_checksums.keys())
         random.shuffle(all_hashkeys)
 
+        retrieved_content = {}
+        metas = {}
         if bulk_read:
-            retrieved_content = container.get_objects_content(all_hashkeys, skip_if_missing=False)
+            with container.get_objects_stream_and_meta(all_hashkeys, skip_if_missing=False) as triplets:
+                for obj_hashkey, stream, meta in triplets:
+                    if stream is None:
+                        retrieved_content[obj_hashkey] = None
+                    else:
+                        retrieved_content[obj_hashkey] = stream.read()
+                    metas[obj_hashkey] = meta
         else:
-            retrieved_content = {}
             for obj_hashkey in all_hashkeys:
                 try:
-                    retrieved_content[obj_hashkey] = container.get_object_content(obj_hashkey)
+                    with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                        retrieved_content[obj_hashkey] = stream.read()
+                        metas[obj_hashkey] = meta
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
+                    metas[obj_hashkey] = {'type': 'missing'}  # I don't put all the rest for simplicity
         retrieved_checksums = {}
         for obj_hashkey, content in retrieved_content.items():
             if content is None:
                 raise ValueError('No content returned for object {}!'.format(obj_hashkey))
+            # This is the hash key of an (expected) empty bytes string b''
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
                 print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
             retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
@@ -155,8 +166,8 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         assert not only_right, 'objects only in all_checksums: {}'.format(only_right)
         assert not only_left, 'objects only in retrieved_checksums: {}'.format(only_left)
         for key in retrieved_checksums:
-            assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}'.format(
-                key, all_checksums[key], retrieved_checksums[key]
+            assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}; meta={}'.format(
+                key, all_checksums[key], retrieved_checksums[key], metas[key]
             )
         del retrieved_content
 

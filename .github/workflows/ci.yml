@@ -53,7 +53,8 @@ jobs:
         pip install -r dev-requirements.txt
     - name: Test with pytest
       # No need to run the benchmarks, they will run in a different workflow
-      run: pytest --cov=disk_objectstore --benchmark-skip
+      # Also, run in very verbose mode so if there is an error we get a complete diff
+      run: pytest -vv --cov=disk_objectstore --benchmark-skip
     - name: Create xml coverage
       run: coverage xml
     - name: Upload coverage to Codecov
