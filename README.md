@@ -6,7 +6,7 @@ and does not require a server running.
 |    | |
 |-----|----------------------------------------------------------------------------|
 |Latest release| [![PyPI version](https://badge.fury.io/py/disk-objectstore.svg)](https://badge.fury.io/py/disk-objectstore) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/disk-objectstore.svg)](https://pypi.python.org/pypi/disk-objectstore/) |
-|Build status| [![Build Status](https://github.com/giovannipizzi/disk-objectstore/workflows/Continuous%20integration/badge.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Supported platforms](https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Coverage Status](https://codecov.io/gh/giovannipizzi/disk-objectstore/branch/develop/graph/badge.svg)](https://codecov.io/gh/giovannipizzi/disk-objectstore) |
+|Build status| [![Build Status](https://github.com/giovannipizzi/disk-objectstore/workflows/Continuous%20integration/badge.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Supported platforms](https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Coverage Status](https://codecov.io/gh/giovannipizzi/disk-objectstore/branch/develop/graph/badge.svg)](https://codecov.io/gh/giovannipizzi/disk-objectstore) [Performance benchmarks](https://giovannipizzi.github.io/disk-objectstore/dev/bench/) |
 
 
 ## Goal
