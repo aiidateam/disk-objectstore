@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593430125382,
+  "lastUpdate": 1593430152846,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -422,6 +422,44 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.02194321447513948",
             "extra": "mean: 354.84847999999903 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "8f93a1e9914e96e2a8892402c1faf6df2e5febb4",
+          "message": "Returning more metadata when iterating over objects\n\nWe now don't return only the size, but a set of metadata.\nNote that this a backward-incompatible change (for those who\nwere using the internal get_objects_stream_and_meta (that anyway\nused to be called get_objects_stream_and_size, and does not exist anymore).\nTherefore, I upped the version to 0.4.0.\n\nI also added a get_object_stream_and_meta (at the singular) for a single object.",
+          "timestamp": "2020-06-29T12:08:47+02:00",
+          "tree_id": "3dfddd917f5aa1bec1e88f60b058390b416a8997",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/8f93a1e9914e96e2a8892402c1faf6df2e5febb4"
+        },
+        "date": 1593430151603,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2780251351959775,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06017952623102008",
+            "extra": "mean: 3.596797100000001 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.1901276523199797,
+            "unit": "iter/sec",
+            "range": "stddev: 0.017390113964031704",
+            "extra": "mean: 313.46708000000024 msec\nrounds: 5"
           }
         ]
       }
