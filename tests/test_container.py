@@ -1062,3 +1062,45 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
     temp_container.pack_all_loose(compress=compress)
     # After a second packing, the loose file *must* have been removed
     assert not os.path.exists(fname)
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing.
+
+    In addition, this does it when the first file is not loose, but it is already packed.
+    This triggers some lines of code to close the packs if already open, increasing test coverage
+    and implicitly testing that open file leaks are avoided.
+    """
+    content1 = b'abc'
+    content2 = b'def'
+
+    hashkey1 = temp_container.add_objects_to_pack([content1], compress=compress)[0]
+    hashkey2 = temp_container.add_object(content2)
+
+    loosepath2 = temp_container._get_loose_path_from_hashkey(hashkey2)  # pylint: disable=protected-access
+    # Object 2 is stored loose
+    assert os.path.exists(loosepath2)
+
+    with temp_container.get_objects_stream_and_size([hashkey1, hashkey2]) as triplets:
+        counter = 0
+
+        for obj_hashkey, stream, size in triplets:
+            if counter == 0:
+                # The first one should be the one that is aleady packed
+                assert obj_hashkey == hashkey1
+
+                # Pack the other object during the loop
+                temp_container.pack_all_loose(compress=compress)
+                assert stream.read() == content1
+            elif counter == 1:
+                # This should be the second object, packed during the first iteration
+                assert stream.read() == content2
+            else:
+                # Should not happen!
+                raise ValueError('There should be only two objects!')
+            counter += 1
+
+    # Object #2 was not open during the packing operation. Theferore, it should be deleted during packing
+    # on *all* filesystems, and here it should not exist anymore
+    assert not os.path.exists(loosepath2)
