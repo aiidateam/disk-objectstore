@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593415809566,
+  "lastUpdate": 1593415879147,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -156,6 +156,44 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.012587767155336948",
             "extra": "mean: 398.467380000001 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1080bfabe7608f846b4d91278f963d24c18c72a1",
+          "message": "Merge pull request #41 from giovannipizzi/increase_coverage\n\nAdding a test that covers one missing line",
+          "timestamp": "2020-06-29T09:29:13+02:00",
+          "tree_id": "760b3d95f1595f870ea05a2ec9a502b9ca6c3884",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/1080bfabe7608f846b4d91278f963d24c18c72a1"
+        },
+        "date": 1593415877973,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.3193383105828205,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03538082068847401",
+            "extra": "mean: 3.1314752 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.548726606882923,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007091604610876532",
+            "extra": "mean: 281.79122000000024 msec\nrounds: 5"
           }
         ]
       }
