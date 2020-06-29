@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593417600054,
+  "lastUpdate": 1593417609603,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -192,6 +192,44 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.011744473601796923",
             "extra": "mean: 415.8820404000004 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7eda99b2f330e4fee334381a9800d6aca1974d12",
+          "message": "Merge pull request #42 from giovannipizzi/increase_coverage\n\nTrying to see if standard github token works",
+          "timestamp": "2020-06-29T09:58:18+02:00",
+          "tree_id": "5079e5290b4c4795ef6426c38f1a5f9fdd801159",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/7eda99b2f330e4fee334381a9800d6aca1974d12"
+        },
+        "date": 1593417608866,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2814645353649651,
+            "unit": "iter/sec",
+            "range": "stddev: 0.21080038979311236",
+            "extra": "mean: 3.5528454720000004 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 1.8242120789034546,
+            "unit": "iter/sec",
+            "range": "stddev: 0.036399749657266105",
+            "extra": "mean: 548.181876200001 msec\nrounds: 5"
           }
         ]
       }
