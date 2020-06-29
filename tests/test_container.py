@@ -885,7 +885,7 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
     hashkey_missing = 'unknown'
     # Assuming only zlib compression for now. Needs to be adapted when changing the possible compression libraries
     object_pack_length = len(content_packed) if not compress else len(
-        zlib.compress(content_packed, level=temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
+        zlib.compress(content_packed, temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
     )
 
     expected_skip_missing_true = {
