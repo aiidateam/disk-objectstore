@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593409453768,
+  "lastUpdate": 1593409458097,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest with Python 3.8": [
@@ -158,6 +158,46 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.01553498473723823",
             "extra": "mean: 448.605900799987 msec\nrounds: 5"
+          }
+        ]
+      }
+    ],
+    "Benchmark on macos-latest with Python 3.5": [
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eaece2837daa7abe2adaedffe3309141307af01b",
+          "message": "Merge pull request #39 from giovannipizzi/fix_if_github_actions\n\nFixed if conditional for runs",
+          "timestamp": "2020-06-29T07:38:51+02:00",
+          "tree_id": "5a416ec1162b8b9f1b0cb48c6b1ff6529f26aba7",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/eaece2837daa7abe2adaedffe3309141307af01b"
+        },
+        "date": 1593409454400,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2578582483623114,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03223402670173893",
+            "extra": "mean: 3.878099717000017 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.172802730891156,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008981491326489717",
+            "extra": "mean: 460.23506219999035 msec\nrounds: 5"
           }
         ]
       }
