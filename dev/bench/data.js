@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1593414400997,
+  "lastUpdate": 1593414470187,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -78,6 +78,46 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.00864343419938554",
             "extra": "mean: 369.3666496000006 msec\nrounds: 5"
+          }
+        ]
+      }
+    ],
+    "Benchmark on windows-latest": [
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "37e4914e091106642af3975663590f013d0813b3",
+          "message": "Merge pull request #40 from giovannipizzi/move_benchmarks_new_workflow\n\nMoving benchmarks to a different workflow",
+          "timestamp": "2020-06-29T09:05:10+02:00",
+          "tree_id": "21cfdf2eed33a3725bbd4cbbf25afc1b0bedfa02",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/37e4914e091106642af3975663590f013d0813b3"
+        },
+        "date": 1593414468681,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.20892516900757802,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06363246228713358",
+            "extra": "mean: 4.786402733333333 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.5096157181046976,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012587767155336948",
+            "extra": "mean: 398.467380000001 msec\nrounds: 5"
           }
         ]
       }
