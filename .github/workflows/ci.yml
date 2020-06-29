@@ -66,7 +66,7 @@ jobs:
       run: pytest --benchmark-only --benchmark-json output.json
     - name: Store benchmark result
       # Run only on push on develop! Otherwise people (or other branches) might access to the github-actions branch
-      if: ${{ github.event_name == 'push' && github.ref == 'develop' }}
+      if: "github.event_name == 'push' && github.ref == 'refs/heads/develop'"
       uses: rhysd/github-action-benchmark@v1
       with:
         name: "Benchmark on ${{ matrix.os }} with Python ${{ matrix.python-version }}"
