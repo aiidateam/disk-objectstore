@@ -24,7 +24,7 @@ from .exceptions import NotExistent, NotInitialised
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
 
 
-class Container:
+class Container:  # pylint: disable=too-many-public-methods
     """A class representing a container of objects (which is stored on a disk folder)"""
 
     _PACK_INDEX_SUFFIX = '.idx'
@@ -605,6 +605,32 @@ class Container:
                     last_open_file.close()
 
         yield get_object_stream_generator(hashkeys=hashkeys, skip_if_missing=skip_if_missing)
+
+    def has_objects(self, hashkeys):
+        """Return whether the container contains objects with the given hash keys.
+
+        :param hashkeys: a list of hash keys to check.
+        :return: a list of booleans, where the i-th value is True if the i-th object of the ``hashkeys``
+            list exists, False otherwise.
+        """
+        existing_hashkeys = set()
+
+        # Note: This iterates in a 'random' order, different than the `hashkeys` list
+        with self.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=True) as triplets:
+            for obj_hashkey, _, _ in triplets:
+                # Since I use skip_if_missing=True, I should only iterate on those that exist
+                existing_hashkeys.add(obj_hashkey)
+
+        # Return a list of booleans
+        return [hashkey in existing_hashkeys for hashkey in hashkeys]
+
+    def has_object(self, hashkey):
+        """Return whether the container contains an object with the given hashkey.
+
+        :param hashkey: the hashkey of the object.
+        :return: True if the object exists, False otherwise.
+        """
+        return self.has_objects([hashkey])[0]
 
     def get_objects_content(self, hashkeys, skip_if_missing=True):
         """Get the content of a number of objects with given hash keys.

@@ -1183,3 +1183,42 @@ def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, comp
     # Object #2 was not open during the packing operation. Theferore, it should be deleted during packing
     # on *all* filesystems, and here it should not exist anymore
     assert not os.path.exists(loosepath2)
+
+
+def test_has_objects(temp_container):
+    """Test the ``Container.has_objects`` method."""
+    unknown_hashkey = 'unk'
+
+    # Create an object and test that `has_object` recognizes it
+    hashkey_pack1 = temp_container.add_object(b'1')
+    hashkey_pack2 = temp_container.add_object(b'2')
+    assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
+
+    # Verify that it still works after packing the object
+    temp_container.pack_all_loose()
+    assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
+
+    # Add a few more loose objects, and check that all works also with mixed loose and packed objects
+    hashkey_loose1 = temp_container.add_object(b'3')
+    hashkey_loose2 = temp_container.add_object(b'4')
+    assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
+    assert temp_container.has_objects([hashkey_loose1, hashkey_loose2]) == [True, True]
+    assert temp_container.has_objects([hashkey_loose2, unknown_hashkey, hashkey_loose1]) == [True, False, True]
+    assert temp_container.has_objects([hashkey_loose2, hashkey_pack1, unknown_hashkey, hashkey_loose1,
+                                       hashkey_pack2]) == [True, True, False, True, True]
+
+
+def test_has_object(temp_container):
+    """Test the ``Container.has_object`` method."""
+    assert not temp_container.has_object('unk')
+
+    # Create an object and test that `has_object` recognizes it
+    hashkey = temp_container.add_object(b'1')
+    assert temp_container.has_object(hashkey)
+
+    # Verify that it still works after packing the object
+    temp_container.pack_all_loose()
+    assert temp_container.has_object(hashkey)
