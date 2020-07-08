@@ -47,20 +47,30 @@ def generate_random_data():
     A dictionary is returned, where the key is the data MD5 and the value is the bytes content.
     """
 
-    def _generate_random_data(num_files=100, min_size=0, max_size=1000):
+    def _generate_random_data(num_files=100, min_size=0, max_size=1000, seed=None):
         """Generate a number of byte strings with random content (binary) and random length (in a given range).
 
         :param num_files: the number of files to generate
         :param min_size: the smallest allowed file size
         :param max_size: the smallest allowed file size
+        :param seed: if not None, set that seed for random generation (for reproducible runs)
         :return: a dictionary where the key is the data MD5 and the value is the bytes content
         """
-        files = {}
-        for _ in range(num_files):
-            size = random.randint(min_size, max_size)
-            content = os.urandom(size)
-            md5 = hashlib.md5(content).hexdigest()
-            files[md5] = content
-        return files
+        if seed is not None:
+            # Save the state before changing the seed
+            saved_state = random.getstate()
+            random.seed(seed)
+        try:
+            files = {}
+            for _ in range(num_files):
+                size = random.randint(min_size, max_size)
+                content = os.urandom(size)
+                md5 = hashlib.md5(content).hexdigest()
+                files[md5] = content
+            return files
+        finally:
+            # Reset the state if a seed was provided
+            if seed is not None:
+                random.setstate(saved_state)
 
     yield _generate_random_data
