@@ -1183,3 +1183,16 @@ def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, comp
     # Object #2 was not open during the packing operation. Theferore, it should be deleted during packing
     # on *all* filesystems, and here it should not exist anymore
     assert not os.path.exists(loosepath2)
+
+
+def test_has_object(temp_container):
+    """Test the ``Container.has_object`` method."""
+    assert not temp_container.has_object('object')
+
+    # Create an object and test that `has_object` recognizes it
+    hashkey = temp_container.add_object(b'')
+    assert temp_container.has_object(hashkey)
+
+    # Verify that it still works after packing the object
+    temp_container.pack_all_loose()
+    assert temp_container.has_object(hashkey)

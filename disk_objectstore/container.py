@@ -345,6 +345,18 @@ class Container:
         with self.get_object_stream(hashkey) as handle:
             return handle.read()
 
+    def has_object(self, hashkey):
+        """Return whether the container contains an object with the given hashkey.
+
+        :param hashkey: the hashkey of the object.
+        :return: True if the object exists, False otherwise.
+        """
+        try:
+            with self.get_object_stream(hashkey):
+                return True
+        except NotExistent:
+            return False
+
     @contextmanager
     def get_object_stream(self, hashkey):
         """Return a context manager yielding a stream to get the content of an object.
