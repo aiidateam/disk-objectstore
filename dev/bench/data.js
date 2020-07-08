@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594244303759,
+  "lastUpdate": 1594244345405,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -427,6 +427,51 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.009722049070577457",
             "extra": "mean: 400.3558042000009 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d76727c1cfc2bd09a1dc0623fdaaafe1a37e9361",
+          "message": "Merge pull request #47 from giovannipizzi/fix_45\n\nAdd `has_object` and `has_objects` methods",
+          "timestamp": "2020-07-08T23:37:07+02:00",
+          "tree_id": "bb2c71eb780474decfeed149f228b7cb2d4f5c60",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/d76727c1cfc2bd09a1dc0623fdaaafe1a37e9361"
+        },
+        "date": 1594244344083,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2935004652740095,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07446688481677756",
+            "extra": "mean: 3.4071496243333335 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.4519402522458646,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009572421643208772",
+            "extra": "mean: 407.8402804 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 0.8505371359325654,
+            "unit": "iter/sec",
+            "range": "stddev: 0.2595299084299431",
+            "extra": "mean: 1.1757276169999997 sec\nrounds: 3"
           }
         ]
       }
