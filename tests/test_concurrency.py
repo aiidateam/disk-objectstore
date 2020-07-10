@@ -13,8 +13,9 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-@pytest.mark.xfail(os.name == 'nt', reason='Still some problems on Windows, see #4')
-def test_concurrency(temp_dir):
+# Do the same test 20 times
+@pytest.mark.parametrize('repetition', list(range(20)))
+def test_concurrency(temp_dir, repetition):  # pylint: disable=unused-argument
     """Test to run concurrently many workers creating objects, and at the same time one packer.
 
     This is needed to see that indeed these operations can happen at the same time.
