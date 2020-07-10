@@ -158,7 +158,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                 raise ValueError('No content returned for object {}!'.format(obj_hashkey))
             # This is the hash key of an (expected) empty bytes string b''
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
-                print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
+                print('WARNING!!! {} is {} ({}); {}'.format(obj_hashkey, content, type(content), metas[obj_hashkey]))
             retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
 
         only_left = set(retrieved_checksums).difference(all_checksums)
