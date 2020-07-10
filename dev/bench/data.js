@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594399626118,
+  "lastUpdate": 1594403398846,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -280,6 +280,51 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.015197485654280522",
             "extra": "mean: 493.7634533333342 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d493174c1354603b21ed8d623f487660a050d24",
+          "message": "Merge pull request #50 from giovannipizzi/better_debugging_concurrency\n\nSlightly more detailed debugging in case of problems with the concurrent tests",
+          "timestamp": "2020-07-10T19:48:46+02:00",
+          "tree_id": "36d0accdc00b7f7b1eb3e3b01401bfb7c227471f",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/4d493174c1354603b21ed8d623f487660a050d24"
+        },
+        "date": 1594403398450,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.3706970036280086,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008086401829544837",
+            "extra": "mean: 2.6976209416666657 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.1316609822332797,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0106559717396749",
+            "extra": "mean: 319.3193661999999 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.7661317220481936,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00906977484509298",
+            "extra": "mean: 566.2091833333326 msec\nrounds: 3"
           }
         ]
       }
