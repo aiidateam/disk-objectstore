@@ -33,6 +33,165 @@ To install in development mode, run, after checking out, in a (python 3) virtual
 pip install -e .[dev]
 ```
 
+## Basic usage
+
+Let us run a quick demo of how to store and retrieve objects in a container:
+
+```python
+from disk_objectstore import Container
+
+# Let's create a new container in the local folder `temp_container`, and initialise it
+container = Container('temp_container')
+container.init_container(clear=True)
+
+# Let's add two objects
+hash1 = container.add_object(b'some_content')
+hash2 = container.add_object(b'some_other_content')
+
+# Let's look at the hashes
+print(hash1)
+# Output: 6a96df63699b6fdc947177979dfd37a099c705bc509a715060dbfd3b7b605dbe
+print(hash2)
+# Output: cfb487fe419250aa790bf7189962581651305fc8c42d6c16b72384f96299199d
+
+# Let's retrieve the objects from the hash
+container.get_object_content(hash1)
+# Output: b'some_content'
+container.get_object_content(hash2)
+# Output: b'some_other_content'
+
+# Let's add a new object with the same content of an existing one: it will get the same
+# hash and will not be stored twice
+hash1bis = container.add_object(b'some_content')
+assert hash1bis == hash1
+
+# Let's pack all objects: instead of having a lot of files, one per object, all objects
+# are written in a few big files (great for performance, e.g. when using rsync) +
+# internally a SQLite database is used to know where each object is in the pack files
+container.pack_all_loose()
+
+# After packing, everthing works as before
+container.get_object_content(hash2)
+# Output: b'some_other_content'
+
+# This third object will be stored as loose
+hash3 = container.add_object(b'third_content')
+```
+
+## Advanced usage
+This repository is designed both for performance and for having a low memory footprint.
+Therefore, it provides bulk operations and the possibility to access objects as streams.
+We **strongly suggest** to use these methods if you use the `disk-objecstore` as a library,
+unless you are absolutely sure that objects always fit in memory, and you never have to
+access tens of thousands of objects or more.
+
+### Bulk access
+We continue from the commands of the basic usage. We can get the content of more objects at once:
+```python
+container.get_objects_content([hash1, hash2])
+# Output: {'6a96df63699b6fdc947177979dfd37a099c705bc509a715060dbfd3b7b605dbe': b'some_content',  'cfb487fe419250aa790bf7189962581651305fc8c42d6c16b72384f96299199d': b'some_other_content'}
+```
+For many objects (especially if they are packed), retrieving in bulk can give orders-of-magnitude speed-up.
+
+### Using streams
+#### Interface
+First, let's look at the interface:
+```python
+with container.get_object_stream(hash1) as stream:
+    print(stream.read())
+# Output: b'some_content'
+```
+For bulk access, the syntax is a bit more convoluted (the reason is efficiency, as discussed below):
+```python
+with container.get_objects_stream_and_meta([hash3, hash1, hash2]) as triplets:
+    for hashkey, stream, meta in triplets:
+        print("Meta for hashkey {}: {}".format(hashkey, meta))
+        print("  Content: {}".format(stream.read()))
+```
+whose output is:
+```
+Meta for hashkey 6a96df63699b6fdc947177979dfd37a099c705bc509a715060dbfd3b7b605dbe: {'type': 'packed', 'size': 12, 'pack_id': 0, 'pack_compressed': False, 'pack_offset': 0, 'pack_length': 12}
+  Content: b'some_content'
+Meta for hashkey cfb487fe419250aa790bf7189962581651305fc8c42d6c16b72384f96299199d: {'type': 'packed', 'size': 18, 'pack_id': 0, 'pack_compressed': False, 'pack_offset': 12, 'pack_length': 18}
+  Content: b'some_other_content'
+Meta for hashkey d1e4103ce093e26c63ce25366a9a131d60d3555073b8424d3322accefc36bf08: {'type': 'loose', 'size': 13, 'pack_id': None, 'pack_compressed': None, 'pack_offset': None, 'pack_length': None}
+  Content: b'third_content'
+```
+
+**IMPORTANT NOTE**: As you see above, the order of the triplets **IS NOT** the order in which you passed the hash keys to
+`get_objects_stream_and_meta`. The reason is efficiency: the library will try to keep a (pack) file open as long as possible, and read it in order, to exploit efficiently disk caches.
+
+#### Memory-savvy approach
+If you don't know the size of the object, you don't want to just call `stream.read()` (you could have just called `get_object_content()` in that case!) because if the object does not fit in memory, your application will crash.
+You will need to read it in chunks and process it chunk by chunk.
+
+A very simple pattern:
+```python
+# The optimal chunk size depends on your application and needs some benchmarking
+CHUNK_SIZE = 100000
+with container.get_object_stream(hash1) as stream:
+    chunk = stream.read(CHUNK_SIZE)
+    while chunk:
+        # process chunk here
+        # E.g. write to a different file, pass to a method to compress it, ...
+        chunk = stream.read(CHUNK_SIZE)
+```
+You can find various examples of this pattern in the utility wrapper classes in `disk_objectstore.utils`.
+
+Note also that if you use `get_objects_stream_and_meta`, you can use `meta['size']` to know the size
+of the object before starting to read, so you can e.g. simply do a `.read()` if you know the size is small.
+
+## Packing
+As said above, from the user point of view, accessing a `Container` where objects are all loose, all packed, or partially loose and partially packed, does not change anything from the user-interface point of view, but performance might improve a lot after packing.
+
+Note that only one process can pack (or write in packs in general) at a given time, while any number of
+processes can write concurrently loose objects, and read objects (both loose and packed).
+
+The continuous integration tests check also that any number of processes can continue to write concurrently loose objects and read from packs even while a *single process* is performing the packing operation.
+
+Finally, in specific applications (for which you have to write a lot of objects, and you know that there
+are no concurrent processes accessing the packs) you can directly write to the packs for performance reasons.
+
+The interface is the following:
+```python
+container.add_objects_to_pack([b'obj1', b'obj2'])
+# Output: ['7e485fc048df85f62cb1ec17174072380519e3064a0510ec00daaa381a680942', '71d00f404e92546cba0e69b27b13394af4592e4da22bf24c58a95ec3f4f45584']
+```
+or, better, for big objects using streams, you can use `add_streamed_objects_to_pack`.
+
+As an example, let's create two files:
+```python
+with open('file1.txt', 'wb') as fhandle:
+    fhandle.write(b'file1content')
+with open('file2.txt', 'wb') as fhandle:
+    fhandle.write(b'file2content')
+```
+
+Now you can exploit the `LazyOpener` wrapper to lazily create handles to files, that are actually open only when accessed.
+Let's now add their content to the `Container`, in a way that works even for TB files without filling up all your RAM:
+```python
+from disk_objectstore.utils import LazyOpener
+
+container.add_streamed_objects_to_pack([LazyOpener('file1.txt'), LazyOpener('file2.txt')], open_streams=True)
+```
+Output:
+```
+['ce3e75d02effb66eda58779e3b0f9e454aad218b9d5a38903a105f177f2dde23' 'eeeb27c2f0348e327ec8e66e7f5667798df601e6d1c62209dde749d370732a48']
+```
+Note that we use the `LazyOpener` here, because there is an operating-system limit on the number of
+open files you can have at the same time (and this limit is quite low e.g. on Mac OS). The snippet above works with any number of files thanks to the use of the `LazyOpener` and the fact that `add_streamed_objects_to_pack()` will open the files only when needed (thanks to the `open_streams=True` parameter) and close them as soon as not needed anymore.
+
+If you instead don't need to "open" the streams, but you can just call `.read(SIZE)` on them,
+you can simply do:
+```python
+from io import BytesIO
+stream1 = BytesIO(b'file1content')
+stream2 = BytesIO(b'file2content')
+container.add_streamed_objects_to_pack([stream1, stream2])
+```
+which has the same output as before.
+Note that this is just to demonstrate the interface: the `BytesIO` object will store the whole data in memory!
+
 ## Implementation considerations
 
 This implementation, in particular, addresses the following aspects:
