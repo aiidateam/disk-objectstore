@@ -62,7 +62,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
         # even if the write_handle is not closed
         read_chunk = subprocess.check_output([
             sys.executable, '-c',
-            'fhandle=open("{}"); print(fhandle.read(), end=""); fhandle.close()'.format(os.path.realpath(fname))
+            'fhandle=open(r"{}"); print(fhandle.read(), end=""); fhandle.close()'.format(os.path.realpath(fname))
         ])
         assert read_chunk == first_part
 
@@ -81,7 +81,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
         # Now, jump to the beginning of the second part for reading (skipping 'intermediate')
         read_chunk = subprocess.check_output([
             sys.executable, '-c',
-            'fhandle=open("{}"); fhandle.seek({}); print(fhandle.read(), end=""); fhandle.close()'.format(
+            'fhandle=open(r"{}"); fhandle.seek({}); print(fhandle.read(), end=""); fhandle.close()'.format(
                 os.path.realpath(fname),
                 len(first_part) + len(intermediate)
             )
@@ -117,7 +117,7 @@ def test_concurrent_append_write_buffer_size(temp_dir):
 
         # Let's append some content from a second process, in append (bytes) mode
         subprocess.check_output([
-            sys.executable, '-c', 'fhandle=open("{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
+            sys.executable, '-c', 'fhandle=open(r"{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
                 os.path.realpath(fname), intermediate.decode('ascii')
             )
         ])
@@ -132,7 +132,7 @@ def test_concurrent_append_write_buffer_size(temp_dir):
 
         # Append the second part
         subprocess.check_output([
-            sys.executable, '-c', 'fhandle=open("{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
+            sys.executable, '-c', 'fhandle=open(r"{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
                 os.path.realpath(fname), second_part.decode('ascii')
             )
         ])
