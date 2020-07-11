@@ -78,6 +78,7 @@ container.get_object_content(hash2)
 hash3 = container.add_object(b'third_content')
 ```
 
+
 ## Advanced usage
 This repository is designed both for performance and for having a low memory footprint.
 Therefore, it provides bulk operations and the possibility to access objects as streams.
