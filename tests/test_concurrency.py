@@ -13,10 +13,11 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-# Do the same test 20 times
-@pytest.mark.parametrize('repetition', list(range(20)))
-def test_concurrency(temp_dir, repetition):  # pylint: disable=unused-argument
-    """Test to run concurrently many workers creating objects, and at the same time one packer.
+# Do the same test 10 times
+@pytest.mark.parametrize('repetition', list(range(10)))
+@pytest.mark.parametrize('with_packing', [True, False])
+def test_concurrency(temp_dir, repetition, with_packing):  # pylint: disable=unused-argument, too-many-statements, too-many-locals
+    """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
     This is needed to see that indeed these operations can happen at the same time.
     Moreover, this is needed to perform a full coverage of the code, since some code will
@@ -35,10 +36,11 @@ def test_concurrency(temp_dir, repetition):  # pylint: disable=unused-argument
     shared_dir = os.path.join(temp_dir, 'shared')
     os.mkdir(shared_dir)
 
-    # Start the packer
-    packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '7', '-w', '0.83'],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+    if with_packing:
+        # Start the packer
+        packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '7', '-w', '0.83'],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
 
     # Start the workers
     worker_procs = []
@@ -51,13 +53,15 @@ def test_concurrency(temp_dir, repetition):  # pylint: disable=unused-argument
             subprocess.Popen([sys.executable, worker_script] + options, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         )
 
-    packer_out, packer_err = packer_proc.communicate()
-    if packer_out:
-        print('** STDOUT OF PACKER')
-        print(packer_out.decode('utf8'))
-    if packer_err:
-        print('** STDERR OF PACKER')
-        print(packer_err.decode('utf8'), file=sys.stderr)
+    if with_packing:
+        packer_out, packer_err = packer_proc.communicate()
+        if packer_out:
+            print('** STDOUT OF PACKER')
+            print(packer_out.decode('utf8'))
+        if packer_err:
+            print('** STDERR OF PACKER')
+            print(packer_err.decode('utf8'), file=sys.stderr)
+
     worker_outs = []
     worker_errs = []
     for worker_id, worker_proc in enumerate(worker_procs):
@@ -73,7 +77,7 @@ def test_concurrency(temp_dir, repetition):  # pylint: disable=unused-argument
 
     error_messages = []
 
-    if packer_proc.returncode:
+    if with_packing and packer_proc.returncode:
         error_messages.append('PACKER process failed with error code {}!'.format(packer_proc.returncode))
         error_messages.append('PACKER output:')
         error_messages.append(packer_out.decode('utf8'))
