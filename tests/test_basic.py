@@ -174,9 +174,9 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
         try:
             # I assume here that the fname does not contain double quotes
             subprocess.check_output([
-                sys.executable, '-c'
-                'import os; os.remove(r"{}")'.format(os.path.realpath(fname))
-            ])
+                sys.executable, '-c', 'import os; os.remove(r"{}")'.format(os.path.realpath(fname))
+            ],
+                                    stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
             # On Windows, I should get:
             # PermissionError: [WinError 32] The process cannot access the file because
@@ -186,10 +186,8 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
             # I cannot check the error code since it's a different subprocess. As a note, it should be:
             # - errno.EACCES == 13
             # - os.streerror(exc.errno) == 'Permission denied'
-            output = exc.stdout or b''  # It could be none
-            error = exc.stderr or b''
-            full_output = output + b'\n' + error
-            assert b'PermissionError' in full_output
+            output = exc.output or b''  # It could be none
+            assert b'PermissionError' in output
             assert os.path.isfile(fname), 'The file was actually deleted on Windows, unexpected!'
         else:
             assert os.name == 'posix', "I should be able to delete a file while it's still open only on POSIX!"
