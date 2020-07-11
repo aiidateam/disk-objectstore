@@ -186,7 +186,10 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
             # I cannot check the error code since it's a different subprocess. As a note, it should be:
             # - errno.EACCES == 13
             # - os.streerror(exc.errno) == 'Permission denied'
-            assert 'PermissionError' in exc.stderr
+            output = exc.stdout or b''  # It could be none
+            error = exc.stderr or b''
+            full_output = output + b'\n' + error
+            assert b'PermissionError' in full_output
             assert os.path.isfile(fname), 'The file was actually deleted on Windows, unexpected!'
         else:
             assert os.name == 'posix', "I should be able to delete a file while it's still open only on POSIX!"
