@@ -136,6 +136,9 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         retrieved_content = {}
         metas = {}
         if bulk_read:
+            # Permission error could also happen in this branch on Windows (see see issue #37) but
+            # it's harder to get the hashkey for which this happened, so I don't put code here but I
+            # rely on the fact that it will sometimes also happen in the other branches and I can debug from those.
             with container.get_objects_stream_and_meta(all_hashkeys, skip_if_missing=False) as triplets:
                 for obj_hashkey, stream, meta in triplets:
                     if stream is None:
@@ -152,6 +155,23 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
                     metas[obj_hashkey] = {'type': 'missing'}  # I don't put all the rest for simplicity
+                except PermissionError as exc:
+                    # This sometimes happen on Windows (I think during packing), see issue #37
+                    # The error message typically shows the error and the path, showing if it's loose
+                    print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+
+                    # Before re-raising, I try to get the same object again, to see if this now works and is packed
+                    # (or it crashes again!)
+                    with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                        new_content = stream.read()
+                        print(
+                            '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                                hashlib.sha256(new_content).hexdigest(), meta
+                            )
+                        )
+                        print('  `-> CONTENT: {}'.format(new_content))
+                    raise
+
         retrieved_checksums = {}
         for obj_hashkey, content in retrieved_content.items():
             if content is None:
@@ -161,7 +181,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
                 print('WARNING!!! {} is {} ({}); {}'.format(obj_hashkey, content, type(content), metas[obj_hashkey]))
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
-                # been packed in the meantime if it was loose)
+                # been packed in the meantime if it was loose), see see issue #43
                 with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
                     new_content = stream.read()
                     print(
@@ -184,12 +204,30 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         random.shuffle(all_hashkeys)
         retrieved_checksums = {}
         for obj_hashkey in all_hashkeys:
-            content = container.get_object_content(obj_hashkey)
+            try:
+                content = container.get_object_content(obj_hashkey)
+            except PermissionError as exc:
+                # This sometimes happen on Windows (I think during packing), see issue #37
+                # The error message typically shows the error and the path, showing if it's loose
+                print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+
+                # Before re-raising, I try to get the same object again, to see if this now works and is packed
+                # (or it crashes again!)
+                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                    new_content = stream.read()
+                    print(
+                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                            hashlib.sha256(new_content).hexdigest(), meta
+                        )
+                    )
+                    print('  `-> CONTENT: {}'.format(new_content))
+                raise
+
             retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
                 print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
-                # been packed in the meantime if it was loose)
+                # been packed in the meantime if it was loose), see see issue #43
                 with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
                     new_content = stream.read()
                     print(
