@@ -73,7 +73,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
 
         # Check that the file size on disk is the expected one
         filesize_str = subprocess.check_output([
-            sys.executable, '-c', 'import os; print(os.path.getsize("{}"), end="")'.format(os.path.realpath(fname))
+            sys.executable, '-c', 'import os; print(os.path.getsize(r"{}"), end="")'.format(os.path.realpath(fname))
         ])
 
         assert filesize_str == str(len(first_part) + len(intermediate) + len(second_part)).encode('ascii')
@@ -173,7 +173,10 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
         # I (try to) delete the file in a different subprocess
         try:
             # I assume here that the fname does not contain double quotes
-            subprocess.check_output([sys.executable, '-c' 'import os; os.remove("{}")'.format(os.path.realpath(fname))])
+            subprocess.check_output([
+                sys.executable, '-c'
+                'import os; os.remove(r"{}")'.format(os.path.realpath(fname))
+            ])
         except subprocess.CalledProcessError as exc:
             # On Windows, I should get:
             # PermissionError: [WinError 32] The process cannot access the file because
