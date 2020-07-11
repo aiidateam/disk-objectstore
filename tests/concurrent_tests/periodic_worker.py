@@ -156,10 +156,20 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         for obj_hashkey, content in retrieved_content.items():
             if content is None:
                 raise ValueError('No content returned for object {}!'.format(obj_hashkey))
+            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
             # This is the hash key of an (expected) empty bytes string b''
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
                 print('WARNING!!! {} is {} ({}); {}'.format(obj_hashkey, content, type(content), metas[obj_hashkey]))
-            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
+                # Try to retrieve again to check if it's a temporary problem (and/or if the file has
+                # been packed in the meantime if it was loose)
+                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                    new_content = stream.read()
+                    print(
+                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                            hashlib.sha256(new_content).hexdigest(), meta
+                        )
+                    )
+                    print('  `-> CONTENT: {}'.format(new_content))
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
@@ -175,9 +185,19 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         retrieved_checksums = {}
         for obj_hashkey in all_hashkeys:
             content = container.get_object_content(obj_hashkey)
+            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
             if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
                 print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
-            retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
+                # Try to retrieve again to check if it's a temporary problem (and/or if the file has
+                # been packed in the meantime if it was loose)
+                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                    new_content = stream.read()
+                    print(
+                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                            hashlib.sha256(new_content).hexdigest(), meta
+                        )
+                    )
+                    print('  `-> CONTENT: {}'.format(new_content))
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
