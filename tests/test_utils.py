@@ -485,6 +485,15 @@ def test_packed_object_reader():
         assert packed_reader.read() == bytestream[offset:]
 
 
+def test_packed_object_reader_mode():
+    """Test the ``PackedObjectReader.mode`` property."""
+    with tempfile.TemporaryFile() as handle:
+        reader = utils.PackedObjectReader(handle, 0, 0)
+
+        assert hasattr(reader, 'mode')
+        assert reader.mode == handle.mode
+
+
 def test_stream_decompresser():
     """Test the stream decompresser."""
     # A short binary string (1025 bytes, an odd number to avoid possible alignments with the chunk size)

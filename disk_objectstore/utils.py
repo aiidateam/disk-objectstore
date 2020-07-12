@@ -250,6 +250,10 @@ class PackedObjectReader:
     length of the given object."""
 
     @property
+    def mode(self):
+        return self._fhandle.mode
+
+    @property
     def seekable(self):
         """Return whether object supports random access."""
         return False
