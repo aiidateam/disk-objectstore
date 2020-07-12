@@ -1272,3 +1272,35 @@ def test_has_object(temp_container):
     # Verify that it still works after packing the object
     temp_container.pack_all_loose()
     assert temp_container.has_object(hashkey)
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_seek_tell(temp_container, compress):
+    """Test the tell and seek methods of returned objects."""
+    content = b'0123456789'
+    hashkey = temp_container.add_object(content)
+
+    seek_pos = 3
+    read_length = 4
+
+    # Check that the seek and tell method work for loose objects
+    with temp_container.get_object_stream_and_meta(hashkey) as (fhandle, meta):
+        assert meta['type'] == 'loose'
+        fhandle.seek(seek_pos)
+        assert fhandle.tell() == seek_pos
+        read_data = fhandle.read(read_length)
+        assert fhandle.tell() == seek_pos + read_length
+        assert read_data == content[seek_pos:seek_pos + read_length]
+
+    # Pack the object, and remove old loose objects
+    temp_container.pack_all_loose(compress=compress)
+
+    # Check that the seek and tell method work for packed objects (either compressed or not)
+    with temp_container.get_object_stream_and_meta(hashkey) as (fhandle, meta):
+        assert meta['type'] == 'packed'
+        assert meta['pack_compressed'] == compress
+        fhandle.seek(seek_pos)
+        assert fhandle.tell() == seek_pos
+        read_data = fhandle.read(read_length)
+        assert fhandle.tell() == seek_pos + read_length
+        assert read_data == content[seek_pos:seek_pos + read_length]
