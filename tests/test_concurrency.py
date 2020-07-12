@@ -13,16 +13,20 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-# Do the same test 10 times
-@pytest.mark.parametrize('repetition', list(range(10)))
+# Do the same test 5 times (5*2*2 = 20 total tests)
+@pytest.mark.parametrize('repetition', list(range(5)))
 @pytest.mark.parametrize('with_packing', [True, False])
-def test_concurrency(temp_dir, repetition, with_packing):  # pylint: disable=unused-argument, too-many-statements, too-many-locals
+@pytest.mark.parametrize('max_size', [1, 1000])
+def test_concurrency(temp_dir, repetition, with_packing, max_size):  # pylint: disable=unused-argument, too-many-statements, too-many-locals
     """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
     This is needed to see that indeed these operations can happen at the same time.
     Moreover, this is needed to perform a full coverage of the code, since some code will
     be reached only during concurrent access to the object store (reading data while
     packing).
+
+    .. note:: With max_size=1 I only have a maximum of 256+1 = 257 objects.
+      In this way I stress-test also the creation of concurrent identical objects.
     """
     packer_script = os.path.join(CONCURRENT_DIR, 'periodic_packer.py')
     worker_script = os.path.join(CONCURRENT_DIR, 'periodic_worker.py')
@@ -45,7 +49,7 @@ def test_concurrency(temp_dir, repetition, with_packing):  # pylint: disable=unu
     # Start the workers
     worker_procs = []
     for worker_id in range(NUM_WORKERS):
-        options = ['-r', '6', '-w', '0', '-p', container_dir, '-s', shared_dir]
+        options = ['-r', '6', '-w', '0', '-p', container_dir, '-s', shared_dir, '-M', str(max_size)]
         if worker_id % 2:
             # One every two will read in bulk, the other within a loop
             options += ['-b']
