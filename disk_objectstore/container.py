@@ -899,7 +899,13 @@ class Container:  # pylint: disable=too-many-public-methods
         # Here, we assume that if it's already packed, it's safe to assume it's uncorrupted.
         # If we want to do checks, they should be done here before deleting
         for obj_hashkey in existing_packed_hashkeys:
-            os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            try:
+                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            except PermissionError:
+                # On Windows someone might still be reading the loose file.
+                # If I cannot delete it, it's ok, the next packing will delete it
+                # (having both a loose and a packed version of an object is a legal condition)
+                pass
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while loose_objects:

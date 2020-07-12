@@ -607,7 +607,7 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
         # > should use F_FULLFSYNC to ensure that their data is written in the order
         # > they expect.  Please see fcntl(2) for more detail.
         # Replace the _fsync_function
-        _fsync_function = lambda fileno: getattr(fcntl, 'fcntl')(fileno, fcntl.F_FULLFSYNC)
+        _fsync_function = lambda fileno: fcntl.fcntl(fileno, fcntl.F_FULLFSYNC)  # pylint: disable=no-member,useless-suppression
     else:
         # In general this is the function to call
         _fsync_function(fileno)
