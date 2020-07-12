@@ -193,6 +193,23 @@ container.add_streamed_objects_to_pack([stream1, stream2])
 which has the same output as before.
 Note that this is just to demonstrate the interface: the `BytesIO` object will store the whole data in memory!
 
+### Reclaiming space
+To avoid race conditions, while packing the corresponding loose files are not deleted.
+In order to reclaim that space, after making sure that no process is still accessing the loose objects, one can do
+```python
+container.clean_storage()
+```
+Note: Technically processes can still continue using the container during this operation, with the following caveats:
+- on Linux, the operation should be callable at any time; files will be deleted, but if they are open can still be
+  accessed correctly. Once closed, they will actually be removed from disk and don't occupy space anymore.
+- on Windows, the operation should be callable at any time; if a loose object is open, it will not be deleted.
+  A future `clean_storage` call will delete it once it's not used anymore.
+- on Mac OS X, it is better not to call it while processes are still accessing the file, because there are race
+  conditions under which the file might be read as empty. If the file is already open, the same notes as Linux apply.
+  However, once objects are packed, new implementations will prefer the packed version and open that one. So, it is
+  OK to call the `clean_storage`. However, one should be careful with concurrently continuing to write loose objects and
+  accessing them for the aforementioned race condition.
+
 ## Implementation considerations
 
 This implementation, in particular, addresses the following aspects:

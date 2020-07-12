@@ -773,10 +773,6 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         assert self._is_valid_pack_id(pack_id)
 
-        #import psutil
-        #proc = psutil.Process()
-        #print(proc.open_files())
-
         # Open file in exclusive mode
         lock_file = os.path.join(self._get_pack_folder(), '{}.lock'.format(pack_id))
         try:
@@ -789,13 +785,11 @@ class Container:  # pylint: disable=too-many-public-methods
                 os.remove(lock_file)
 
     def _list_loose(self):
-        """Iterate over loose objects
+        """Iterate over loose objects.
 
-        It does the right thing depending on the value of loose_prefix_len.
+        This returns all loose objects, even if a packed version of the same object exists.
 
-        Note that this returns a generator.
-
-        TODO add a prefix filter?
+        .. note:: this returns a generator of hash keys.
         """
         for first_level in os.listdir(self._get_loose_folder()):
             if self.loose_prefix_len:
@@ -811,9 +805,7 @@ class Container:  # pylint: disable=too-many-public-methods
     def _list_packs(self):
         """Iterate over packs.
 
-        Note that this returns a generator of the pack IDs.
-
-        TODO add a prefix filter?
+        .. note:: this returns a generator of the pack IDs.
         """
         for fname in os.listdir(self._get_pack_folder()):
             ## I actually check for pack index files
@@ -895,11 +887,12 @@ class Container:  # pylint: disable=too-many-public-methods
         # Now, I should be left only with objects with hash keys that are not yet known.
         # I can then continue
 
-        # Clean up loose objects that are already in the packs
-        # Here, we assume that if it's already packed, it's safe to assume it's uncorrupted.
-        # If we want to do checks, they should be done here before deleting
-        for obj_hashkey in existing_packed_hashkeys:
-            os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+        # Here, I could do some clean up of loose objects that are already in the packs,
+        # by removing all loose objects with hash key `existing_packed_hashkeys`, that are
+        # already packed.
+        # HOWEVER, while this would work fine on Linux, there are concurrency issues both
+        # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
+        # and deletion is deferred to a manual clean-up operation.
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while loose_objects:
@@ -950,18 +943,12 @@ class Container:  # pylint: disable=too-many-public-methods
             session.commit()
 
             # If we are here, things should be guaranteed by SQLite to be written to disk.
-            # Then, it's safe to do some clean up loose objects, for each pack.
-            for obj_hashkey in loose_objects_this_pack:
-                try:
-                    os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
-                except PermissionError:
-                    # On Windows, I could get a "PermissionError: [WinError 32] The process cannot access the file
-                    # because it is begin used by another process: '<filename>'" if, while packing, some process is
-                    # reading the loose object.
-                    # In this case, I just ignore this and continue. The object is now packed, and there is still
-                    # the corresponding loose object, but this is not an error.
-                    # At the next packing operation the loose object will be inexpensively deleted.
-                    pass
+            # Then, it would be safe to already do some clean up of loose objects that are now packed,
+            # and by doing it here we would do it after each pack.
+            # This would mean removing objects that are in `loose_objects_this_pack`.
+            # HOWEVER, while this would work fine on Linux, there are concurrency issues both
+            # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
+            # and deletion is deferred to a manual clean-up operation.
 
     def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
         """Add objects directly to a pack, reading from a list of streams.
@@ -1087,3 +1074,34 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         stream_list = [io.BytesIO(content) for content in content_list]
         return self.add_streamed_objects_to_pack(stream_list=stream_list, compress=compress)
+
+    def clean_storage(self):
+        """Perform some maintenance clean-up of the container.
+
+        .. note:: this is a maintenance operation, must be performed when nobody is using the container!
+
+        In particular:
+        - it cleans up loose objects that are already in packs
+        """
+        loose_objects = set(self._list_loose())
+        # Force reload of the session to get the most up-to-date packed objects
+        self.close()
+
+        session = self._get_cached_session()
+        # I search now for all loose hash keys that exist also in the packs
+        existing_packed_hashkeys = []
+        for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
+            # I check the hash keys that are already in the pack
+            for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                existing_packed_hashkeys.append(res[0])
+
+        # I now clean up loose objects that are already in the packs.
+        # Here, we assume that if it's already packed, it's safe to assume it's uncorrupted.
+        # If we want to do checks, they should be done here before deleting
+        for obj_hashkey in existing_packed_hashkeys:
+            try:
+                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            except PermissionError:
+                # This can happen on Windows if one of the loose objects is still open.
+                # I just ignore, I will remove it in a future call of this method.
+                pass
