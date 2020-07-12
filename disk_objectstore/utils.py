@@ -9,9 +9,20 @@ import os
 import uuid
 import zlib
 
+try:
+    import fcntl
+except ImportError:
+    # Not available on Windows
+    fcntl = None
+
 from contextlib import contextmanager
 
 from .exceptions import ModificationNotAllowed, ClosingNotAllowed, DynamicInconsistentContent
+
+# For now I I don't always activate it as I need to think at the right balance between
+# safety and performance/disk wearing
+# I use it only when storing packs
+_MACOS_ALWAYS_USE_FULLSYNC = False
 
 
 class LazyOpener:
@@ -139,10 +150,10 @@ class ObjectWriter:
             if exc_type is None:
                 if self._filehandle.closed:
                     raise ClosingNotAllowed('You cannot close the file handle yourself!')
-                # Flush out of the buffer, then fsync so it's written to disk; see e.g.
-                # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
-                self._filehandle.flush()
-                os.fsync(self._filehandle.fileno())
+                # Flush out of the buffer and sync to disk so data is preserved even for power failures
+                # NOTE: For now I don't use `fullsync` on Mac for performance reasons, for loose objects - to decide
+                # if we want to change this!
+                safe_flush_to_disk(self._filehandle, self._obj_path)
                 self._filehandle.close()
                 self._hashkey = str(self._filehandle.hexdigest())
                 self._filehandle = None
@@ -225,6 +236,8 @@ class ObjectWriter:
 
                 # Flush also the parent directory, see e.g.
                 # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+                # I do not call safe_flush_to_disk as I need to flush only the folder metadata (I think)
+                # Otherwise I should open again the file
                 if os.name == 'posix':
                     dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
                     os.fsync(dirfd)
@@ -242,6 +255,10 @@ class PackedObjectReader:
 
     This ensures that the .read() method works and does not go beyond the
     length of the given object."""
+
+    @property
+    def mode(self):
+        return self._fhandle.mode
 
     @property
     def seekable(self):
@@ -569,3 +586,50 @@ def chunk_iterator(iterator, size):
     """
     iterator = iter(iterator)
     return iter(lambda: tuple(itertools.islice(iterator, size)), ())
+
+
+def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
+    """Tries to to its best to safely commit to disk.
+
+    Note that calling this is needed to reduce the risk of data loss due to, e.g., a power failure.
+    However, this call is typically expensive so should be called only if the guarantees are really needed, and
+    as few times as possible.
+
+    :param fhandle: an open file handle. Must support the `.fileno()` method and the `.flush()` method.
+    :param real_path: the real path of the file. It must be ideally the absolute path. It is used (on POSIX) to find
+        the parent folder and flush it too.
+    :param use_fullsync: on Mac OS, runs a FULLSYNC to really push data to disk.
+    """
+    fileno = fhandle.fileno()
+
+    # Flush buffers
+    fhandle.flush()
+
+    # Default fsync function, replaced on Mac OS X
+    _fsync_function = lambda fileno: os.fsync(fileno)  # pylint: disable=unnecessary-lambda
+
+    # Flush to disk
+    if hasattr(fcntl, 'F_FULLFSYNC') and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
+        # This exists only on Mac OS X; See e.g. (link split on two lines, put them together):
+        # https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/
+        #          man2/fsync.2.html
+        # that says:
+        # > For applications that require tighter guarantees about the integrity of
+        # > their data, Mac OS X provides the F_FULLFSYNC fcntl.  The F_FULLFSYNC
+        # > fcntl asks the drive to flush all buffered data to permanent storage.
+        # > Applications, such as databases, that require a strict ordering of writes
+        # > should use F_FULLFSYNC to ensure that their data is written in the order
+        # > they expect.  Please see fcntl(2) for more detail.
+        # Replace the _fsync_function
+        _fsync_function = lambda fileno: fcntl.fcntl(fileno, fcntl.F_FULLFSYNC)  # pylint: disable=no-member,useless-suppression
+    else:
+        # In general this is the function to call
+        _fsync_function(fileno)
+
+    # Flush also the parent directory on posix, see e.g.
+    # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
+    if os.name == 'posix':
+        dirfd = os.open(os.path.dirname(real_path), os.O_DIRECTORY)
+        # Also here call the correct fsync function
+        _fsync_function(dirfd)
+        os.close(dirfd)

@@ -17,7 +17,8 @@ from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
 from .utils import (
-    HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext
+    HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext,
+    safe_flush_to_disk
 )
 from .exceptions import NotExistent, NotInitialised
 
@@ -498,6 +499,10 @@ class Container:  # pylint: disable=too-many-public-methods
                         }
                         yield metadata.hashkey, obj_reader, meta
 
+                # Let's close the last open pack file, if there was any
+                if last_open_file is not None and not last_open_file.closed:
+                    last_open_file.close()
+
                 # Collect loose hash keys that are not found
                 # Reason: a concurrent process might have packed them,
                 # in the meantime.
@@ -935,8 +940,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     session.add(obj)
 
                 # flush and sync to disk before closing
-                pack_handle.flush()
-                os.fsync(pack_handle.fileno())
+                safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
@@ -1056,8 +1060,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     hashkeys.append(obj_dict['hashkey'])
 
                 # flush and sync to disk before closing
-                pack_handle.flush()
-                os.fsync(pack_handle.fileno())
+                safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
