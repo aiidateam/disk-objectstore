@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594585864507,
+  "lastUpdate": 1594585992904,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1353,6 +1353,58 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.044588873551189845",
             "extra": "mean: 1.1143903333333327 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6025360bb8a030b1103e7d40da4f7bde7938dd4c",
+          "message": "Merge pull request #55 from giovannipizzi/fix_open_files\n\nFix lost open files and implement FULLSYNC for pack files on Mac OS",
+          "timestamp": "2020-07-12T22:29:09+02:00",
+          "tree_id": "571d031d2c95a14eb9fc9289031f93a62b9693f8",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/6025360bb8a030b1103e7d40da4f7bde7938dd4c"
+        },
+        "date": 1594585990191,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.24840519517606055,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06309042944512261",
+            "extra": "mean: 4.0256807 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1330237055825699,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06914862014328126",
+            "extra": "mean: 7.5174571000000014 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.5293541324289897,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01084899018701773",
+            "extra": "mean: 283.33796000000007 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.0594159298723203,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006010708672305684",
+            "extra": "mean: 943.9163333333292 msec\nrounds: 3"
           }
         ]
       }
