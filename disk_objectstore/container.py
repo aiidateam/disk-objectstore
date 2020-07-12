@@ -498,6 +498,10 @@ class Container:  # pylint: disable=too-many-public-methods
                         }
                         yield metadata.hashkey, obj_reader, meta
 
+                # Let's close the last open pack file, if there was any
+                if last_open_file is not None and not last_open_file.closed:
+                    last_open_file.close()
+
                 # Collect loose hash keys that are not found
                 # Reason: a concurrent process might have packed them,
                 # in the meantime.
