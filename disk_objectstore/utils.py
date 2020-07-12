@@ -591,6 +591,9 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
     # Flush buffers
     fhandle.flush()
 
+    # Default fsync function, replaced on Mac OS X
+    _fsync_function = lambda fileno: os.fsync(fileno)  # pylint: disable=unnecessary-lambda
+
     # Flush to disk
     if hasattr(fcntl, 'F_FULLFSYNC') and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
         # This exists only on Mac OS X; See e.g. (link split on two lines, put them together):
@@ -603,14 +606,16 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
         # > Applications, such as databases, that require a strict ordering of writes
         # > should use F_FULLFSYNC to ensure that their data is written in the order
         # > they expect.  Please see fcntl(2) for more detail.
-        fcntl.fcntl(fileno, fcntl.F_FULLFSYNC)
+        # Replace the _fsync_function
+        _fsync_function = lambda fileno: getattr(fcntl, 'fcntl')(fileno, fcntl.F_FULLFSYNC)
     else:
         # In general this is the function to call
-        os.fsync(fileno)
+        _fsync_function(fileno)
 
     # Flush also the parent directory on posix, see e.g.
     # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
     if os.name == 'posix':
         dirfd = os.open(os.path.dirname(real_path), os.O_DIRECTORY)
-        os.fsync(dirfd)
+        # Also here call the correct fsync function
+        _fsync_function(dirfd)
         os.close(dirfd)
