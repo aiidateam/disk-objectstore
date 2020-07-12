@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594583936861,
+  "lastUpdate": 1594584068703,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -787,6 +787,51 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.04357975730898271",
             "extra": "mean: 1.4866039706666687 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6fae5f875c73bf4b5f2eb69e28467efa731c2aa3",
+          "message": "Merge pull request #58 from sphuber/feature/057/packed-object-reader-mode\n\nAdd the `mode` property to the `PackedObjectReader`",
+          "timestamp": "2020-07-12T21:53:29+02:00",
+          "tree_id": "f32c32f225344579ea82d4787e2e232ead7dfa2c",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/6fae5f875c73bf4b5f2eb69e28467efa731c2aa3"
+        },
+        "date": 1594584067920,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.25637096769093004,
+            "unit": "iter/sec",
+            "range": "stddev: 0.18101048764204516",
+            "extra": "mean: 3.9005976729999996 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 1.9572581083069391,
+            "unit": "iter/sec",
+            "range": "stddev: 0.023496314085722635",
+            "extra": "mean: 510.91881839999974 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 0.6366992197621189,
+            "unit": "iter/sec",
+            "range": "stddev: 0.42621145786798614",
+            "extra": "mean: 1.5706003226666685 sec\nrounds: 3"
           }
         ]
       }
