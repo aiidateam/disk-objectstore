@@ -441,14 +441,34 @@ def test_packed_object_reader():
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
 
         # Check the functionality is disabled
-        assert not packed_reader.seekable
-        with pytest.raises(OSError):
-            packed_reader.seek(0)
-        with pytest.raises(OSError):
-            packed_reader.tell()
+        assert packed_reader.seekable
 
-        # Read in one shot
-        assert packed_reader.read() == expected_bytestream
+        # Check that whence==1 and whence==2 are not implemented
+        with pytest.raises(NotImplementedError):
+            packed_reader.seek(0, 1)
+        with pytest.raises(NotImplementedError):
+            packed_reader.seek(0, 2)
+
+        # Check that negative values and values > length are not valid
+        with pytest.raises(ValueError):
+            packed_reader.seek(-3)
+        with pytest.raises(ValueError):
+            packed_reader.seek(length + 1)
+
+        # Seek and read all the rest
+        for start in range(length + 1):
+            packed_reader.seek(start)
+            assert packed_reader.tell() == start
+            assert packed_reader.read() == expected_bytestream[start:]
+            assert packed_reader.tell() == length
+
+        # Seek and read up to byte #4; it make sense for start to get until 4
+        last_byte = 4
+        for start in range(last_byte + 1):
+            packed_reader.seek(start)
+            assert packed_reader.tell() == start
+            assert packed_reader.read(last_byte - start) == expected_bytestream[start:last_byte]
+            assert packed_reader.tell() == last_byte
 
     # Read 1 byte at a time
     with open(tempfhandle.name, 'rb') as fhandle:
@@ -537,6 +557,44 @@ def test_stream_decompresser():
         data = b''.join(data_chunks)
 
         assert original == data, 'Uncompressed data is wrong (chunked read)'
+
+
+def test_stream_decompresser_seek():
+    """Test the seek (and tell) functionality of the StreamDecompresser."""
+
+    original_data = b'0123456789abcdefABCDEF'
+    length = len(original_data)
+
+    compressed_stream = io.BytesIO(zlib.compress(original_data))
+    decompresser = utils.StreamDecompresser(compressed_stream)
+
+    # Check the functionality is disabled
+    assert decompresser.seekable
+
+    # Check that whence==1 and whence==2 are not implemented
+    with pytest.raises(NotImplementedError):
+        decompresser.seek(0, 1)
+    with pytest.raises(NotImplementedError):
+        decompresser.seek(0, 2)
+
+    # Check that negative values and values > length are not valid
+    with pytest.raises(ValueError):
+        decompresser.seek(-3)
+
+    # Seek and read all the rest; test also going beyond the length - in this case, I expect to get zero bytes returned
+    for start in range(length + 10):
+        decompresser.seek(start)
+        assert decompresser.tell() == min(start, length)  # Never goes beyond length
+        assert decompresser.read() == original_data[start:]
+        assert decompresser.tell() == length
+
+    # Seek and read up to byte #4; it make sense for start to get until 6
+    last_byte = 6
+    for start in range(last_byte + 1):
+        decompresser.seek(start)
+        assert decompresser.tell() == start
+        assert decompresser.read(last_byte - start) == original_data[start:last_byte]
+        assert decompresser.tell() == last_byte
 
 
 def test_decompresser_corrupt():
