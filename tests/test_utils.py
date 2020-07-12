@@ -318,10 +318,19 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         os, 'replace', functools.partial(mockreplace, mocked_dest=loose_file, new_bytes_content=new_bytes_content)
     )
 
-    # I would like that on any OS, the object_writer works and does it job also in this condition
-    with object_writer as fhandle:
-        # Write some content (this should end up in the same `loose_file` location)
-        fhandle.write(content)
+    if os.name == 'nt' and not trust_existing and reappears_corrupted:
+        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open)
+        # we cannot do much and the libary raises an exception (this should really
+        # never happen, and if it happens, it means there is something really wrong!)
+        with pytest.raises(exc.DynamicInconsistentContent):
+            with object_writer as fhandle:
+                # Write some content (this should end up in the same `loose_file` location)
+                fhandle.write(content)
+    else:
+        # I would like that on any other OS (POSIX), the object_writer works without exceptions
+        with object_writer as fhandle:
+            # Write some content (this should end up in the same `loose_file` location)
+            fhandle.write(content)
 
     # Check the end condition:
     # nothing in the sandbox, nothing new in the loose_folder
@@ -340,11 +349,11 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     else:
         if os.name == 'nt' and not trust_existing and reappears_corrupted:
             # Here I am just checking the current behavior: if the exception was raised,
-            # the corrupted file is left in place
+            # the corrupted file is left in place (there isn't much I can do)
             assert object_content == corrupted_content
         else:
             # In all other cases, if I don't trust existing files, the content should have been replaced,
-            # and the content must be correct
+            # and and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
             assert object_content == content
 
 

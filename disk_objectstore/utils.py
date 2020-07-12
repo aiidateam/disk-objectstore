@@ -11,7 +11,7 @@ import zlib
 
 from contextlib import contextmanager
 
-from .exceptions import ModificationNotAllowed, ClosingNotAllowed
+from .exceptions import ModificationNotAllowed, ClosingNotAllowed, DynamicInconsistentContent
 
 
 class LazyOpener:
@@ -207,12 +207,21 @@ class ObjectWriter:
                 #   on Linux/Mac; instead, it raises OSError on Windows if the file exists.
                 # - we use instead os.replace that, on Windows, calls a rename with the correct flags
                 #   to overwrite an existing destination.
-                # NOTE: for now I don't catch any exception on Windows. I am not sure of which race conditions
-                # might happen yet, e.g. if someone has opened the file.
-                # But either this was corrupt and open, and then it shouldn't really be open by someone...
-                # Or it had been deleted in the meantime, so I should be creating it (someone might be reopening
-                # it at the same time, this is probably a rare but possible race condition)
-                os.replace(self._obj_path, dest_loose_object)
+                try:
+                    os.replace(self._obj_path, dest_loose_object)
+                except PermissionError:
+                    # NOTE! This branch only happens on Windows, when the
+                    # file with the same name was opened in the meantime by someone else...
+                    # We do a final check of its content
+                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    if existing_checksum == self._hashkey:
+                        # The existing object that has appeared in the meantime is OK. Fine, has the correct hash,
+                        # I just return.
+                        return
+                    raise DynamicInconsistentContent(
+                        "I am trying to create loose object with hash key '{}', "
+                        'but it is already open and has the wrong content!'.format(self._hashkey)
+                    )
 
                 # Flush also the parent directory, see e.g.
                 # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
