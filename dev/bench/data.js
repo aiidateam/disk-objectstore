@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594596737430,
+  "lastUpdate": 1594596911323,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1457,6 +1457,58 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.006010708672305684",
             "extra": "mean: 943.9163333333292 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "09cc7a9539aa68f3417bf4ef2e80b520a1b4ba41",
+          "message": "Merge pull request #60 from giovannipizzi/fix_56_seek\n\nAdded seek method to both the PackedObjectReader and the StreamDecompresser",
+          "timestamp": "2020-07-13T01:27:47+02:00",
+          "tree_id": "cf2de3df905a56e5ca39dbd1155b206012989f9f",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/09cc7a9539aa68f3417bf4ef2e80b520a1b4ba41"
+        },
+        "date": 1594596910198,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2764139105927044,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03513732425702619",
+            "extra": "mean: 3.6177629333333328 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.14567610167721848,
+            "unit": "iter/sec",
+            "range": "stddev: 0.5683789936726585",
+            "extra": "mean: 6.864543933333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.330319394281483,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005715752986264874",
+            "extra": "mean: 300.27150000000233 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.2257619867673333,
+            "unit": "iter/sec",
+            "range": "stddev: 0.017234574850089626",
+            "extra": "mean: 815.8190666666627 msec\nrounds: 3"
           }
         ]
       }
