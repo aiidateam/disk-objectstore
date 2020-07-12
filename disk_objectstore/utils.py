@@ -263,15 +263,32 @@ class PackedObjectReader:
     @property
     def seekable(self):
         """Return whether object supports random access."""
-        return False
+        return True
 
-    def seek(self, target, whence=0):  # pylint: disable=no-self-use
-        """Change stream position."""
-        raise OSError('Object not seekable')
+    def seek(self, target, whence=0):
+        """Change stream position.
 
-    def tell(self):  # pylint: disable=no-self-use
+        Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
+
+        ..note:: only whence==0 (absolute position) is currently supported
+        """
+        if whence:
+            raise NotImplementedError('Only whence=0 currently implemented')
+        if target < 0:
+            raise ValueError('negative seek position {}'.format(target))
+        if target > self._length:
+            raise ValueError('seek position {} is beyond object length {}'.format(target, self._length))
+        new_pos = self._offset + target
+        self._fhandle.seek(new_pos)
+        # Next function MUST be called every time we move into the _fhandle file, to update the position
+        self._update_pos()
+
+        # seek returns the new absolute position
+        return target
+
+    def tell(self):
         """Return current stream position."""
-        raise OSError('Object not seekable')
+        return self._fhandle.tell() - self._offset
 
     def __init__(self, fhandle, offset, length):
         """
@@ -350,6 +367,7 @@ class StreamDecompresser:
         self._compressed_stream = compressed_stream
         self._decompressor = zlib.decompressobj()
         self._internal_buffer = b''
+        self._pos = 0
 
     def read(self, size=-1):
         """
@@ -406,8 +424,51 @@ class StreamDecompresser:
         # Note that we could be here also with len(self._internal_buffer) < size,
         # if we used 'break' because the internal buffer reached EOF.
         to_return, self._internal_buffer = self._internal_buffer[:size], self._internal_buffer[size:]
+        self._pos += len(to_return)
 
         return to_return
+
+    @property
+    def seekable(self):
+        """Return whether object supports random access."""
+        return True
+
+    def tell(self):
+        """Return current position in file."""
+        return self._pos
+
+    def seek(self, target, whence=0):
+        """Change stream position.
+
+        ..note:: only whence==0 (absolute position) is currently supported
+
+        ..note:: This is particularly inefficient if `target > 0` since it will have
+           to decompress again from the beginning. So use with care!
+        """
+        read_chunk_size = 256 * 1024
+
+        if whence:
+            raise NotImplementedError('Only whence=0 currently implemented')
+        if target < 0:
+            raise ValueError('negative seek position {}'.format(target))
+        if target == 0:
+            # Going back to zero it's efficient. I need to reset all internal variables, as in the init.
+            self._compressed_stream.seek(0)
+            self._decompressor = zlib.decompressobj()
+            self._internal_buffer = b''
+            self._pos = 0
+            return 0
+
+        # Go back to zero
+        self.seek(0)
+        # Read target bytes, but at most `read_chunk_size` at a time to avoid memory overflow
+        while self.tell() < target:
+            content = self.read(min(read_chunk_size, target - self.tell()))
+            if not content:
+                # If I am asking a position beyond the end, I stop to avoid infinite loops
+                break
+        # Differently than files, I return here the actual position
+        return self._pos
 
 
 class ZeroStream:
