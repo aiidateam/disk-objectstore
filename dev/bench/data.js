@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594628175452,
+  "lastUpdate": 1594628259892,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1665,6 +1665,58 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.017234574850089626",
             "extra": "mean: 815.8190666666627 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df368df957ecb9cf2a4a308c0b2baccfa7669638",
+          "message": "Merge pull request #61 from giovannipizzi/check_concurrency\n\nFix concurrency problems in Mac OS",
+          "timestamp": "2020-07-13T10:14:15+02:00",
+          "tree_id": "2483876c2ad6de311dce821cd69d08efc5662ed0",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/df368df957ecb9cf2a4a308c0b2baccfa7669638"
+        },
+        "date": 1594628258687,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2143607512666952,
+            "unit": "iter/sec",
+            "range": "stddev: 0.05432047441591353",
+            "extra": "mean: 4.6650331 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.18556104136534773,
+            "unit": "iter/sec",
+            "range": "stddev: 0.10860015857642057",
+            "extra": "mean: 5.389062233333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.8420098853061146,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013786052165613528",
+            "extra": "mean: 351.8636600000036 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 0.9175084653918549,
+            "unit": "iter/sec",
+            "range": "stddev: 0.034969238413356654",
+            "extra": "mean: 1.089908200000001 sec\nrounds: 3"
           }
         ]
       }
