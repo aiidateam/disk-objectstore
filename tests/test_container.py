@@ -959,10 +959,69 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     assert len(current_process.open_files()) == start_open_files
 
 
+def test_get_objects_meta_doesnt_open(temp_container, generate_random_data):  # pylint: disable=invalid-name
+    """Test that get_objects_meta does not open any file."""
+    data = generate_random_data()
+    # Store
+    obj_md5s = _add_objects_loose_loop(temp_container, data)
+
+    # I get all objects first - this will actually internally go through the same function
+    # `get_objects_stream_and_meta`, but I need to do it as this might open additional files,
+    # namely the SQLite DB (possibly more than one file due to the fact it's open in WAL mode).
+    # The following checks are still meaningful, I check that if I do it again I don't open more files.
+    temp_container.get_objects_content(obj_md5s.keys())
+
+    current_process = psutil.Process()
+    start_open_files = len(current_process.open_files())
+
+    for _, _ in temp_container.get_objects_meta(obj_md5s.keys()):
+        # No new files should be open while iterating
+        assert len(current_process.open_files()) == start_open_files
+
+    # Check that at the end nothing is left open
+    assert len(current_process.open_files()) == start_open_files
+
+    ##############################
+    ##### Same test after packing
+    ##############################
+    temp_container.pack_all_loose()
+
+    # I get all objects first, again - this is because it might have closed the DB files while packing
+    temp_container.get_objects_content(obj_md5s.keys())
+    # I now update the count
+    start_open_files = len(current_process.open_files())
+
+    for _, _ in temp_container.get_objects_meta(obj_md5s.keys()):
+        # No new files should be open while iterating
+        assert len(current_process.open_files()) == start_open_files
+
+    # Check that at the end nothing is left open
+    assert len(current_process.open_files()) == start_open_files
+
+    ##############################
+    ##### Same test after adding at least one loose object
+    ##############################
+    new_object_content = b'1' * 20000  # This should be long enough not to collide with the generated random data
+    new_hashkey = temp_container.add_object(new_object_content)
+    obj_md5s[new_hashkey] = new_object_content
+
+    # I get all objects first, again - this is because it might have closed the DB files
+    temp_container.get_objects_content(obj_md5s.keys())
+    # I now update the count
+    start_open_files = len(current_process.open_files())
+
+    for _, _ in temp_container.get_objects_meta(obj_md5s.keys()):
+        # No new files should be open while iterating
+        assert len(current_process.open_files()) == start_open_files
+
+    # Check that at the end nothing is left open
+    assert len(current_process.open_files()) == start_open_files
+
+
 @pytest.mark.parametrize('compress', [True, False])
 @pytest.mark.parametrize('skip_if_missing', [True, False])
 def test_stream_meta(temp_container, compress, skip_if_missing):
-    """Validate the meta dictionary returned by the get_objects_stream_and_meta and get_object_stream_and_meta."""
+    """Validate the meta dictionary returned by the get_objects_stream_and_meta and get_objects_meta."""
     # This is the list of all known meta keys.
     # I do also an explicit check that all and only these are present
     # This is implicit since I will later also compare the exact dictionaries and not only their keys,
@@ -1036,6 +1095,92 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
         assert check_dict == expected_skip_missing_true
     else:
         assert check_dict == expected_skip_missing_false
+
+    # Do the same without opening the streams
+    check_dict = {}
+    for hashkey, meta in temp_container.get_objects_meta([hashkey_packed, hashkey_loose, hashkey_missing],
+                                                         skip_if_missing=skip_if_missing):
+        check_dict[hashkey] = meta
+
+    if skip_if_missing:
+        assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_true.items()}
+    else:
+        assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_false.items()}
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_stream_meta_single(temp_container, compress):
+    """Validate the meta dictionary returned by the single-object methods.
+
+    (i.e., get_object_stream_and_meta and get_object_meta)."""
+    # This is the list of all known meta keys.
+    # I do also an explicit check that all and only these are present
+    # This is implicit since I will later also compare the exact dictionaries and not only their keys,
+    # but I put this here to make sure in the future, if I change the interface and adapt the keys, I don't break
+    # this guarantee if I forget to adapt the test.
+    known_meta_keys = ['type', 'size', 'pack_id', 'pack_compressed', 'pack_offset', 'pack_length']
+
+    content_packed = b'sffssdf383939'
+    content_loose = b'v9fpaM'
+    hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
+    hashkey_loose = temp_container.add_object(content_loose)
+    hashkey_missing = 'unknown'
+    # Assuming only zlib compression for now. Needs to be adapted when changing the possible compression libraries
+    object_pack_length = len(content_packed) if not compress else len(
+        zlib.compress(content_packed, temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
+    )
+
+    expected_skip_missing_true = {
+        hashkey_packed: {
+            'content': content_packed,
+            'meta': {
+                'type': 'packed',
+                'size': len(content_packed),
+                'pack_id': 0,  # First pack, it's a new container
+                'pack_compressed': compress,
+                'pack_offset': 0,  # Only one object in the pack, must start from zero
+                'pack_length': object_pack_length,
+            }
+        },
+        hashkey_loose: {
+            'content': content_loose,
+            'meta': {
+                'type': 'loose',
+                'size': len(content_loose),
+                'pack_id': None,
+                'pack_compressed': None,
+                'pack_offset': None,
+                'pack_length': None,
+            }
+        }
+    }
+
+    check_dict = {}
+
+    for hashkey in [hashkey_packed, hashkey_loose]:
+        with temp_container.get_object_stream_and_meta(hashkey) as (stream, meta):
+            retdict = {'meta': meta}
+            # In any case I should return all these meta, and no more
+            assert set(meta.keys()) == set(known_meta_keys)
+            if stream is None:
+                retdict['content'] = None
+            else:
+                retdict['content'] = stream.read()
+            check_dict[hashkey] = retdict
+    assert check_dict == expected_skip_missing_true
+
+    with pytest.raises(exc.NotExistent):
+        with temp_container.get_object_stream_and_meta(hashkey_missing) as (stream, meta):
+            pass
+
+    # Do the same without opening the streams
+    for hashkey in [hashkey_packed, hashkey_loose]:
+        check_dict[hashkey] = temp_container.get_object_meta(hashkey)
+
+    assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_true.items()}
+
+    with pytest.raises(exc.NotExistent):
+        meta = temp_container.get_object_meta(hashkey_missing)
 
 
 def test_length_get_objects(temp_container):
@@ -1245,6 +1390,35 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
 
 
 @pytest.mark.parametrize('compress', [True, False])
+def test_simulate_concurrent_packing_multiple_meta_only(temp_container, compress):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing (as earlier function, but no streams)."""
+    content1 = b'abc'
+    content2 = b'def'
+    hashkey1 = temp_container.add_object(content1)
+    hashkey2 = temp_container.add_object(content2)
+
+    counter = 0
+    for obj_hashkey, meta in temp_container.get_objects_meta([hashkey1, hashkey2]):
+        if counter == 0:
+            # In the first step, I always pack the rest
+
+            # Check that this is a loose object
+            assert meta['type'] == 'loose'
+            temp_container.pack_all_loose(compress=compress)
+            # Remove loose files
+            temp_container.clean_storage()
+        elif counter == 1:
+            # This should be the other object
+            # This was loose when get_objects_stream_and_meta was called, but was packed in the meantime
+            # I should still be able to get it correctly and discover it's packed
+            assert meta['type'] == 'packed'
+        else:
+            # Should not happen!
+            raise ValueError('There should be only two objects!')
+        counter += 1
+
+
+@pytest.mark.parametrize('compress', [True, False])
 def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, compress):  # pylint: disable=invalid-name
     """Simulate race conditions while reading and packing.
 
@@ -1357,3 +1531,19 @@ def test_seek_tell(temp_container, compress):
         read_data = fhandle.read(read_length)
         assert fhandle.tell() == seek_pos + read_length
         assert read_data == content[seek_pos:seek_pos + read_length]
+
+
+def test_get_objects_meta_to_dict(temp_container):
+    """Check that you can just wrap `get_objects_meta` into a dict."""
+    expected_sizes = {}
+    for content in [b'a', b'aa', b'aaaa']:  # Data of diffenent length
+        hashkey = temp_container.add_object(content)
+        expected_sizes[hashkey] = len(content)
+
+    # Check that I can convert to dict
+    hashkeys = list(expected_sizes)
+    meta_dict = dict(temp_container.get_objects_meta(hashkeys))
+    # Check tha the dict contains the right data
+    assert all(meta['type'] == 'loose' for meta in meta_dict.values())
+
+    assert expected_sizes == {hashkey: meta['size'] for hashkey, meta in meta_dict.items()}
