@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594665500580,
+  "lastUpdate": 1594665692437,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1196,6 +1196,58 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.06549834233072008",
             "extra": "mean: 1.0043663506666671 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cec284e3680abc6105e80d0098da030a6cc3509e",
+          "message": "Merge pull request #62 from giovannipizzi/fix_58_performance_has\n\nAdding methods to just fetch metas without opening streams",
+          "timestamp": "2020-07-13T20:34:37+02:00",
+          "tree_id": "3318cf4caa826238d95afbbb139840cb292a6f0e",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/cec284e3680abc6105e80d0098da030a6cc3509e"
+        },
+        "date": 1594665691530,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.303524917639796,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07457511451689558",
+            "extra": "mean: 3.294622424333333 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.16568739061022653,
+            "unit": "iter/sec",
+            "range": "stddev: 2.3063478960777486",
+            "extra": "mean: 6.0354623023333325 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.581518735238749,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0064269659203062615",
+            "extra": "mean: 387.3688718000011 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.127971807680183,
+            "unit": "iter/sec",
+            "range": "stddev: 0.11498933715114586",
+            "extra": "mean: 886.5469803333355 msec\nrounds: 3"
           }
         ]
       }
