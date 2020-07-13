@@ -181,41 +181,48 @@ class ObjectWriter:
                 if os.path.exists(dest_loose_object):
                     if self._trust_existing:
                         # I trust that the object is correct: I just return
+                        # Note: if another process is deleting the file at the same time (right after),
+                        # it will be deleted. But this is OK - the deletion is in an independent process,
+                        # an if it happens only microseconds or seconds after the write, the effect is the same:
+                        # the object is deleted and the caller of this function will not find it anymore.
                         return
                     # I do not trust the object is correct.
                     # This might still not be perfect: while I check, another
                     # process might in the meantime rewrite it again, and this might
-                    # be wrong. But this is very difficult to catch
+                    # be wrong. But this is very difficult to catch, and in general
+                    # the situation in which a process writes a corrupt node is really an error
                     existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
                     if existing_checksum == self._hashkey:
                         # The existing object has the correct hash, I just return.
                         return
-                    # The existing object has the wrong hash! I am going to assume where was a problem
-                    # and I will just remove it and overwrite it.
-                    # This means that the object will *not* be there for some time.
-                    # But this should be ok, because it was corrupted, so nobody should really be
-                    # using it...
-                    # Note: this would really be needed only on Windows, on Unix os.rename will silently replace
-                    # the existing file
-                    # Note that in reality I could end up deleting a 'good' file written by another process
-                    # performing the exact same operation. But I will write it again below so this will only
-                    # create a small window of time in which it does not exist (and I don't know if there is
-                    # a way around it). This anyway happens only for existing but corrupted loose objects.
-                    os.remove(dest_loose_object)
-                # This is an atomic operation, at least according to this website:
-                # https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
-                # but needs to be on the same filesystem (this should always be the case for us)
-                # Note that instead shutil.move is not guaranteed to be atomic!
-                # Also: on Linux, this performs a silent overwrite if the file exists.
-                # Instead, it raises OSError on Windows if the file exists.
-                # The Linux behavior is ok: in this case, two processes were writing at almost the same time;
-                # we assume it's ok to take either of them (the second winning)
-                # On Windows, we need to take special action
+                    # If existing_checksum is None, the file has been removed in the meantime.
+                    # It could be a delete of the object: then, for consistency with the logic above,
+                    # I decide that the two operations that happened almost at the same time could
+                    # have happened in swapped order, and I don't write it back.
+                    # Or it's a packing operation (and then it's OK to not put the file back).
+                    # I therefore just return
+                    if existing_checksum is None:
+                        return
+
+                # If I am here, there are two options:
+                # 1. The object did not exist
+                # 2. The file is there but its content is wrong. In this case I want to overwrite the object.
+
+                # I therefore call a 'replace' call, that should be an atomic operation
+                # Notes (on os.replace vs os.rename):
+                # - os.rename() on Linux is atomic (see e.g. also
+                #   https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
+                #   but needs to be on the same filesystem (this should always be the case for us)
+                # - Remembe that instead shutil.move is not guaranteed to be atomic!
+                # - os.rename performs a silent overwrite if the file exists on Posix, so would be enough
+                #   on Linux/Mac; instead, it raises OSError on Windows if the file exists.
+                # - we use instead os.replace that, on Windows, calls a rename with the correct flags
+                #   to overwrite an existing destination.
                 try:
-                    os.rename(self._obj_path, dest_loose_object)
-                except OSError:
-                    # NOTE! This branch only happens on Windows, see above
-                    # A file with the same name was written in the meantime by someone else...
+                    os.replace(self._obj_path, dest_loose_object)
+                except PermissionError:
+                    # NOTE! This branch only happens on Windows, when the
+                    # file with the same name was opened in the meantime by someone else...
                     # We do a final check of its content
                     existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
                     if existing_checksum == self._hashkey:
@@ -224,7 +231,7 @@ class ObjectWriter:
                         return
                     raise DynamicInconsistentContent(
                         "I am trying to create loose object with hash key '{}', "
-                        'but it keeps reappearing with wrong content!'.format(self._hashkey)
+                        'but it is already open and has the wrong content!'.format(self._hashkey)
                     )
 
                 # Flush also the parent directory, see e.g.
@@ -531,19 +538,22 @@ def _compute_hash_for_filename(filename, hash_type):
 
     :param filename: a filename to a file to check.
     :param hash_type: a valid string as recognised by the _get_hash function
-    :return: the hash hexdigest (the hash key)
+    :return: the hash hexdigest (the hash key), or `None` if the file does not exist
     """
     _chunksize = 524288
 
     hasher = _get_hash(hash_type)()
-    with open(filename, 'rb') as fhandle:
-        while True:
-            chunk = fhandle.read(_chunksize)
-            hasher.update(chunk)
+    try:
+        with open(filename, 'rb') as fhandle:
+            while True:
+                chunk = fhandle.read(_chunksize)
+                hasher.update(chunk)
 
-            if not chunk:
-                # Empty returned value: EOF
-                break
+                if not chunk:
+                    # Empty returned value: EOF
+                    break
+    except FileNotFoundError:
+        return None
 
     return hasher.hexdigest()
 

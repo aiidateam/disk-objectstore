@@ -171,6 +171,16 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
         'The container should have {} packed objects '
         '(but there are {} instead)'.format(len(set(obj_md5s)), counts['packed'])
     )
+    # Loose objects are not immediately deleted
+    assert counts['loose'] == len(set(obj_md5s)), (
+        'The container should still have all {} loose objects '
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['loose'])
+    )
+
+    # Clean up and remove loose objects that are already packed
+    temp_container.clean_storage()
+    counts = temp_container.count_objects()
+    # Now there shouldn't be any more loose objects
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '
         '(but there are {} instead)'.format(counts['loose'])
@@ -248,13 +258,18 @@ def test_num_packs_with_target_size(temp_dir, generate_random_data):
     # This is true if there are enough small files; if it was 1 file of 10000 bytes, one would get only 1 pack
     min_expected_num_packs = (num_files * min_size) // pack_size_target
 
+    # Will track what I store for a final check: hash keys and object content
+    hashkeys = []
+    object_data = []
+
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, pack_size_target=pack_size_target)
 
     counts = temp_container.count_objects()
     assert counts['pack_files'] == 0
 
-    temp_container.add_objects_to_pack(data, compress=False)
+    hashkeys += temp_container.add_objects_to_pack(data, compress=False)
+    object_data += data
 
     # Check that enough packs were created
     counts = temp_container.count_objects()
@@ -272,7 +287,8 @@ def test_num_packs_with_target_size(temp_dir, generate_random_data):
     new_obj2 = new_obj + b'2'
     new_obj3 = new_obj + b'3'
     # Put the first two objects
-    temp_container.add_objects_to_pack([new_obj1, new_obj2], compress=False)
+    hashkeys += temp_container.add_objects_to_pack([new_obj1, new_obj2], compress=False)
+    object_data += [new_obj1, new_obj2]
 
     # Check that at least one new pack has been created (probably the first one might have ended
     # up in the previous incomplete pack, but the second one must go definitely in a new pack)
@@ -284,9 +300,15 @@ def test_num_packs_with_target_size(temp_dir, generate_random_data):
 
     # Adding a new object must create a new pack, since the previous one is for sure full (it contains
     # only one object, whose size is larger than the pack_size_target)
-    temp_container.add_objects_to_pack([new_obj3], compress=False)
+    hashkeys += temp_container.add_objects_to_pack([new_obj3], compress=False)
+    object_data += [new_obj3]
     counts = temp_container.count_objects()
     assert counts['pack_files'] == current_num_packfiles + 1
+
+    # Read all objects, and check content.
+    # This also triggers all the logic to close open files, with more than one pack.
+    content = temp_container.get_objects_content(hashkeys)
+    assert content == dict(zip(hashkeys, object_data))
 
     # I close the container, as this is needed on Windows
     temp_container.close()
@@ -432,6 +454,16 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
         'The container should have {} packed objects '
         '(but there are {} instead)'.format(len(set(obj_md5s)), counts['packed'])
     )
+    # Loose objects are not immediately deleted
+    assert counts['loose'] == len(set(obj_md5s)), (
+        'The container should still have all {} loose objects '
+        '(but there are {} instead)'.format(len(set(obj_md5s)), counts['loose'])
+    )
+
+    # Clean up and remove loose objects that are already packed
+    container.clean_storage()
+    counts = container.count_objects()
+    # Now there shouldn't be any more loose objects
     assert counts['loose'] == 0, (
         'The container should have 0 loose objects '
         '(but there are {} instead)'.format(counts['loose'])
@@ -700,7 +732,7 @@ def test_same_object_direct_pack(temp_container, generate_random_data):
     assert counts['pack_files'] == 1
 
 
-def test_same_object_loose_and_pack(temp_container, generate_random_data):
+def test_same_object_loose_and_pack(temp_container):
     """Store the same object first as loose, then pack all, then readd the same object and repack."""
     # Check that there are no objects
     counts = temp_container.count_objects()
@@ -708,8 +740,7 @@ def test_same_object_loose_and_pack(temp_container, generate_random_data):
     assert counts['loose'] == 0
     assert counts['pack_files'] == 0
 
-    random_data = generate_random_data()
-    test_data = list(random_data.values())[0]
+    test_data = b'fsdjkldf'
     obj_hashkey = temp_container.add_object(test_data)
 
     # Check the number of objects: there should be a single loose object
@@ -722,7 +753,14 @@ def test_same_object_loose_and_pack(temp_container, generate_random_data):
     # Check the number of objects again; there should be only a single packed object in one pack file
     counts = temp_container.count_objects()
     assert counts['packed'] == 1
-    assert counts['loose'] == 0
+    assert counts['loose'] == 1  # still undeleted
+    assert counts['pack_files'] == 1
+
+    # Clean up and remove loose objects that are already packed
+    temp_container.clean_storage()
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 1
+    assert counts['loose'] == 0  # now removed
     assert counts['pack_files'] == 1
 
     new_obj_hashkey = temp_container.add_object(test_data)
@@ -732,8 +770,9 @@ def test_same_object_loose_and_pack(temp_container, generate_random_data):
     # For now, for efficiency, we just store again a loose object.
     # This will be deleted as the first thing upon packing.
 
-    # Pack again; no new packed object should appear
+    # Pack again and clean storage; no new packed object should appear
     temp_container.pack_all_loose()
+    temp_container.clean_storage()
     counts = temp_container.count_objects()
     assert counts['packed'] == 1
     assert counts['loose'] == 0
@@ -768,6 +807,9 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
 
     # Pack without compression
     temp_container.pack_all_loose(compress=compress_packs)
+    # Also reclaim space and remove loose objects
+    temp_container.clean_storage()
+
     # Try to count size after retrieving, just to be sure
     assert sum(
         len(content) for content in temp_container.get_objects_content(obj_md5s.keys()).values()
@@ -1130,15 +1172,20 @@ def test_simulate_concurrent_packing(temp_container, compress):  # pylint: disab
         temp_container.pack_all_loose(compress=compress)
         assert fhandle.read() == b'bc'
 
-    # On Windows, the loose file might still be there because I cannot delete an open file
+        # Remove loose files
+        temp_container.clean_storage()
+
+    # On Windows, the loose file will still be there because I cannot delete an open file.
     # Still, this is a valid situation and I should be able to get the correct content anyway
+    # On POSIX, it will already have been deleted. Anyway, this is not something we really need to test.
+
     # The following line should be read from the pack file. Anyway, the important thing to test
-    # is that the content is properly returned
+    # is that the content is properly returned.
     with temp_container.get_object_stream(hashkey) as fhandle:
         assert fhandle.read() == b'abc'
 
-    temp_container.pack_all_loose(compress=compress)
-    # After a second packing, the loose file *must* have been removed
+    # After a second cleaning of the storage, the loose file *must* have been removed on all OSs
+    temp_container.clean_storage()
     assert not os.path.exists(fname)
 
 
@@ -1164,10 +1211,14 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
                 if obj_hashkey == hashkey1:
                     assert stream.read(1) == b'a'
                     temp_container.pack_all_loose(compress=compress)
+                    # Remove loose files
+                    temp_container.clean_storage()
                     assert stream.read() == b'bc'
                 elif obj_hashkey == hashkey2:
                     assert stream.read(1) == b'd'
                     temp_container.pack_all_loose(compress=compress)
+                    # Remove loose files
+                    temp_container.clean_storage()
                     assert stream.read() == b'ef'
                 else:
                     # Should not happen!
@@ -1188,8 +1239,8 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
     # is that the content is properly returned
     assert data == temp_container.get_objects_content([hashkey1, hashkey2])
 
-    temp_container.pack_all_loose(compress=compress)
-    # After a second packing, the loose file *must* have been removed
+    # After a second cleaning of the storage, the loose file *must* have been removed
+    temp_container.clean_storage()
     assert not os.path.exists(fname)
 
 
@@ -1221,6 +1272,8 @@ def test_simulate_concurrent_packing_multiple_existing_pack(temp_container, comp
 
                 # Pack the other object during the loop
                 temp_container.pack_all_loose(compress=compress)
+                # Also, delete the loose files
+                temp_container.clean_storage()
                 assert stream.read() == content1
             elif counter == 1:
                 # This should be the second object, packed during the first iteration

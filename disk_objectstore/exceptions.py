@@ -27,7 +27,6 @@ class InconsistentContent(Exception):
 
 class DynamicInconsistentContent(InconsistentContent):
     """Raised if the content of the repository is inconsistent and this happens while generating the content.
-
     This should really never happen, and the same notes hold as the for the parent class ``InconsistentContent``.
     However, this exception is raised specifically when the content was being operated on, e.g. when
     trying to replace an object and failing to do so (while the base class can be raised also when the static

@@ -1,5 +1,6 @@
 """Test of the utils wrappers."""
 import functools
+import hashlib
 import io
 import os
 import tempfile
@@ -9,9 +10,12 @@ import psutil
 import pytest
 
 from disk_objectstore import utils
+
 import disk_objectstore.exceptions as exc
 
-os._actual_remove_function = os.remove  # pylint: disable=protected-access
+# I need these definitions later for the mocked function
+os._actual_replace_function = os.replace  # pylint: disable=protected-access
+utils._actual_compute_hash_for_filename = utils._compute_hash_for_filename  # pylint: disable=protected-access
 
 
 def test_lazy_opener_read():
@@ -254,11 +258,10 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     ):
     """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object.
 
-    Moreover, if the corrupted file is deleted and it quickly reappears, make sure that the code does not crash.
-    In this test, the `os.remove` call is patched for the specific loose file. If reappears_corrupted is True,
-    the file that will reappear as soon as it's deleted internally is going still to be corrupted. Otherwise,
-    it will be a correct content (i.e., with the correct hash key, as if another process has created it at the same
-    time)."""
+    Moreover, if reappears_corrupted is True, I patch `os.replace` to overwrite the destination with corrupted content
+    are re-open it in read mode before calling the replace function, to check if I get any exception (especially on
+    Windows).
+    """
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
     loose_prefix_len = 2
@@ -292,33 +295,39 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         trust_existing=trust_existing
     )
 
-    def mockremove(path, protected_path, new_bytes_content):
-        """Remove a file, mocking the os.remove functionality."""
-        # I renamed this at module load to avoid infinite recursion
-        os._actual_remove_function(path)  # pylint: disable=protected-access
-        if os.path.realpath(path) == os.path.realpath(protected_path):
+    def mockreplace(src, dest, mocked_dest, new_bytes_content):
+        """Replace a file, but if the dest is the mocked destination, before replacing, opens the existing file.
+
+        It also rewrites the file with the new_bytes_content beforehand.
+        """
+        if os.path.realpath(dest) == os.path.realpath(mocked_dest):
             # Write back the file, with possibly a different content
-            with open(path, 'wb') as fhandle:
+            with open(dest, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
+
+                # Call the actual replace function, but while the file is open in read mode
+                with open(dest, 'rb') as fhandle:
+                    os._actual_replace_function(src, dest)  # pylint: disable=protected-access
+        else:
+            # It's a different path: just pipe through
+            # I renamed this at module load to avoid infinite recursion, see above
+            os._actual_replace_function(src, dest)  # pylint: disable=protected-access
 
     new_bytes_content = corrupted_content if reappears_corrupted else content
     monkeypatch.setattr(
-        os, 'remove', functools.partial(mockremove, protected_path=loose_file, new_bytes_content=new_bytes_content)
+        os, 'replace', functools.partial(mockreplace, mocked_dest=loose_file, new_bytes_content=new_bytes_content)
     )
 
     if os.name == 'nt' and not trust_existing and reappears_corrupted:
-        # On windows, I am not sure it's possible to do an atomic overwrite.
-        # Currently this library implements logic such that if the file reappears,
-        # but its content is correct, no error is raised. But if the file reappears
-        # and its content is corrupted, an exception is raised (this should really
+        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open)
+        # we cannot do much and the libary raises an exception (this should really
         # never happen, and if it happens, it means there is something really wrong!)
         with pytest.raises(exc.DynamicInconsistentContent):
             with object_writer as fhandle:
                 # Write some content (this should end up in the same `loose_file` location)
                 fhandle.write(content)
     else:
-        # On POSIX, the os.rename is going to silently overwrite the existing file.
-        # Therefore, I expect that the file write will go through without exceptions.
+        # I would like that on any other OS (POSIX), the object_writer works without exceptions
         with object_writer as fhandle:
             # Write some content (this should end up in the same `loose_file` location)
             fhandle.write(content)
@@ -340,12 +349,141 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     else:
         if os.name == 'nt' and not trust_existing and reappears_corrupted:
             # Here I am just checking the current behavior: if the exception was raised,
-            # the corrupted file is left in place
+            # the corrupted file is left in place (there isn't much I can do)
             assert object_content == corrupted_content
         else:
             # In all other cases, if I don't trust existing files, the content should have been replaced,
-            # and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
+            # and and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
             assert object_content == content
+
+
+@pytest.mark.parametrize('object_existed', [True, False])
+def test_object_writer_deleted_while_checking_content(  # pylint: disable=invalid-name
+        temp_dir, object_existed, monkeypatch
+    ):
+    """Test that the ObjectWriter works also when the destination gets deleted while checking.
+
+    I check both the case in which the object existed, and the one in which it didn't (in which case, the
+    mocking shouldn't do anything).
+    """
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    trust_existing = False  # This branch is only called in this case
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    # I write already the loose destination
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+
+    # Create the object, if `object_existed` is True (meaning that it existed before calling the ObjectWriter)
+    if object_existed:
+        with open(loose_file, 'wb') as fhandle:
+            fhandle.write(content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == (1 if object_existed else 0)
+
+    def mock_compute_hash(filename, hash_type, mocked_filename):
+        """Replace lowelevel_utils._compute_hash_for_filename by first deleting the destination file.
+
+        .. note:: this is performed only for the mocked filename.
+
+        This should return `None` but I prefer mocking in case the behavior is changed in the future.
+        """
+        # Delete the filename before calling through the actual function (if it exists)
+        if os.path.realpath(filename) == os.path.realpath(mocked_filename) and os.path.exists(filename):
+            os.remove(filename)
+
+        # Now, just pipe through
+        # I renamed this at module load to avoid infinite recursion, see above
+        utils._actual_compute_hash_for_filename(filename, hash_type)  # pylint: disable=protected-access
+
+    monkeypatch.setattr(
+        utils, '_compute_hash_for_filename', functools.partial(mock_compute_hash, mocked_filename=loose_file)
+    )
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    with object_writer as fhandle:
+        # Write some content (this should end up in the same `loose_file` location)
+        fhandle.write(content)
+
+    # Check the end condition
+    # nothing in the sandbox, and:
+    # - NOTHING in the loose_folder if object_existed is True: someone deleted in the meantime, and it's
+    #   the choice of the current implementation that the file is not put back in place,
+    #   as discussed in the comments in the ObjectWriter class
+    # - a file if the file wasn't there from the beginning
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == (0 if object_existed else 1)
+
+
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_OK(temp_dir, trust_existing):  # pylint: disable=invalid-name
+    """Test that the ObjectWriter works if the loose object already exists (with the correct content)."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    # Write already the content in place
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+    with open(loose_file, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    with object_writer as fhandle:
+        # Write some content (this should end up in the same `loose_file` location)
+        fhandle.write(content)
+
+    # Check the end condition:
+    # nothing in the sandbox, nothing new in the loose_folder
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    # Check now the content
+    with open(loose_file, 'rb') as fhandle:
+        object_content = fhandle.read()
+
+    assert object_content == content
 
 
 @pytest.mark.parametrize('trust_existing', [True, False])
@@ -661,6 +799,8 @@ def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
         wrapped.flush()
         assert wrapped.hexdigest() == expected_hash
         assert wrapped.hash_type == hash_type
+        # Check the mode
+        assert wrapped.mode == 'wb'
 
     with open(os.path.join(temp_dir, filename), 'rb') as fhandle:
         assert fhandle.read() == content
@@ -677,3 +817,26 @@ def test_chunk_iterator():
 
     # Check for lengths that give a remainder
     assert list(utils.chunk_iterator(iter(range(10)), 3)) == [(0, 1, 2), (3, 4, 5), (6, 7, 8), (9,)]
+
+
+def test_compute_hash_from_filename(temp_dir):
+    """Check the functionality of the _compute_hash_from_filename function."""
+    content = b'2345j43'
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    fname = os.path.join(temp_dir, 'testfile')
+
+    with open(fname, 'wb') as fhandle:
+        fhandle.write(content)
+
+    assert utils._compute_hash_for_filename(fname, 'sha256') == expected_hash  # pylint: disable=protected-access
+    assert utils._compute_hash_for_filename(  # pylint: disable=protected-access
+        os.path.join(temp_dir, 'NOT_EXISTENT_FILE'), 'sha256') is None
+
+
+def test_is_known_hash():
+    """Check the functionality of the is_known_hash function."""
+    # At least sha256 should be supported
+    assert utils.is_known_hash('sha256')
+    # A weird string should not be a valid known hash
+    assert not utils.is_known_hash('SOME_UNKNOWN_HASH_TYPE')

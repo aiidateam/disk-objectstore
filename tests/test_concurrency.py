@@ -13,14 +13,21 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-@pytest.mark.xfail(os.name == 'nt', reason='Still some problems on Windows, see #4')
-def test_concurrency(temp_dir):
-    """Test to run concurrently many workers creating objects, and at the same time one packer.
+# Do the same test multiple times (repetition*2*2); I set it to 1, but can be increased for debugging
+@pytest.mark.xfail(os.name == 'nt', reason='Still some problems on Windows, see #37')
+@pytest.mark.parametrize('repetition', list(range(1)))
+@pytest.mark.parametrize('with_packing', [True])  #, False])  # If it works with packing, no need to test also without
+@pytest.mark.parametrize('max_size', [1, 1000])
+def test_concurrency(temp_dir, repetition, with_packing, max_size):  # pylint: disable=unused-argument, too-many-statements, too-many-locals
+    """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
     This is needed to see that indeed these operations can happen at the same time.
     Moreover, this is needed to perform a full coverage of the code, since some code will
     be reached only during concurrent access to the object store (reading data while
     packing).
+
+    .. note:: With max_size=1 I only have a maximum of 256+1 = 257 objects.
+      In this way I stress-test also the creation of concurrent identical objects.
     """
     packer_script = os.path.join(CONCURRENT_DIR, 'periodic_packer.py')
     worker_script = os.path.join(CONCURRENT_DIR, 'periodic_worker.py')
@@ -34,15 +41,16 @@ def test_concurrency(temp_dir):
     shared_dir = os.path.join(temp_dir, 'shared')
     os.mkdir(shared_dir)
 
-    # Start the packer
-    packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '7', '-w', '0.83'],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+    if with_packing:
+        # Start the packer
+        packer_proc = subprocess.Popen([sys.executable, packer_script, '-p', container_dir, '-r', '7', '-w', '0.83'],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
 
     # Start the workers
     worker_procs = []
     for worker_id in range(NUM_WORKERS):
-        options = ['-r', '6', '-w', '0', '-p', container_dir, '-s', shared_dir]
+        options = ['-r', '6', '-w', '0', '-p', container_dir, '-s', shared_dir, '-M', str(max_size)]
         if worker_id % 2:
             # One every two will read in bulk, the other within a loop
             options += ['-b']
@@ -50,13 +58,15 @@ def test_concurrency(temp_dir):
             subprocess.Popen([sys.executable, worker_script] + options, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         )
 
-    packer_out, packer_err = packer_proc.communicate()
-    if packer_out:
-        print('** STDOUT OF PACKER')
-        print(packer_out.decode('utf8'))
-    if packer_err:
-        print('** STDERR OF PACKER')
-        print(packer_err.decode('utf8'), file=sys.stderr)
+    if with_packing:
+        packer_out, packer_err = packer_proc.communicate()
+        if packer_out:
+            print('** STDOUT OF PACKER')
+            print(packer_out.decode('utf8'))
+        if packer_err:
+            print('** STDERR OF PACKER')
+            print(packer_err.decode('utf8'), file=sys.stderr)
+
     worker_outs = []
     worker_errs = []
     for worker_id, worker_proc in enumerate(worker_procs):
@@ -72,7 +82,7 @@ def test_concurrency(temp_dir):
 
     error_messages = []
 
-    if packer_proc.returncode:
+    if with_packing and packer_proc.returncode:
         error_messages.append('PACKER process failed with error code {}!'.format(packer_proc.returncode))
         error_messages.append('PACKER output:')
         error_messages.append(packer_out.decode('utf8'))

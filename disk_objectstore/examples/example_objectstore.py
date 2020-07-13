@@ -128,6 +128,10 @@ def main(num_files, min_size, max_size, directly_to_pack, path, clear, num_bulk_
         container.pack_all_loose(compress=compress_packs)
         tot_time = time.time() - start
         print('Time to pack all loose objects: {:.4} s'.format(tot_time))
+        start = time.time()
+        container.clean_storage()
+        tot_time = time.time() - start
+        print('Time to clean storage: {:.4} s'.format(tot_time))
 
         # Check that all loose files are gone
         counts = container.count_objects()
