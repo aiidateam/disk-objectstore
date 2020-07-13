@@ -393,8 +393,220 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 yield stream, meta
 
+    def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
+            self, hashkeys, skip_if_missing, with_streams
+        ):
+        """Return a generator yielding triplets of (hashkey, open stream, size).
+
+        :note: The stream is already open and at the right position, and can
+            just be read.
+
+        :note: size is the length of the object (uncompressed) when doing a
+            ``read()`` on the returned stream
+
+        :note: do not use directly! Call always the proper public methods. This is only
+            for internal use
+
+        :param hashkeys: a list of hash keys for which we want to get a stream reader
+        :param skip_if_missing: if True, just skip hash keys that are not in the container
+            (i.e., neither packed nor loose). If False, return ``None`` instead of the
+            stream.
+        :param with_streams: if True, yield triplets (hashkey, stream, meta).
+        :param with_streams: if False, yield pairs (hashkey, meta) and avoid to open any file.
+        """
+        # pylint: disable=too-many-nested-blocks
+
+        # During the run, this variable is updated with the currently open file.
+        # This file is closed before opening a new one - so we ensure only one is
+        # open at a given time.
+        # The try/finally block makes sure we close it at the end, if any was open.
+        last_open_file = None
+
+        # Operate on a set - only return once per required hashkey, even if required more than once
+        hashkeys_set = set(hashkeys)
+
+        try:
+            hashkeys_in_packs = set()
+
+            packs = defaultdict(list)
+            # Currently ordering in the DB (it's ordered across all packs, but this should not be
+            # a problem as we then split them by pack). To be checked, performance-wise, if it's better
+            # to order in python instead
+            session = self._get_cached_session()
+
+            # Operate in chunks, due to the SQLite limits
+            # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
+            for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
+                query = session.query(Obj).filter(
+                    Obj.hashkey.in_(chunk)
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                                Obj.size).order_by(Obj.offset)
+                for res in query:
+                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+
+            for pack_int_id, pack_metadata in packs.items():
+                hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
+                pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+                if last_open_file is not None:
+                    if not last_open_file.closed:
+                        last_open_file.close()
+                # Open only once per file (if in `with_streams` mode)
+                if with_streams:
+                    last_open_file = open(pack_path, mode='rb')
+                for metadata in pack_metadata:
+                    meta = {
+                        'type': 'packed',
+                        'size': metadata.size,
+                        'pack_id': pack_int_id,
+                        'pack_compressed': metadata.compressed,
+                        'pack_offset': metadata.offset,
+                        'pack_length': metadata.length,
+                    }
+
+                    if with_streams:
+                        obj_reader = PackedObjectReader(
+                            fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                        )
+                        if metadata.compressed:
+                            obj_reader = StreamDecompresser(obj_reader)
+                        yield metadata.hashkey, obj_reader, meta
+                    else:
+                        yield metadata.hashkey, meta
+
+            # Let's close the last open pack file, if there was any
+            if last_open_file is not None and not last_open_file.closed:
+                last_open_file.close()
+
+            # Collect loose hash keys that are not found
+            # Reason: a concurrent process might have packed them,
+            # in the meantime.
+            loose_not_found = set()
+            for loose_hashkey in hashkeys_set.difference(hashkeys_in_packs):
+                obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
+                try:
+                    if with_streams:
+                        last_open_file = open(obj_path, mode='rb')
+                        # I do not use os.path.getsize in case the file has just
+                        # been deleted by a concurrent writer
+                        meta = {
+                            'type': 'loose',
+                            'size': os.fstat(last_open_file.fileno()).st_size,
+                            'pack_id': None,
+                            'pack_compressed': None,
+                            'pack_offset': None,
+                            'pack_length': None,
+                        }
+
+                        yield loose_hashkey, last_open_file, meta
+                    else:
+                        # This will also raise a FileNotFoundError if the file does not exist
+                        size = os.path.getsize(obj_path)
+                        meta = {
+                            'type': 'loose',
+                            'size': size,
+                            'pack_id': None,
+                            'pack_compressed': None,
+                            'pack_offset': None,
+                            'pack_length': None,
+                        }
+
+                        yield loose_hashkey, meta
+
+                except FileNotFoundError:
+                    loose_not_found.add(loose_hashkey)
+                    continue
+                if last_open_file is not None:
+                    if not last_open_file.closed:
+                        last_open_file.close()
+
+            # There were some loose objects that were not found
+            # Give a final try - if they have been deleted in the meantime
+            # while being packed, I should have the guarantee that they
+            # are by now in the pack.
+            # If they are not, the object does not exist.
+            if loose_not_found:
+                # IMPORTANT. I need to close the session (and flush the
+                # self._session cache) to refresh the DB, otherwise since I am
+                # reading in WAL mode, I will be keeping to read from the "old"
+                # state of the DB.
+                # Note that this is an expensive operation!
+                # This means that asking for non-existing objects will be
+                # slow.
+                if self._session is not None:
+                    self._session.close()
+                    self._session = None
+
+                packs = defaultdict(list)
+                session = self._get_cached_session()
+                for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
+                    query = session.query(Obj).filter(
+                        Obj.hashkey.in_(chunk)
+                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                                    Obj.size).order_by(Obj.offset)
+                    for res in query:
+                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+
+                # I will construct here the really missing objects.
+                # I make a copy of the set.
+                really_not_found = loose_not_found.copy()
+
+                for pack_int_id, pack_metadata in packs.items():
+                    # I remove those that I found
+                    really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
+
+                    pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+
+                    # Close possibly open file - might not be optimised if all
+                    # are in the same pack, but as discussed above we should reach
+                    # here only if someone packed exactly while we were listing the objects,
+                    # and this should be rare
+                    if last_open_file is not None:
+                        if not last_open_file.closed:
+                            last_open_file.close()
+                    if with_streams:
+                        last_open_file = open(pack_path, mode='rb')
+
+                    for metadata in pack_metadata:
+                        meta = {
+                            'type': 'packed',
+                            'size': metadata.size,
+                            'pack_id': pack_int_id,
+                            'pack_compressed': metadata.compressed,
+                            'pack_offset': metadata.offset,
+                            'pack_length': metadata.length,
+                        }
+                        if with_streams:
+                            obj_reader = PackedObjectReader(
+                                fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                            )
+                            if metadata.compressed:
+                                obj_reader = StreamDecompresser(obj_reader)
+                            yield metadata.hashkey, obj_reader, meta
+                        else:
+                            yield metadata.hashkey, meta
+
+                # If there are really missing objects, and skip_if_missing is False, yield them
+                if really_not_found and not skip_if_missing:
+                    for missing_hashkey in really_not_found:
+                        meta = {
+                            'type': 'missing',
+                            'size': None,
+                            'pack_id': None,
+                            'pack_compressed': None,
+                            'pack_offset': None,
+                            'pack_length': None,
+                        }
+                        if with_streams:
+                            yield missing_hashkey, None, meta
+                        else:
+                            yield missing_hashkey, meta
+
+        finally:
+            if last_open_file is not None:
+                last_open_file.close()
+
     @contextmanager
-    def get_objects_stream_and_meta(self, hashkeys, skip_if_missing=True):  # pylint: disable=too-many-statements
+    def get_objects_stream_and_meta(self, hashkeys, skip_if_missing=True):
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
         :note: the hash keys yielded are often in a *different* order than the original
@@ -415,7 +627,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         `meta` is a dictionary containing a number of keys. These include:
 
-        - `type`: always present. It can be one of the following strings: `loose`, `packed`, `none`, where
+        - `type`: always present. It can be one of the following strings: `loose`, `packed`, `missing`, where
           `missing` is returned for missing objects if `skip_if_missing` is False.
         - `size`: the size of the object in bytes (i.e., `len(stream.read())`). Always present, set to None if
           `type` is `missing`.
@@ -432,184 +644,66 @@ class Container:  # pylint: disable=too-many-public-methods
             stream. In this latter case, the length of the generator returned by this context
             manager has always the same length as the input ``hashkeys`` list.
         """
+        yield self._get_objects_stream_meta_generator(
+            hashkeys=hashkeys, skip_if_missing=skip_if_missing, with_streams=True
+        )
 
-        def get_object_stream_generator(hashkeys, skip_if_missing):  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
-            """Return a generator yielding triplets of (hashkey, open stream, size).
+    def get_objects_meta(self, hashkeys, skip_if_missing=True):
+        """A generator yielding pairs of (hashkey, metadata).
 
-            :note: The stream is already open and at the right position, and can
-                just be read.
+        :note: the hash keys yielded are often in a *different* order than the original
+            ``hashkeys`` list. This is to have the same behavior of ``get_objects_stream_and_meta``,
+            and for efficiency (even if efficiency is less of an issue for this method).
 
-            :note: size is the length of the object (uncompressed) when doing a
-               ``read()`` on the returned stream
+        To use it, you should do something like the following::
 
-            :param hashkeys: a list of hash keys for which we want to get a stream reader
-            :param skip_if_missing: if True, just skip hash keys that are not in the container
-                (i.e., neither packed nor loose). If False, return ``None`` instead of the
-                stream.
-            """
-            # During the run, this variable is updated with the currently open file.
-            # This file is closed before opening a new one - so we ensure only one is
-            # open at a given time.
-            # The try/finally block makes sure we close it at the end, if any was open.
-            last_open_file = None
+            for obj_hashkey, meta in container.get_objects_meta(hashkeys=hashkeys):
+                sizes[obj_hashkey] = meta['size']
 
-            # Operate on a set - only return once per required hashkey, even if required more than once
-            hashkeys_set = set(hashkeys)
+        Note that if you can afford putting everything in memory and do not want to bother with the
+        different ordering, you can just do::
 
-            try:
-                hashkeys_in_packs = set()
+            metas = dict(container.get_objects_meta(hashkeys=hashkeys))
 
-                packs = defaultdict(list)
-                # Currently ordering in the DB (it's ordered across all packs, but this should not be
-                # a problem as we then split them by pack). To be checked, performance-wise, if it's better
-                # to order in python instead
-                session = self._get_cached_session()
+        and then you can access the meta of an object via ``metas[hashkey]``.
 
-                # Operate in chunks, due to the SQLite limits
-                # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
-                for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
-                    query = session.query(Obj).filter(
-                        Obj.hashkey.in_(chunk)
-                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                    Obj.size).order_by(Obj.offset)
-                    for res in query:
-                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+        ``meta`` is a dictionary containing a number of keys, for the documentation check the
+        ``get_objects_stream_and_meta`` documentation.
 
-                for pack_int_id, pack_metadata in packs.items():
-                    hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
-                    pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
-                    if last_open_file is not None:
-                        if not last_open_file.closed:
-                            last_open_file.close()
-                    # Open only once per file
-                    last_open_file = open(pack_path, mode='rb')
-                    for metadata in pack_metadata:
-                        obj_reader = PackedObjectReader(
-                            fhandle=last_open_file, offset=metadata.offset, length=metadata.length
-                        )
-                        if metadata.compressed:
-                            obj_reader = StreamDecompresser(obj_reader)
-                        meta = {
-                            'type': 'packed',
-                            'size': metadata.size,
-                            'pack_id': pack_int_id,
-                            'pack_compressed': metadata.compressed,
-                            'pack_offset': metadata.offset,
-                            'pack_length': metadata.length,
-                        }
-                        yield metadata.hashkey, obj_reader, meta
+        :param hashkeys: a list of hash keys for which we want to get a stream reader
+        :param skip_if_missing: if True, just skip hash keys that are not in the container
+            (i.e., neither packed nor loose). If False, return them (``meta['type']`` will be the
+            string ``none`` in this case).
+            In this latter case, the length of the generator returned by this context
+            manager has always the same length as the input ``hashkeys`` list.
+        """
+        return self._get_objects_stream_meta_generator(
+            hashkeys=hashkeys, skip_if_missing=skip_if_missing, with_streams=False
+        )
 
-                # Let's close the last open pack file, if there was any
-                if last_open_file is not None and not last_open_file.closed:
-                    last_open_file.close()
+    def get_object_meta(self, hashkey):
+        """Return the metadata dictionary for the given hash key.
 
-                # Collect loose hash keys that are not found
-                # Reason: a concurrent process might have packed them,
-                # in the meantime.
-                loose_not_found = set()
-                for loose_hashkey in hashkeys_set.difference(hashkeys_in_packs):
-                    obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
-                    try:
-                        last_open_file = open(obj_path, mode='rb')
-                        # I do not use os.path.getsize in case the file has just
-                        # been deleted by a concurrent writer
-                        meta = {
-                            'type': 'loose',
-                            'size': os.fstat(last_open_file.fileno()).st_size,
-                            'pack_id': None,
-                            'pack_compressed': None,
-                            'pack_offset': None,
-                            'pack_length': None,
-                        }
+        To be used as follows:
 
-                        yield loose_hashkey, last_open_file, meta
-                    except FileNotFoundError:
-                        loose_not_found.add(loose_hashkey)
-                        continue
-                    if last_open_file is not None:
-                        if not last_open_file.closed:
-                            last_open_file.close()
+          meta = container.get_object_meta(hashkey)
+          print(meta['size'])
 
-                # There were some loose objects that were not found
-                # Give a final try - if they have been deleted in the meantime
-                # while being packed, I should have the guarantee that they
-                # are by now in the pack.
-                # If they are not, the object does not exist.
-                if loose_not_found:
-                    # IMPORTANT. I need to close the session (and flush the
-                    # self._session cache) to refresh the DB, otherwise since I am
-                    # reading in WAL mode, I will be keeping to read from the "old"
-                    # state of the DB.
-                    # Note that this is an expensive operation!
-                    # This means that asking for non-existing objects will be
-                    # slow.
-                    if self._session is not None:
-                        self._session.close()
-                        self._session = None
+        The schema of the returned metadata `meta` dict is documented in the docstring
+        of `get_objects_stream_and_meta`).
 
-                    packs = defaultdict(list)
-                    session = self._get_cached_session()
-                    for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
-                        query = session.query(Obj).filter(
-                            Obj.hashkey.in_(chunk)
-                        ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                        Obj.size).order_by(Obj.offset)
-                        for res in query:
-                            packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+        :param hashkey: the hashkey of the object to stream.
+        """
+        counter = 0
+        for obj_hashkey, meta in self.get_objects_meta(hashkeys=[hashkey], skip_if_missing=False):
+            counter += 1
+            assert counter == 1, 'There is more than one item returned by get_objects_stream_and_meta'
+            assert obj_hashkey == hashkey
 
-                    # I will construct here the really missing objects.
-                    # I make a copy of the set.
-                    really_not_found = loose_not_found.copy()
+            if meta['type'] == 'missing':
+                raise NotExistent('No object with hash key {}'.format(hashkey))
 
-                    for pack_int_id, pack_metadata in packs.items():
-                        # I remove those that I found
-                        really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
-
-                        pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
-
-                        # Close possibly open file - might not be optimised if all
-                        # are in the same pack, but as discussed above we should reach
-                        # here only if someone packed exactly while we were listing the objects,
-                        # and this should be rare
-                        if last_open_file is not None:
-                            if not last_open_file.closed:
-                                last_open_file.close()
-                        last_open_file = open(pack_path, mode='rb')
-
-                        for metadata in pack_metadata:
-                            obj_reader = PackedObjectReader(
-                                fhandle=last_open_file, offset=metadata.offset, length=metadata.length
-                            )
-                            if metadata.compressed:
-                                obj_reader = StreamDecompresser(obj_reader)
-                            meta = {
-                                'type': 'packed',
-                                'size': metadata.size,
-                                'pack_id': pack_int_id,
-                                'pack_compressed': metadata.compressed,
-                                'pack_offset': metadata.offset,
-                                'pack_length': metadata.length,
-                            }
-                            yield metadata.hashkey, obj_reader, meta
-
-                    # If there are really missing objects, and skip_if_missing is False, yield them
-                    if really_not_found and not skip_if_missing:
-                        for missing_hashkey in really_not_found:
-                            meta = {
-                                'type': 'missing',
-                                'size': None,
-                                'pack_id': None,
-                                'pack_compressed': None,
-                                'pack_offset': None,
-                                'pack_length': None,
-                            }
-                            yield missing_hashkey, None, meta
-
-            finally:
-                if last_open_file is not None:
-                    last_open_file.close()
-
-        yield get_object_stream_generator(hashkeys=hashkeys, skip_if_missing=skip_if_missing)
+            return meta
 
     def has_objects(self, hashkeys):
         """Return whether the container contains objects with the given hash keys.
@@ -621,10 +715,9 @@ class Container:  # pylint: disable=too-many-public-methods
         existing_hashkeys = set()
 
         # Note: This iterates in a 'random' order, different than the `hashkeys` list
-        with self.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=True) as triplets:
-            for obj_hashkey, _, _ in triplets:
-                # Since I use skip_if_missing=True, I should only iterate on those that exist
-                existing_hashkeys.add(obj_hashkey)
+        for obj_hashkey, _ in self.get_objects_meta(hashkeys=hashkeys, skip_if_missing=True):
+            # Since I use skip_if_missing=True, I should only iterate on those that exist
+            existing_hashkeys.add(obj_hashkey)
 
         # Return a list of booleans
         return [hashkey in existing_hashkeys for hashkey in hashkeys]
