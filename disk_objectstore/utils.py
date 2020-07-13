@@ -17,7 +17,7 @@ except ImportError:
 
 from contextlib import contextmanager
 
-from .exceptions import ModificationNotAllowed, ClosingNotAllowed, DynamicInconsistentContent
+from .exceptions import ModificationNotAllowed, ClosingNotAllowed
 
 # For now I I don't always activate it as I need to think at the right balance between
 # safety and performance/disk wearing
@@ -176,6 +176,7 @@ class ObjectWriter:
                     dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
 
                 dest_parent_folder = os.path.dirname(dest_loose_object)
+                exists_wrong_checksum = False
                 # At this point, if the destination exists, it means someone already put an object
                 # with the same content/hash key
                 if os.path.exists(dest_loose_object):
@@ -191,6 +192,7 @@ class ObjectWriter:
                     # process might in the meantime rewrite it again, and this might
                     # be wrong. But this is very difficult to catch, and in general
                     # the situation in which a process writes a corrupt node is really an error
+                    ## TODO: This might fail if the file cannot be read! I need to catch also this exception
                     existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
                     if existing_checksum == self._hashkey:
                         # The existing object has the correct hash, I just return.
@@ -203,6 +205,8 @@ class ObjectWriter:
                     # I therefore just return
                     if existing_checksum is None:
                         return
+                    # If we are here, the file exists and has the wrong checksum. I mark this condition
+                    exists_wrong_checksum = True
 
                 # If I am here, there are two options:
                 # 1. The object did not exist
@@ -213,26 +217,41 @@ class ObjectWriter:
                 # - os.rename() on Linux is atomic (see e.g. also
                 #   https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
                 #   but needs to be on the same filesystem (this should always be the case for us)
-                # - Remembe that instead shutil.move is not guaranteed to be atomic!
+                # - Remember that instead shutil.move is not guaranteed to be atomic!
                 # - os.rename performs a silent overwrite if the file exists on Posix, so would be enough
                 #   on Linux/Mac; instead, it raises OSError on Windows if the file exists.
-                # - we use instead os.replace that, on Windows, calls a rename with the correct flags
-                #   to overwrite an existing destination.
-                try:
-                    os.replace(self._obj_path, dest_loose_object)
-                except PermissionError:
-                    # NOTE! This branch only happens on Windows, when the
-                    # file with the same name was opened in the meantime by someone else...
-                    # We do a final check of its content
-                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
-                    if existing_checksum == self._hashkey:
-                        # The existing object that has appeared in the meantime is OK. Fine, has the correct hash,
-                        # I just return.
-                        return
-                    raise DynamicInconsistentContent(
-                        "I am trying to create loose object with hash key '{}', "
-                        'but it is already open and has the wrong content!'.format(self._hashkey)
-                    )
+                # - we use os.rename: we make sure in this way, on Windows, that only one process writes
+                #   to the destination, avoiding race conditions with two processes trying to write the
+                #   same file.
+                if exists_wrong_checksum:
+                    # In this case I try a replace of the file
+                    try:
+                        os.replace(self._obj_path, dest_loose_object)
+                    except PermissionError:
+                        # NOTE! This branch only happens on Windows, when the
+                        # file with the same name is open by someone else...
+                        # I just store a duplicate copy
+                        # TODO: should I raise here?
+                        self._store_duplicate_copy(self._obj_path, self._hashkey)
+                else:
+                    # In this case the file does not exist. I try just a rename of the file,
+                    # to put it in place and reduce the risk of multiple processes trying to overwrite
+                    # the same file
+                    try:
+                        os.rename(self._obj_path, dest_loose_object)
+                    except PermissionError:
+                        # NOTE! This branch only happens on Windows, when the
+                        # file with the same name was opened in the meantime by someone else...
+                        if self._trust_existing:
+                            # If I trust existing files, I just return - someone put the file in place
+                            # TODO: should I check the actual type of error? Maybe I get this for a
+                            # different problem e.g. a real permission error on the folder
+                            return
+                        # if I don't trust existing, but I cannot rename, I just store a duplicate copy
+                        # TODO: should I do an attempt to check the checksum, maybe it's just a concurrency
+                        # issue and I don't need to store a duplicate! On the other hand, a check is
+                        # complex and I have to consider e.g. the case that the file is locked for reading etc.
+                        self._store_duplicate_copy(self._obj_path, self._hashkey)
 
                 # Flush also the parent directory, see e.g.
                 # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
@@ -248,6 +267,32 @@ class ObjectWriter:
                 self._filehandle.close()
             if os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
+
+    def _store_duplicate_copy(self, source_file, hashkey):
+        """This function is called (on Windows) when trying to store a file that already exists.
+
+        This is still work in progress!
+
+        TODO:
+        - add testing
+        - create the duplicates folder at the beginning to avoid race conditions?
+        - make sure this folder does not collide with the rest of the logic - maybe better to pass it explicitly and
+          put it at a top level, sibling of the loose folder?
+        - in container.clean_storage(), implement logic to check, remove duplicates if the corresponding existing
+          (loose or packed) file exists and is correct, otherwise replace, or show an error.
+        - remove debug printing
+        - Probably remove the DynamicInconsistentError exception?
+        """
+        duplicate_folder = os.path.join(self._loose_folder, '.duplicates')
+        try:
+            os.mkdir(duplicate_folder)
+        except FileExistsError:
+            pass
+        # Destination file starts with the hashkey, then has an undescore separator, and is
+        # followed by un UUID to make sure there is never a collision
+        dest_file = os.path.join(duplicate_folder, '{}_{}'.format(hashkey, uuid.uuid4().hex))
+        print('Moving {} to duplicate {}'.format(source_file, dest_file))
+        os.rename(source_file, dest_file)
 
 
 class PackedObjectReader:
