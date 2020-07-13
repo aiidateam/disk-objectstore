@@ -425,31 +425,28 @@ class Container:  # pylint: disable=too-many-public-methods
         # Operate on a set - only return once per required hashkey, even if required more than once
         hashkeys_set = set(hashkeys)
 
-        try:
-            hashkeys_in_packs = set()
+        hashkeys_in_packs = set()
 
-            packs = defaultdict(list)
-            # Currently ordering in the DB (it's ordered across all packs, but this should not be
-            # a problem as we then split them by pack). To be checked, performance-wise, if it's better
-            # to order in python instead
-            session = self._get_cached_session()
+        packs = defaultdict(list)
+        # Currently ordering in the DB (it's ordered across all packs, but this should not be
+        # a problem as we then split them by pack). To be checked, performance-wise, if it's better
+        # to order in python instead
+        session = self._get_cached_session()
 
-            # Operate in chunks, due to the SQLite limits
-            # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
-            for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
-                query = session.query(Obj).filter(
-                    Obj.hashkey.in_(chunk)
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                Obj.size).order_by(Obj.offset)
-                for res in query:
-                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+        # Operate in chunks, due to the SQLite limits
+        # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
+        for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
+            query = session.query(Obj).filter(
+                Obj.hashkey.in_(chunk)
+            ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                            Obj.size).order_by(Obj.offset)
+            for res in query:
+                packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
-            for pack_int_id, pack_metadata in packs.items():
-                hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
-                pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
-                if last_open_file is not None:
-                    if not last_open_file.closed:
-                        last_open_file.close()
+        for pack_int_id, pack_metadata in packs.items():
+            hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
+            pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+            try:
                 # Open only once per file (if in `with_streams` mode)
                 if with_streams:
                     last_open_file = open(pack_path, mode='rb')
@@ -472,97 +469,91 @@ class Container:  # pylint: disable=too-many-public-methods
                         yield metadata.hashkey, obj_reader, meta
                     else:
                         yield metadata.hashkey, meta
-
-            # Let's close the last open pack file, if there was any
-            if last_open_file is not None and not last_open_file.closed:
-                last_open_file.close()
-
-            # Collect loose hash keys that are not found
-            # Reason: a concurrent process might have packed them,
-            # in the meantime.
-            loose_not_found = set()
-            for loose_hashkey in hashkeys_set.difference(hashkeys_in_packs):
-                obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
-                try:
-                    if with_streams:
-                        last_open_file = open(obj_path, mode='rb')
-                        # I do not use os.path.getsize in case the file has just
-                        # been deleted by a concurrent writer
-                        meta = {
-                            'type': 'loose',
-                            'size': os.fstat(last_open_file.fileno()).st_size,
-                            'pack_id': None,
-                            'pack_compressed': None,
-                            'pack_offset': None,
-                            'pack_length': None,
-                        }
-
-                        yield loose_hashkey, last_open_file, meta
-                    else:
-                        # This will also raise a FileNotFoundError if the file does not exist
-                        size = os.path.getsize(obj_path)
-                        meta = {
-                            'type': 'loose',
-                            'size': size,
-                            'pack_id': None,
-                            'pack_compressed': None,
-                            'pack_offset': None,
-                            'pack_length': None,
-                        }
-
-                        yield loose_hashkey, meta
-
-                except FileNotFoundError:
-                    loose_not_found.add(loose_hashkey)
-                    continue
+            finally:
                 if last_open_file is not None:
                     if not last_open_file.closed:
                         last_open_file.close()
 
-            # There were some loose objects that were not found
-            # Give a final try - if they have been deleted in the meantime
-            # while being packed, I should have the guarantee that they
-            # are by now in the pack.
-            # If they are not, the object does not exist.
-            if loose_not_found:
-                # IMPORTANT. I need to close the session (and flush the
-                # self._session cache) to refresh the DB, otherwise since I am
-                # reading in WAL mode, I will be keeping to read from the "old"
-                # state of the DB.
-                # Note that this is an expensive operation!
-                # This means that asking for non-existing objects will be
-                # slow.
-                if self._session is not None:
-                    self._session.close()
-                    self._session = None
+        # Collect loose hash keys that are not found
+        # Reason: a concurrent process might have packed them,
+        # in the meantime.
+        loose_not_found = set()
+        for loose_hashkey in hashkeys_set.difference(hashkeys_in_packs):
+            obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
+            try:
+                if with_streams:
+                    last_open_file = open(obj_path, mode='rb')
+                    # I do not use os.path.getsize in case the file has just
+                    # been deleted by a concurrent writer
+                    meta = {
+                        'type': 'loose',
+                        'size': os.fstat(last_open_file.fileno()).st_size,
+                        'pack_id': None,
+                        'pack_compressed': None,
+                        'pack_offset': None,
+                        'pack_length': None,
+                    }
 
-                packs = defaultdict(list)
-                session = self._get_cached_session()
-                for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
-                    query = session.query(Obj).filter(
-                        Obj.hashkey.in_(chunk)
-                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                    Obj.size).order_by(Obj.offset)
-                    for res in query:
-                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                    yield loose_hashkey, last_open_file, meta
+                else:
+                    # This will also raise a FileNotFoundError if the file does not exist
+                    size = os.path.getsize(obj_path)
+                    meta = {
+                        'type': 'loose',
+                        'size': size,
+                        'pack_id': None,
+                        'pack_compressed': None,
+                        'pack_offset': None,
+                        'pack_length': None,
+                    }
 
-                # I will construct here the really missing objects.
-                # I make a copy of the set.
-                really_not_found = loose_not_found.copy()
+                    yield loose_hashkey, meta
+            except FileNotFoundError:
+                loose_not_found.add(loose_hashkey)
+                continue
+            finally:
+                # Close each loose file, if open
+                if last_open_file is not None:
+                    if not last_open_file.closed:
+                        last_open_file.close()
 
-                for pack_int_id, pack_metadata in packs.items():
-                    # I remove those that I found
-                    really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
+        # There were some loose objects that were not found
+        # Give a final try - if they have been deleted in the meantime
+        # while being packed, I should have the guarantee that they
+        # are by now in the pack.
+        # If they are not, the object does not exist.
+        if loose_not_found:
+            # IMPORTANT. I need to close the session (and flush the
+            # self._session cache) to refresh the DB, otherwise since I am
+            # reading in WAL mode, I will be keeping to read from the "old"
+            # state of the DB.
+            # Note that this is an expensive operation!
+            # This means that asking for non-existing objects will be
+            # slow.
+            if self._session is not None:
+                self._session.close()
+                self._session = None
 
-                    pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+            packs = defaultdict(list)
+            session = self._get_cached_session()
+            for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
+                query = session.query(Obj).filter(
+                    Obj.hashkey.in_(chunk)
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
+                                Obj.size).order_by(Obj.offset)
+                for res in query:
+                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
-                    # Close possibly open file - might not be optimised if all
-                    # are in the same pack, but as discussed above we should reach
-                    # here only if someone packed exactly while we were listing the objects,
-                    # and this should be rare
-                    if last_open_file is not None:
-                        if not last_open_file.closed:
-                            last_open_file.close()
+            # I will construct here the really missing objects.
+            # I make a copy of the set.
+            really_not_found = loose_not_found.copy()
+
+            for pack_int_id, pack_metadata in packs.items():
+                # I remove those that I found
+                really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
+
+                pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
+                try:
                     if with_streams:
                         last_open_file = open(pack_path, mode='rb')
 
@@ -584,26 +575,26 @@ class Container:  # pylint: disable=too-many-public-methods
                             yield metadata.hashkey, obj_reader, meta
                         else:
                             yield metadata.hashkey, meta
+                finally:
+                    if last_open_file is not None:
+                        if not last_open_file.closed:
+                            last_open_file.close()
 
-                # If there are really missing objects, and skip_if_missing is False, yield them
-                if really_not_found and not skip_if_missing:
-                    for missing_hashkey in really_not_found:
-                        meta = {
-                            'type': 'missing',
-                            'size': None,
-                            'pack_id': None,
-                            'pack_compressed': None,
-                            'pack_offset': None,
-                            'pack_length': None,
-                        }
-                        if with_streams:
-                            yield missing_hashkey, None, meta
-                        else:
-                            yield missing_hashkey, meta
-
-        finally:
-            if last_open_file is not None:
-                last_open_file.close()
+            # If there are really missing objects, and skip_if_missing is False, yield them
+            if really_not_found and not skip_if_missing:
+                for missing_hashkey in really_not_found:
+                    meta = {
+                        'type': 'missing',
+                        'size': None,
+                        'pack_id': None,
+                        'pack_compressed': None,
+                        'pack_offset': None,
+                        'pack_length': None,
+                    }
+                    if with_streams:
+                        yield missing_hashkey, None, meta
+                    else:
+                        yield missing_hashkey, meta
 
     @contextmanager
     def get_objects_stream_and_meta(self, hashkeys, skip_if_missing=True):
