@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594671181045,
+  "lastUpdate": 1594671242324,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1932,6 +1932,65 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.015076867289436302",
             "extra": "mean: 641.2021666666684 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dab40d1d73c8515a5900560c656d04bdbae5fdf0",
+          "message": "Merge pull request #63 from giovannipizzi/fix_10_performance\n\nAdding performance tests for loose read",
+          "timestamp": "2020-07-13T22:09:53+02:00",
+          "tree_id": "da463ed266c11b51b86ed097afedaa7a018bec82",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/dab40d1d73c8515a5900560c656d04bdbae5fdf0"
+        },
+        "date": 1594671241093,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2877065108184792,
+            "unit": "iter/sec",
+            "range": "stddev: 0.052508391337225555",
+            "extra": "mean: 3.475764233333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.15071001295623845,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03305972559656238",
+            "extra": "mean: 6.6352591999999975 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.3235700140600293,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01378793649416427",
+            "extra": "mean: 300.8812800000001 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 12.65114524492339,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008319989570557927",
+            "extra": "mean: 79.0442272727267 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.424740775539588,
+            "unit": "iter/sec",
+            "range": "stddev: 0.051104846568333154",
+            "extra": "mean: 701.8820666666699 msec\nrounds: 3"
           }
         ]
       }
