@@ -53,6 +53,23 @@ def test_pack_read(temp_container, benchmark):
     assert results == expected_results_dict
 
 
+@pytest.mark.benchmark(group='read')
+def test_loose_read(temp_container, benchmark):
+    """Add 1000 objects to the container in loose form, and benchmark write and read speed."""
+    num_files = 1000
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
+    hashkeys = []
+    for content in data_content:
+        hashkeys.append(temp_container.add_object(content))
+    expected_results = dict(zip(hashkeys, data_content))
+
+    random.shuffle(hashkeys)
+    # Note that here however the OS will be using the disk caches
+    results = benchmark(temp_container.get_objects_content, hashkeys)
+
+    assert results == expected_results
+
+
 @pytest.mark.benchmark(group='check', min_rounds=3)
 def test_has_objects(temp_container, benchmark):
     """Benchmark speed to check object existence.
