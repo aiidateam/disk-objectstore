@@ -809,6 +809,17 @@ class Container:  # pylint: disable=too-many-public-methods
             return False
         return True
 
+    @staticmethod
+    def _is_valid_hashkey(hashkey):
+        """Return True is the name is a valid hashkey.
+
+        Note that it currently does not check the length but only that the key is composed only
+        by hexadecimal characters.
+        """
+        if not all(char in '0123456789abcdef' for char in hashkey):
+            return False
+        return True
+
     def get_total_size(self):
         """Return a dictionary with the total size of objects in the container.
 
@@ -877,13 +888,17 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         for first_level in os.listdir(self._get_loose_folder()):
             if self.loose_prefix_len:
-                assert self._is_valid_loose_prefix(first_level), (
-                    "Found invalid subfolder '{}' in the loose pack".format(first_level)
-                )
+                if not self._is_valid_loose_prefix(first_level):
+                    continue
                 for second_level in os.listdir(os.path.join(self._get_loose_folder(), first_level)):
-                    yield '{}{}'.format(first_level, second_level)
+                    hashkey = '{}{}'.format(first_level, second_level)
+                    if not self._is_valid_hashkey(hashkey):
+                        continue
+                    yield hashkey
             else:
                 # It's flat (loose_prefix_len == 0)
+                if not self._is_valid_hashkey(first_level):
+                    continue
                 yield first_level
 
     def _list_packs(self):
@@ -898,6 +913,30 @@ class Container:  # pylint: disable=too-many-public-methods
             #pack_id = fname[:-len(self._PACK_INDEX_SUFFIX)]
             if self._is_valid_pack_id(fname):
                 yield fname
+
+    def list_all_objects(self):
+        """Iterate of all object hashkeys.
+
+        This function might be slow if there are many loose objects!
+        Use only if needed.
+        """
+        yield_per_size = 500
+
+        # We get all objects that are loose, create a set
+        loose_objects = set(self._list_loose())
+
+        # Let us initialise a session
+        session = self._get_cached_session()
+        # Use yield_per in order to avoid to fill too much memory
+        for res in session.query(Obj).with_entities(Obj.hashkey).yield_per(yield_per_size).all():
+            # Pop out from the loose_objects set if it's already packed
+            # (as having both a loose and a packed version is legal, but we want to list it only once)
+            loose_objects.difference_update([res[0]])
+            yield res[0]
+
+        # What is left are the loose objects that are not
+        for hashkey in loose_objects:
+            yield hashkey
 
     def _write_data_to_packfile(self, pack_handle, read_handle, compress):
         """Append data, read from read_handle until it ends, to the correct packfile.

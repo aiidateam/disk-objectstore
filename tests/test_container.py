@@ -1547,3 +1547,118 @@ def test_get_objects_meta_to_dict(temp_container):
     assert all(meta['type'] == 'loose' for meta in meta_dict.values())
 
     assert expected_sizes == {hashkey: meta['size'] for hashkey, meta in meta_dict.items()}
+
+
+@pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
+def test_list_all_objects(temp_dir, loose_prefix_len):
+    """Test listing all objects in the container."""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, loose_prefix_len=loose_prefix_len)
+
+    num_files = 1000
+
+    data_content = ['{}'.format(i).encode('ascii') for i in range(num_files)]
+    hashkeys = []
+    for content in data_content:
+        hashkeys.append(temp_container.add_object(content))
+
+    # Check when all objects are loose
+    retval = list(temp_container.list_all_objects())
+    # Check that they are the same except for the order
+    assert sorted(hashkeys) == sorted(retval)
+
+    temp_container.pack_all_loose()
+    assert temp_container.count_objects()['packed'] > 0
+
+    # Pack all objects, loose objects will remain in place
+    # Check that all works and that I don't get duplicates
+    retval = list(temp_container.list_all_objects())
+    # Check that they are the same except for the order
+    assert sorted(hashkeys) == sorted(retval)
+
+    # Clean up the loose objects
+    temp_container.clean_storage()
+    # Check that all works and that I don't loose objects
+    retval = list(temp_container.list_all_objects())
+    # Check that they are the same except for the order
+    assert sorted(hashkeys) == sorted(retval)
+
+    # New data, different values
+    data_content2 = ['second-{}'.format(i).encode('ascii') for i in range(num_files)]
+    hashkeys2 = []
+    for content in data_content2:
+        hashkeys2.append(temp_container.add_object(content))
+
+    # Check that I see both loose and packed objects
+    retval = list(temp_container.list_all_objects())
+    # Check that they are the same except for the order
+    assert sorted(hashkeys + hashkeys2) == sorted(retval)
+
+    # Add again packed objects
+    hashkeys3 = []
+    for content in data_content:
+        hashkeys3.append(temp_container.add_object(content))
+    # This should have given us the same hash keys (just checking to be sure)
+    assert hashkeys == hashkeys3
+
+    # Even in this case, where I might have create duplicate (loose and packed) objects,
+    # I shouldn't get more results or duplicates
+    retval = list(temp_container.list_all_objects())
+    # Check that they are the same except for the order
+    assert sorted(hashkeys + hashkeys2) == sorted(retval)
+
+    temp_container.close()
+
+
+@pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
+def test_list_all_objects_extraneous(temp_dir, loose_prefix_len):  # pylint: disable=invalid-name
+    """x"""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, loose_prefix_len=loose_prefix_len)
+
+    num_files = 1000
+
+    data_content = ['{}'.format(i).encode('ascii') for i in range(num_files)]
+    hashkeys = []
+    for content in data_content:
+        hashkeys.append(temp_container.add_object(content))
+
+    # Check when all objects are loose
+    retval = list(temp_container.list_all_objects())
+    assert sorted(hashkeys) == sorted(retval)
+
+    # I now add extraneous files that do not contain hex strings or have the wrong length
+    os.mkdir(os.path.join(temp_container._get_loose_folder(), 'INVALID_NAME'))  # pylint: disable=protected-access
+
+    if loose_prefix_len != 0:
+        prefix = '0' * 2 * loose_prefix_len
+        suffix = '0' * 10
+
+        # This is not really needed (actually, in the future we might also want to check the length)
+        # but in that case we want to adapt the test to have a valid suffix: what I want to test is
+        # that even if the concatenation is valid, any first-level folder of wrong length is skipped
+        assert temp_container._is_valid_hashkey(prefix + suffix)  # pylint: disable=protected-access
+
+        # Creating a folder with valid characters, but wrong length: the content should be ignored
+        invalid_first_level = os.path.join(temp_container._get_loose_folder(), prefix)  # pylint: disable=protected-access
+        os.mkdir(invalid_first_level)
+        # Create an empty file
+        with open(os.path.join(invalid_first_level, suffix), 'wb'):
+            pass
+
+        # creating now a valid first_level folder (if not present already), and an invalid name inside it
+        first_level_subfolder = os.path.join(temp_container._get_loose_folder(), '0' * loose_prefix_len)  # pylint: disable=protected-access
+        try:
+            # Creating if it does not exist - this is a valid name
+            os.mkdir(first_level_subfolder)
+        except FileExistsError:
+            pass
+        with open(os.path.join(first_level_subfolder, 'INVALID_NAME'), 'wb'):
+            pass
+
+    # We list again: all invalid objects should just be ignored
+    retval = list(temp_container.list_all_objects())
+    assert sorted(hashkeys) == sorted(retval)
+
+    # Closing (needed in Windows)
+    temp_container.close()
