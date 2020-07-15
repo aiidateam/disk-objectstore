@@ -869,39 +869,6 @@ def test_packed_object_reader():
     length = 5
     expected_bytestream = bytestream[offset:offset + length]
 
-    with open(tempfhandle.name, 'rb') as fhandle:
-        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
-
-        # Check the functionality is disabled
-        assert packed_reader.seekable
-
-        # Check that whence==1 and whence==2 are not implemented
-        with pytest.raises(NotImplementedError):
-            packed_reader.seek(0, 1)
-        with pytest.raises(NotImplementedError):
-            packed_reader.seek(0, 2)
-
-        # Check that negative values and values > length are not valid
-        with pytest.raises(ValueError):
-            packed_reader.seek(-3)
-        with pytest.raises(ValueError):
-            packed_reader.seek(length + 1)
-
-        # Seek and read all the rest
-        for start in range(length + 1):
-            packed_reader.seek(start)
-            assert packed_reader.tell() == start
-            assert packed_reader.read() == expected_bytestream[start:]
-            assert packed_reader.tell() == length
-
-        # Seek and read up to byte #4; it make sense for start to get until 4
-        last_byte = 4
-        for start in range(last_byte + 1):
-            packed_reader.seek(start)
-            assert packed_reader.tell() == start
-            assert packed_reader.read(last_byte - start) == expected_bytestream[start:last_byte]
-            assert packed_reader.tell() == last_byte
-
     # Read 1 byte at a time
     with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
@@ -935,6 +902,73 @@ def test_packed_object_reader():
     with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=1000000)
         assert packed_reader.read() == bytestream[offset:]
+
+
+def test_packed_object_reader_seek(tmp_path):
+    """Test the `PackedObjectReader.seek` method."""
+    bytestream = b'0123456789abcdef'
+    with open(str(tmp_path / 'pack'), mode='wb') as handle:
+        handle.write(bytestream)
+
+    offset = 3
+    length = 5
+    expected_bytestream = bytestream[offset:offset + length]
+
+    with open(str(tmp_path / 'pack'), 'rb') as fhandle:
+        packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
+
+        # Check that it is properly marked as seekable
+        assert packed_reader.seekable
+
+        # Check that whence==2 is not implemented
+        with pytest.raises(NotImplementedError):
+            packed_reader.seek(0, 2)
+
+        # Check that negative values and values > length are not valid
+        with pytest.raises(ValueError):
+            packed_reader.seek(-3)
+        with pytest.raises(ValueError):
+            packed_reader.seek(length + 1)
+
+        # Seek and read all the rest
+        for start in range(length + 1):
+            packed_reader.seek(start)
+            assert packed_reader.tell() == start
+            assert packed_reader.read() == expected_bytestream[start:]
+            assert packed_reader.tell() == length
+
+        # Seek and read up to byte #4; it make sense for start to get until 4
+        last_byte = 4
+        for start in range(last_byte + 1):
+            packed_reader.seek(start)
+            assert packed_reader.tell() == start
+            assert packed_reader.read(last_byte - start) == expected_bytestream[start:last_byte]
+            assert packed_reader.tell() == last_byte
+
+        # Reset the stream
+        packed_reader.seek(0)
+
+        with pytest.raises(ValueError):
+            packed_reader.seek(-3, whence=1)
+
+        with pytest.raises(ValueError):
+            packed_reader.seek(length + 2, whence=1)
+
+        # Seek to a given starting byte and then rewind using whence=1 and a negative offset and read all bytes
+        for start in range(length + 1):
+            packed_reader.seek(start)
+            packed_reader.seek(-start, whence=1)
+            assert packed_reader.tell() == 0
+            assert packed_reader.read() == expected_bytestream
+            assert packed_reader.tell() == length
+
+        # Seek to a given starting byte and then seek an additional 2 bytes forward
+        for start in range(length - 2):
+            packed_reader.seek(start)
+            packed_reader.seek(2, whence=1)
+            assert packed_reader.tell() == start + 2
+            assert packed_reader.read() == expected_bytestream[start + 2:]
+            assert packed_reader.tell() == length
 
 
 def test_packed_object_reader_mode():
@@ -993,7 +1027,6 @@ def test_stream_decompresser():
 
 def test_stream_decompresser_seek():
     """Test the seek (and tell) functionality of the StreamDecompresser."""
-
     original_data = b'0123456789abcdefABCDEF'
     length = len(original_data)
 
@@ -1003,9 +1036,7 @@ def test_stream_decompresser_seek():
     # Check the functionality is disabled
     assert decompresser.seekable
 
-    # Check that whence==1 and whence==2 are not implemented
-    with pytest.raises(NotImplementedError):
-        decompresser.seek(0, 1)
+    # Check that whence==2 is not implemented
     with pytest.raises(NotImplementedError):
         decompresser.seek(0, 2)
 
@@ -1027,6 +1058,31 @@ def test_stream_decompresser_seek():
         assert decompresser.tell() == start
         assert decompresser.read(last_byte - start) == original_data[start:last_byte]
         assert decompresser.tell() == last_byte
+
+    # Reset the stream
+    decompresser.seek(0)
+
+    with pytest.raises(ValueError):
+        decompresser.seek(-3, whence=1)
+
+    # Going past the limit should not raise but simple return the current position, which is the last byte, i.e. length
+    assert decompresser.seek(length + 10, whence=1) == length
+
+    # Seek to a given starting byte and then rewind using whence=1 and a negative offset and read all bytes
+    for start in range(length + 1):
+        decompresser.seek(start)
+        decompresser.seek(-start, whence=1)
+        assert decompresser.tell() == 0
+        assert decompresser.read() == original_data
+        assert decompresser.tell() == length
+
+    # Seek to a given starting byte and then seek an additional 2 bytes forward
+    for start in range(length - 2):
+        decompresser.seek(start)
+        decompresser.seek(2, whence=1)
+        assert decompresser.tell() == start + 2
+        assert decompresser.read() == original_data[start + 2:]
+        assert decompresser.tell() == length
 
 
 def test_decompresser_corrupt():
