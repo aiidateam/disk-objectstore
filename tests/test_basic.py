@@ -294,6 +294,12 @@ def test_exclusive_mode_windows(temp_dir):
 
     This means someone else cannot even open the file in read mode.
     """
+    import win32file
+    import pywintypes
+    import win32con
+
+    overlapped = pywintypes.OVERLAPPED()
+
     fname = os.path.join(temp_dir, 'test_file')
     content = b'sfsfdkl;2fd'
 
@@ -303,21 +309,34 @@ def test_exclusive_mode_windows(temp_dir):
 
     # Now open the file with exclusive locking
     # we need to use os.open
-    fd = os.open(fname, os.O_EXLOCK | os.O_RDONLY)
-    # Should I need to write
-    # fhandle = os.fdopen(fd, 'rb')
+    fd = os.open(fname, os.O_RDONLY)
+    winfd = win32file._get_osfhandle(fd)  # pylint: disable=protected-access
 
+    mode = win32con.LOCKFILE_EXCLUSIVE_LOCK | win32con.LOCKFILE_FAIL_IMMEDIATELY
+    # additional parameters
+    # int : nbytesLow - low-order part of number of bytes to lock
+    # int : nbytesHigh - high-order part of number of bytes to lock
+    # ol=None : PyOVERLAPPED - An overlapped structure
+    # after the first two params: reserved, and nNumberOfBytesToLock
+    # then, overlapped
+    win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
+    
     # I (try to) read the file in a different subprocess
-    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+    try:
         # I assume here that the fname does not contain double quotes
-        subprocess.check_output([sys.executable, '-c', 'open(r"{}", "rb")'.format(os.path.realpath(fname))],
+        output = subprocess.check_output([sys.executable, '-c', 'f=open(r"{}", "rb"); print(f.read()); f.close()'.format(os.path.realpath(fname))],
                                 stderr=subprocess.STDOUT)
-
-    # I should get a PermissionError
-    output = excinfo.value.output or b''  # It could be none
-    assert b'PermissionError' in output
-
-    assert os.read(fd) == content
-
-    # Close the file at the end, important!
-    os.close(fd)
+    except subprocess.CalledProcessError as exc:
+        # I should get a PermissionError
+        output = exc.output or b''  # It could be none
+        assert b'PermissionError' in output
+        read_content = os.fdopen(fd, 'rb', closefd=False).read()
+        assert read_content == content, "Unexpeced content: {}".format(read_content)
+        del read_content
+    else:
+        raise AssertionError("Subprocess should have raised! OUTPUT:\n{}".format(output))
+    finally:
+        # Close the file at the end, important!
+        # If I close, I shouldn't need to unlock
+        #win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
+        os.close(fd)

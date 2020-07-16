@@ -314,11 +314,12 @@ def test_object_writer_not_twice(temp_dir):
     assert 'already tried to store' in str(excinfo.value)
 
 
-@pytest.mark.parametrize('existing_is_locked', [True, False])
+#@pytest.mark.parametrize('existing_is_locked', [True, False])
+@pytest.mark.parametrize('dest_is_open', [True, False])
 @pytest.mark.parametrize('reappears_corrupted', [True, False])
 @pytest.mark.parametrize('trust_existing', [True, False])
 def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-name, too-many-locals, too-many-statements
-        temp_dir, trust_existing, reappears_corrupted, existing_is_locked, monkeypatch
+        temp_dir, trust_existing, reappears_corrupted, dest_is_open, monkeypatch
     ):
     """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object.
 
@@ -368,33 +369,35 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         trust_existing=trust_existing
     )
 
-    def mockreplace(src, dest, mocked_dest, new_bytes_content, lock_file):
+    def mockreplacefail(src, dest, mocked_dest, new_bytes_content, dest_is_open):
         """Replace a file, but if the dest is the mocked destination, before replacing, opens the existing file.
 
         It also rewrites the file with the new_bytes_content beforehand.
 
-        if `lock_file` is True, I also reopen the file after replacing it,
-        and lock it also for reading.
-        NOTE: This is done ONLY on Windows.
-        The file needs to be closed by hand outside!!
-        The FDs to the open locked files are stored in the global
-        variable `LOCKED_FILES_FD`, need to be closed with os.close()
+        If dest_is_open: call replace while the destinaton is open
         """
-        global LOCKED_FILES_FD  # pylint: disable=global-statement
+        #global LOCKED_FILES_FD  # pylint: disable=global-statement
+
+## NOTE: the logic on the LOCK file must be implemented when mocking os.rename
+#  if `lock_file` is True, I also reopen the file after replacing it,
+#         and lock it also for reading.
+#         NOTE: This is done ONLY on Windows.
+#         The file needs to be closed by hand outside!!
+#         The FDs to the open locked files are stored in the global
+#         variable `LOCKED_FILES_FD`, need to be closed with os.close()
 
         if os.path.realpath(dest) == os.path.realpath(mocked_dest):
             # Write back the file, with possibly a different content
             with open(dest, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
 
-                # Call the actual replace function, but while the file is open in read mode
+            # Call the actual replace function, but while the file is open in read mode
+            # This will fail on Windows
+            if dest_is_open:
                 with open(dest, 'rb') as fhandle:
                     os._actual_replace_function(src, dest)  # pylint: disable=protected-access
-                # If asked to lock, and on Windows, reopen as locked
-                # and put the locked file descriptor n the LOCKED_FILES_FD list
-                if lock_file and os.name == 'nt':
-                    fd = os.open(dest, os.O_EXLOCK | os.O_RDONLY)
-                    LOCKED_FILES_FD.append(fd)
+            else:
+                os._actual_replace_function(src, dest)  # pylint: disable=protected-access
         else:
             # It's a different path: just pipe through
             # I renamed this at module load to avoid infinite recursion, see above
@@ -404,22 +407,42 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     monkeypatch.setattr(
         os, 'replace',
         functools.partial(
-            mockreplace, mocked_dest=loose_file, new_bytes_content=new_bytes_content, lock_file=existing_is_locked
+            mockreplacefail, mocked_dest=loose_file, new_bytes_content=new_bytes_content,
+            dest_is_open=dest_is_open
         )
     )
+
+#, lock_file=existing_is_locked
+        #    # If asked to lock, and on Windows, reopen as locked
+        #     # and put the locked file descriptor n the LOCKED_FILES_FD list
+        #     if lock_file and os.name == 'nt':
+        #         import win32file
+        #         import pywintypes
+        #         import win32con
+
+        #         fd = os.open(dest, os.O_RDONLY)
+        #         winfd = win32file._get_osfhandle(fd)  # pylint: disable=protected-access
+        #         mode = win32con.LOCKFILE_EXCLUSIVE_LOCK | win32con.LOCKFILE_FAIL_IMMEDIATELY
+        #         overlapped = pywintypes.OVERLAPPED()
+        #         win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
+        #         LOCKED_FILES_FD.append(fd)
+        #         print('HERE', LOCKED_FILES_FD)
 
     # Let's try to write the function
     with object_writer as fhandle:
         fhandle.write(content)
 
-    if os.name == 'nt' and not trust_existing and reappears_corrupted and existing_is_locked:
+    if os.name == 'nt' and not trust_existing and dest_is_open:
 
-        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open and locked),
+        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open),
         # then we store a duplicate copy.
         duplicates_files = os.listdir(duplicates_folder)
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
         assert duplicates_file.startswith('{}.'.format(hashkey))
+        with open(os.path.join(duplicates_folder, duplicates_file), 'rb') as fhandle:
+            # Check that the duplicate has the right content
+            assert fhandle.read() == content
     else:
         # I would like that on any other OS (POSIX), and
         # in all other cases on Windows (trust_existing if True, or reappears corrupted but is not locked)
@@ -429,19 +452,20 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         duplicates_files = os.listdir(duplicates_folder)
         assert not duplicates_files
 
-    # Make sure to close any open file (this should happen on Windows, with existing_is_locked=True)
-    if existing_is_locked and os.name == 'nt':
-        # Make sure the file (and only one) was locked in this case
-        assert len(LOCKED_FILES_FD) == 1
-        # Close the file (otherwise the test will fail when trying to delete
-        # the temp_dir at the end)
-        os.close(LOCKED_FILES_FD[0])
-        # Empty the list
-        LOCKED_FILES_FD.pop()
-    else:
-        # Just check that the mocked function did not lock any file, if we are
-        # *not* on Windows OR we didn't ask to lock
-        assert not LOCKED_FILES_FD
+
+    # # Make sure to close any open file (this should happen on Windows, with existing_is_locked=True)
+    # if existing_is_locked and os.name == 'nt':
+    #     # Make sure the file (and only one) was locked in this case
+    #     assert len(LOCKED_FILES_FD) == 1
+    #     # Close the file (otherwise the test will fail when trying to delete
+    #     # the temp_dir at the end)
+    #     os.close(LOCKED_FILES_FD[0])
+    #     # Empty the list
+    #     LOCKED_FILES_FD.pop()
+    # else:
+    #     # Just check that the mocked function did not lock any file, if we are
+    #     # *not* on Windows OR we didn't ask to lock
+    #     assert not LOCKED_FILES_FD
 
     # Check the end condition:
     # nothing in the sandbox, nothing new in the loose_folder
@@ -458,9 +482,10 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         # (and the logic for reappears_corrupted is not really triggered)
         assert object_content == corrupted_content
     else:
-        if os.name == 'nt' and not trust_existing and reappears_corrupted:
-            # Here I am just checking the current behavior: if the exception was raised,
-            # the corrupted file is left in place (there isn't much I can do)
+        if os.name == 'nt' and not trust_existing and reappears_corrupted and dest_is_open:
+            # Only in this extreme case (don't trust existing, the file reappears, it is
+            # corrupted, and I couldn't overwrite the dest (loose file) because it was open,
+            # then I'm left with the old content)
             assert object_content == corrupted_content
         else:
             # In all other cases, if I don't trust existing files, the content should have been replaced,
