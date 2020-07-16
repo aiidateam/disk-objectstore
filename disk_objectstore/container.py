@@ -1289,3 +1289,90 @@ class Container:  # pylint: disable=too-many-public-methods
                 # This can happen on Windows if one of the loose objects is still open.
                 # I just ignore, I will remove it in a future call of this method.
                 pass
+
+    def export_to_new_container(
+        self, hashkeys, other_container, to_pack=True, compress=True, target_memory_bytes=100 * 1024 * 1024
+    ):
+        """Export the specified hashkeys to a new container (must be already initialised).
+
+        :param hashkeys: an iterable of hash keys.
+        :param new_container: another Container class into which you want to export the specified hash keys of this
+            container.
+        :param to_pack: if True, write direcly to packs (much more efficient, in general, but requires that no other
+            process is packing, backing up or accessing the pack in some other way).
+        :param compress: if `to_pack` is True, specifies if content should be stored in compressed form. Ignored
+            if `to_pack` is False.
+        :param target_memory_bytes: how much data to store in RAM before dumping to the new container. Larger values
+            allow to read and write in bulk that is more efficient, but of course require more memory.
+            Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
+            only counts the RAM needed for the object content).
+
+        :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
+        """
+        if not to_pack:
+            raise NotImplementedError('Only storing directly to packs currently implemented')
+
+        old_obj_hashkeys = []
+        new_obj_hashkeys = []
+
+        # We load data in this cache as long as the memory usage is < target_memory_bytes
+        # We then flush in 'bulk' to the `other_container`, thus speeding up the process
+        content_cache = {}
+        cache_size = 0
+        with self.get_objects_stream_and_meta(hashkeys) as triplets:
+            for old_obj_hashkey, stream, meta in triplets:
+                if meta['size'] > target_memory_bytes:
+                    # If the object itself is too big, just write it directly
+                    # via streams, bypassing completely the cache. I don't touch the cache in this case,
+                    # maybe it's still almost empty.
+                    old_obj_hashkeys.append(old_obj_hashkey)
+                    # I put this object to the pack, in streamed form, and I store the hash key
+                    new_obj_hashkeys.append(
+                        other_container.add_streamed_objects_to_pack([stream], compress=compress)[0]
+                    )
+                elif cache_size + meta['size'] > target_memory_bytes:
+                    # I were to read the content, I would be filling too much memory - I flush the cache first,
+                    # and transfer the data, before acting on this object.
+
+                    # I create a list of hash keys and the corresponding list of streams (BytesIO objects)
+                    temp_old_hashkeys, stream_list = zip(*content_cache.items())
+
+                    # I put all of them in bulk
+                    temp_new_hashkeys = other_container.add_streamed_objects_to_pack(stream_list, compress=compress)
+
+                    # I update the list of known old (this container) and new (other_container) hash keys
+                    old_obj_hashkeys += temp_old_hashkeys
+                    new_obj_hashkeys += temp_new_hashkeys
+
+                    # Flush the content of the cache
+                    content_cache = {}
+                    cache_size = 0
+
+                    # I add this to the cache for the next round (I know it's going to fit in the memory,
+                    # otherwise I would have processed it directly, bypassing the cache).
+                    content_cache[old_obj_hashkey] = io.BytesIO(stream.read())
+                    # I update the cache size
+                    cache_size += meta['size']
+                else:
+                    # I can add this object to the memory cache, it is not too big.
+                    # I store it as a BytesIO so it still provides the stream methods like `.read`.
+                    # Key old hash key (in this repo); value: the stream
+                    content_cache[old_obj_hashkey] = io.BytesIO(stream.read())
+                    # I update the cache size
+                    cache_size += meta['size']
+
+        # The for loop is finished. I can also go out of the `with` context manager because whatever is in the
+        # cache is in memory. Most probably I still have content in the cache, just flush it,
+        # with the same logic as above.
+
+        # I put all of them in bulk
+        temp_new_hashkeys = other_container.add_streamed_objects_to_pack(stream_list, compress=compress)
+
+        # I update the list of known old (this container) and new (other_container) hash keys
+        old_obj_hashkeys += temp_old_hashkeys
+        new_obj_hashkeys += temp_new_hashkeys
+
+        # Create a mapping from the old to the new hash keys: old_new_obj_hashkey_mapping[old_hashkey] = new_hashkey
+        old_new_obj_hashkey_mapping = dict(zip(old_obj_hashkeys, new_obj_hashkeys))
+
+        return old_new_obj_hashkey_mapping
