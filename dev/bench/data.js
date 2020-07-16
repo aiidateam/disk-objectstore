@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1594903177894,
+  "lastUpdate": 1594903302364,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1557,6 +1557,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.01971294596466424",
             "extra": "mean: 715.6190959999975 msec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5a256e013b16d6a7044f7584114e7261dba5d1f6",
+          "message": "Merge pull request #71 from giovannipizzi/fix_69_efficient_list_all\n\nImprove performance of list_all_objects for packed objects",
+          "timestamp": "2020-07-16T14:37:20+02:00",
+          "tree_id": "4038bcb9cafb4dbb2cf25ee20ef0750f1bbf4912",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/5a256e013b16d6a7044f7584114e7261dba5d1f6"
+        },
+        "date": 1594903301612,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2987029221090085,
+            "unit": "iter/sec",
+            "range": "stddev: 0.1092283337598311",
+            "extra": "mean: 3.347807892 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.5053370846036854,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010148356745714297",
+            "extra": "mean: 1.9788771306666675 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.3249799706114285,
+            "unit": "iter/sec",
+            "range": "stddev: 0.05323003075917984",
+            "extra": "mean: 430.11123219999945 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.472330276511405,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007318237771399916",
+            "extra": "mean: 95.48973090000032 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.280726225731252,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03442638761247181",
+            "extra": "mean: 780.806998333335 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1904478.4400424503,
+            "unit": "iter/sec",
+            "range": "stddev: 9.687666114060676e-7",
+            "extra": "mean: 525.0781415922515 nsec\nrounds: 166723"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2076633.5269556881,
+            "unit": "iter/sec",
+            "range": "stddev: 5.669641770384444e-7",
+            "extra": "mean: 481.54861559323086 nsec\nrounds: 56597"
           }
         ]
       }
