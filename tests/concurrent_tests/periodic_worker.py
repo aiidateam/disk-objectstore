@@ -24,6 +24,8 @@ import psutil
 from disk_objectstore.container import Container, NotExistent
 from disk_objectstore.models import Obj
 
+MAX_RETRIES_NO_PERM = 1000
+
 
 def timestamp():
     """Return a timestamp string to print for logging."""
@@ -118,8 +120,22 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             if not fname.endswith('.sha'):
                 continue
             file_count += 1
-            with open(os.path.join(shared_folder, fname)) as fhandle:
-                chunk_checksums = json.load(fhandle)
+
+            # Retry on Windows if, during the rename, I cannot read the file
+            # This is because renames are atomic, but while renaming the file is completely locked
+            for _ in range(MAX_RETRIES_NO_PERM):
+                try:
+                    with open(os.path.join(shared_folder, fname)) as fhandle:
+                        chunk_checksums = json.load(fhandle)
+                    break
+                except PermissionError:
+                    pass
+                time.sleep(0.01)  # Wait 10 ms and retry to open - probably it is renaming the file
+            else:
+                raise PermissionError(
+                    'Retried {} times but I never could get the content...'.format(MAX_RETRIES_NO_PERM)
+                )
+
             all_checksums.update(chunk_checksums)
         print(
             '[{} {}] {} object checksums read from {} files ({}).'.format(
