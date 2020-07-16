@@ -842,6 +842,63 @@ def test_same_object_loose_and_pack(temp_container):
     assert counts['pack_files'] == 1
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
+@pytest.mark.parametrize('compress', [True, False])
+@pytest.mark.parametrize('open_only', [True, False])
+def test_locked_object_while_packing(  # pylint: disable=invalid-name
+        temp_container, lock_file_on_windows, open_only, compress
+    ):
+    """Check that the information on size is reliable.
+
+    :param open_only: if True, just open; if False, lock also for reading.
+    """
+    content1 = b'2332'
+    content2 = b'wegaewf'
+
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 0
+
+    hashkey1 = temp_container.add_object(content1)
+    hashkey2 = temp_container.add_object(content2)
+
+    counts = temp_container.count_objects()
+    assert counts['packed'] == 0
+    assert counts['loose'] == 2
+
+    file_descriptor = os.open(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        os.O_RDONLY
+    )
+    try:
+        if not open_only:
+            lock_file_on_windows(file_descriptor)
+
+        temp_container.pack_all_loose(compress=compress)
+    finally:
+        # Should also unlock
+        os.close(file_descriptor)
+
+    counts = temp_container.count_objects()
+    # Both should have been packed if the loose object was simply open.
+    # Otherwise, if it was locked, I couldn't do anything so it's still loose
+    assert counts['packed'] == (2 if open_only else 1)
+
+    # Check I can get the content
+    assert temp_container.get_object_content(hashkey1) == content1
+    assert temp_container.get_object_content(hashkey2) == content2
+
+    # Let's pack again, no locks
+    temp_container.pack_all_loose(compress=compress)
+    counts = temp_container.count_objects()
+    # Now should be both packed
+    assert counts['packed'] == 2
+
+    # Check I can get the content
+    assert temp_container.get_object_content(hashkey1) == content1
+    assert temp_container.get_object_content(hashkey2) == content2
+
+
 @pytest.mark.parametrize('compress_packs', [True, False])
 def test_sizes(temp_container, generate_random_data, compress_packs):
     """Check that the information on size is reliable."""

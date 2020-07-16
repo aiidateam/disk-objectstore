@@ -1073,7 +1073,6 @@ class Container:  # pylint: disable=too-many-public-methods
             last_pack_int_id = pack_int_id
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
-                loose_objects_this_pack = []
                 # Inner loop: continue until when there is a file, or
                 # if we need to change pack (in this case `break` is called)
                 while loose_objects:
@@ -1091,25 +1090,28 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # Get next hash key to process
                     loose_hashkey = loose_objects.pop()
-                    # Keep track of it for later deletion
-                    loose_objects_this_pack.append(loose_hashkey)
 
                     obj = Obj(hashkey=loose_hashkey)
                     obj.pack_id = pack_int_id
                     obj.compressed = compress
                     obj.offset = pack_handle.tell()
-                    with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
-                        # The second parameter is `None` since we are not computing the hash
-                        # We can instead pass the hash algorithm and assert that it is correct
-                        obj.size, new_hashkey = self._write_data_to_packfile(
-                            pack_handle=pack_handle, read_handle=loose_handle, compress=compress, hash_type=hash_type
-                        )
-                        if hash_type and new_hashkey != loose_hashkey:
-                            raise InconsistentContent(
-                                "Error when packing object '{}': re-computed hash is different! '{}'".format(
-                                    loose_hashkey, new_hashkey
-                                )
+                    try:
+                        with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
+                            # The second parameter is `None` since we are not computing the hash
+                            # We can instead pass the hash algorithm and assert that it is correct
+                            obj.size, new_hashkey = self._write_data_to_packfile(
+                                pack_handle=pack_handle, read_handle=loose_handle, compress=compress, hash_type=hash_type
                             )
+                    except PermissionError:
+                        # This might happen if the file is being written and is locked.
+                        # In this case, don't pack this file. We will pack it in a future call.
+                        continue
+                    if hash_type and new_hashkey != loose_hashkey:
+                        raise InconsistentContent(
+                            "Error when packing object '{}': re-computed hash is different! '{}'".format(
+                                loose_hashkey, new_hashkey
+                            )
+                        )
                     obj.length = pack_handle.tell() - obj.offset
                     session.add(obj)
 
@@ -1126,7 +1128,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # If we are here, things should be guaranteed by SQLite to be written to disk.
             # Then, it would be safe to already do some clean up of loose objects that are now packed,
             # and by doing it here we would do it after each pack.
-            # This would mean removing objects that are in `loose_objects_this_pack`.
+            # This would mean keeping track of the loose objects added to packs, and removing them.
             # HOWEVER, while this would work fine on Linux, there are concurrency issues both
             # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
             # and deletion is deferred to a manual clean-up operation.

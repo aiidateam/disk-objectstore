@@ -289,20 +289,11 @@ def test_rename_when_existing(temp_dir):
 
 # Run only on Windows where we want to check the locking behavior
 @pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
-def test_exclusive_mode_windows(temp_dir):
+def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
     """Test that indeed I can open a file with exclusive lock on Windows.
 
     This means someone else cannot even open the file in read mode.
     """
-    # This should run on Windows, but the linter runs on Ubuntu where these modules
-    # do not exist. Therefore, ignore errors in this function.
-    # pylint: disable=import-error
-    import win32file
-    import pywintypes
-    import win32con
-
-    overlapped = pywintypes.OVERLAPPED()
-
     fname = os.path.join(temp_dir, 'test_file')
     content = b'sfsfdkl;2fd'
 
@@ -313,16 +304,7 @@ def test_exclusive_mode_windows(temp_dir):
     # Now open the file with exclusive locking
     # we need to use os.open
     fd = os.open(fname, os.O_RDONLY)
-    winfd = win32file._get_osfhandle(fd)  # pylint: disable=protected-access
-
-    mode = win32con.LOCKFILE_EXCLUSIVE_LOCK | win32con.LOCKFILE_FAIL_IMMEDIATELY
-    # additional parameters
-    # int : nbytesLow - low-order part of number of bytes to lock
-    # int : nbytesHigh - high-order part of number of bytes to lock
-    # ol=None : PyOVERLAPPED - An overlapped structure
-    # after the first two params: reserved, and nNumberOfBytesToLock
-    # then, overlapped
-    win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
+    lock_file_on_windows(fd)
 
     # I (try to) read the file in a different subprocess
     try:

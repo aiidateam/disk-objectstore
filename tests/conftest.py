@@ -74,3 +74,42 @@ def generate_random_data():
                 random.setstate(saved_state)
 
     yield _generate_random_data
+
+
+@pytest.fixture(scope='function')
+def lock_file_on_windows():
+    """
+    Return a function that, given a file desciptor (as returned by ``os.open``, locks it (on Windows)
+    also for read-only opening).
+
+    Note: The returned function can be called only on Windows.
+    """
+
+    def _locker(file_descriptor):
+        """Given a file descriptor, it locks.
+
+        .. note:: This function asserts if we are not on Windows.
+
+        :param file_descriptor: a file descriptor, opened with `os.open()`
+        """
+        assert os.name == 'nt', 'This fixture can only be used on Windows'
+
+        # This should run on Windows, but the linter runs on Ubuntu where these modules
+        # do not exist. Therefore, ignore errors in this function.
+        # pylint: disable=import-error
+        import win32file
+        import pywintypes
+        import win32con
+
+        winfd = win32file._get_osfhandle(file_descriptor)  # pylint: disable=protected-access
+        mode = win32con.LOCKFILE_EXCLUSIVE_LOCK | win32con.LOCKFILE_FAIL_IMMEDIATELY
+        overlapped = pywintypes.OVERLAPPED()
+        # additional parameters
+        # int : nbytesLow - low-order part of number of bytes to lock
+        # int : nbytesHigh - high-order part of number of bytes to lock
+        # ol=None : PyOVERLAPPED - An overlapped structure
+        # after the first two params: reserved, and nNumberOfBytesToLock
+        # then, overlapped
+        win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
+
+    yield _locker
