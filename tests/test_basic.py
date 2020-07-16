@@ -294,6 +294,9 @@ def test_exclusive_mode_windows(temp_dir):
 
     This means someone else cannot even open the file in read mode.
     """
+    # This should run on Windows, but the linter runs on Ubuntu where these modules
+    # do not exist. Therefore, ignore errors in this function.
+    # pylint: disable=import-error
     import win32file
     import pywintypes
     import win32con
@@ -320,21 +323,23 @@ def test_exclusive_mode_windows(temp_dir):
     # after the first two params: reserved, and nNumberOfBytesToLock
     # then, overlapped
     win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
-    
+
     # I (try to) read the file in a different subprocess
     try:
         # I assume here that the fname does not contain double quotes
-        output = subprocess.check_output([sys.executable, '-c', 'f=open(r"{}", "rb"); print(f.read()); f.close()'.format(os.path.realpath(fname))],
-                                stderr=subprocess.STDOUT)
+        output = subprocess.check_output([
+            sys.executable, '-c', 'f=open(r"{}", "rb"); print(f.read()); f.close()'.format(os.path.realpath(fname))
+        ],
+                                         stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
         # I should get a PermissionError
         output = exc.output or b''  # It could be none
         assert b'PermissionError' in output
         read_content = os.fdopen(fd, 'rb', closefd=False).read()
-        assert read_content == content, "Unexpeced content: {}".format(read_content)
+        assert read_content == content, 'Unexpeced content: {}'.format(read_content)
         del read_content
     else:
-        raise AssertionError("Subprocess should have raised! OUTPUT:\n{}".format(output))
+        raise AssertionError('Subprocess should have raised! OUTPUT:\n{}'.format(output))
     finally:
         # Close the file at the end, important!
         # If I close, I shouldn't need to unlock

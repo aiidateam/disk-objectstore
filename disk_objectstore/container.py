@@ -1284,6 +1284,3 @@ class Container:  # pylint: disable=too-many-public-methods
                 # This can happen on Windows if one of the loose objects is still open.
                 # I just ignore, I will remove it in a future call of this method.
                 pass
-
-        # TODO: implement logic to check, remove duplicates if the corresponding existing
-        # (loose or packed) file exists and is correct, otherwise replace, or show an error.
