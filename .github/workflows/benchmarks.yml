@@ -49,4 +49,5 @@ jobs:
         # Show alert with commit comment on detecting possible performance regression
         alert-threshold: '200%'
         comment-on-alert: true
-        fail-on-alert: true
+        # For now I don't fail on alert since there is quite some oscillation on the results
+        # fail-on-alert: true
