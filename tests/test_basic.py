@@ -285,3 +285,39 @@ def test_rename_when_existing(temp_dir):
     with open(fname, 'rb') as fhandle:
         read_content = fhandle.read()
         assert read_content == new_content
+
+
+# Run only on Windows where we want to check the locking behavior
+@pytest.mark.skipif(os.name != 'nt')
+def test_exclusive_mode_windows(temp_dir):
+    """Test that indeed I can open a file with exclusive lock on Windows.
+
+    This means someone else cannot even open the file in read mode.
+    """
+    fname = os.path.join(temp_dir, 'test_file')
+    content = b'sfsfdkl;2fd'
+
+    # Write something to the file
+    with open(fname, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Now open the file with exclusive locking
+    # we need to use os.open
+    fd = os.open(fname, os.O_EXLOCK | os.O_RDONLY)
+    # Should I need to write
+    # fhandle = os.fdopen(fd, 'rb')
+
+    # I (try to) read the file in a different subprocess
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        # I assume here that the fname does not contain double quotes
+        subprocess.check_output([sys.executable, '-c', 'open(r"{}", "rb")'.format(os.path.realpath(fname))],
+                                stderr=subprocess.STDOUT)
+
+    # I should get a PermissionError
+    output = excinfo.value.output or b''  # It could be none
+    assert b'PermissionError' in output
+
+    assert os.read(fd) == content
+
+    # Close the file at the end, important!
+    os.close(fd)
