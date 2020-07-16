@@ -288,7 +288,7 @@ def test_rename_when_existing(temp_dir):
 
 
 # Run only on Windows where we want to check the locking behavior
-@pytest.mark.skipif(os.name != 'nt')
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
 def test_exclusive_mode_windows(temp_dir):
     """Test that indeed I can open a file with exclusive lock on Windows.
 
