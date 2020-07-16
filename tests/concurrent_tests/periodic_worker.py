@@ -155,10 +155,10 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
                     metas[obj_hashkey] = {'type': 'missing'}  # I don't put all the rest for simplicity
-                except PermissionError as exc:
+                except (PermissionError, FileExistsError) as exc:
                     # This sometimes happen on Windows (I think during packing), see issue #37
                     # The error message typically shows the error and the path, showing if it's loose
-                    print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+                    print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
 
                     # Before re-raising, I try to get the same object again, to see if this now works and is packed
                     # (or it crashes again!)
@@ -206,10 +206,10 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         for obj_hashkey in all_hashkeys:
             try:
                 content = container.get_object_content(obj_hashkey)
-            except PermissionError as exc:
+            except (PermissionError, FileExistsError) as exc:
                 # This sometimes happen on Windows (I think during packing), see issue #37
                 # The error message typically shows the error and the path, showing if it's loose
-                print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+                print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
 
                 # Before re-raising, I try to get the same object again, to see if this now works and is packed
                 # (or it crashes again!)

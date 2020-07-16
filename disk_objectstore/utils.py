@@ -239,7 +239,7 @@ class ObjectWriter:
                     # the same file
                     try:
                         os.rename(self._obj_path, dest_loose_object)
-                    except PermissionError:
+                    except FileExistsError:
                         # NOTE! This branch only happens on Windows, when the
                         # file with the same name was opened in the meantime by someone else...
                         if self._trust_existing:

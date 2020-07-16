@@ -212,3 +212,76 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
 
     # The file should not be there on any platform, now
     assert not os.path.isfile(fname)
+
+
+def test_rename_when_existing(temp_dir):
+    """Check the different behavior of os.rename.
+
+    On POSIX: I can delete silently rename even if open.
+    On Windows: I cannot rename a file to a location where a file already exists.
+    """
+    fname = os.path.join(temp_dir, 'test_file')
+    fname_replacement = os.path.join(temp_dir, 'test_file_repl')
+
+    content = b'rfr23ewv3wg4w'
+    first_part_len = 4
+
+    new_content = b'NEWFILECONTENT'
+
+    # Write something to the file
+    with open(fname, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Write something to the file
+    with open(fname_replacement, 'wb') as fhandle:
+        fhandle.write(new_content)
+
+    # Now open again the file
+    with open(fname, 'rb') as fhandle:
+        read_content_pre = fhandle.read(first_part_len)
+
+        # I (try to) rename the file where the dest is the file that is open
+        try:
+            os.rename(fname_replacement, fname)
+        except FileExistsError:
+            # This should happen only on Windows
+            assert os.name == 'nt', 'I should get a FileExistsError only on Windows!'
+
+            # The source should still be there
+            assert os.path.exists(fname_replacement)
+            # I continue
+        else:
+            assert os.name == 'posix', 'I should be able to rername a file to an open destination on POSIX!'
+
+            # The source should still not be there anymore
+            assert not os.path.exists(fname_replacement)
+
+        # Read the rest. On Windows, it should still be the original,
+        # unreplaced file. On POSIX, it should be replaced, but I should
+        # still be reading the original file.
+        read_content = read_content_pre + fhandle.read()
+        assert read_content == content
+
+    # I reopen the file
+    with open(fname, 'rb') as fhandle:
+        read_content = fhandle.read()
+        if os.name == 'nt':
+            # On Windows I should still get the old content
+            assert read_content == content
+        else:
+            # On POSIX it should be the new content
+            assert read_content == new_content
+
+    # I remove and replace the file on Windows to check that
+    # I can indeed replace it
+    if os.name == 'nt':
+        os.remove(fname)
+        os.rename(fname_replacement, fname)
+
+    # Old file should not be there on any platform
+    assert not os.path.exists(fname_replacement)
+
+    # Now I should have the new file on any platform
+    with open(fname, 'rb') as fhandle:
+        read_content = fhandle.read()
+        assert read_content == new_content
