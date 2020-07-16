@@ -920,21 +920,38 @@ class Container:  # pylint: disable=too-many-public-methods
         This function might be slow if there are many loose objects!
         Use only if needed.
         """
-        yield_per_size = 500
+        yield_per_size = 1000
 
         # We get all objects that are loose, create a set
         loose_objects = set(self._list_loose())
 
         # Let us initialise a session
         session = self._get_cached_session()
-        # Use yield_per in order to avoid to fill too much memory
-        for res in session.query(Obj).with_entities(Obj.hashkey).yield_per(yield_per_size).all():
-            # Pop out from the loose_objects set if it's already packed
-            # (as having both a loose and a packed version is legal, but we want to list it only once)
-            loose_objects.difference_update([res[0]])
-            yield res[0]
 
-        # What is left are the loose objects that are not
+        # This variable stored the last PK that we saw. We are assuming that PKs are always positive integers.
+        # NOTE: We don't use limit+offset, but a filter on the last PK being > than the last PK seen.
+        # In this way, we don't risk to miss objects if an object is deleted while we are iterating.
+        # We could still miss objects if an object is recreated after deletion and it re-uses an old, unused PK.
+        # In any case, we are working in WAL mode, and I think it's ok not to report an object that was created
+        # after this call was called. It would be bad instead to miss an object that has always existed
+        last_pk = -1
+        while True:
+            results_chunk = session.query(Obj).filter(Obj.id > last_pk).order_by(
+                Obj.id
+            ).limit(yield_per_size).with_entities(Obj.id, Obj.hashkey).all()
+
+            for _, hashkey in results_chunk:
+                # I need to use a comma because I want to create a tuple
+                loose_objects.difference_update((hashkey,))
+                yield hashkey
+
+            if results_chunk:
+                last_pk = results_chunk[-1][0]
+            else:
+                # No more packed objects
+                break
+
+        # What is left are the loose objects that are not in the packs
         for hashkey in loose_objects:
             yield hashkey
 
