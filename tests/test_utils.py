@@ -502,7 +502,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name, to
 
     # Let's check the content of the file - this should never have changed from what we wrote at the beginning
     with open(loose_file, 'rb') as fhandle:
-        assert loose_file.read() == new_bytes_content
+        assert fhandle.read() == new_bytes_content
 
 
 @pytest.mark.parametrize('dest_is_open', [True, False])
