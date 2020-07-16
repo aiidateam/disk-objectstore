@@ -92,6 +92,16 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         return os.path.join(self._folder, 'packs')
 
+    def _get_duplicates_folder(self):
+        """Return the path to the folder that will host the duplicate loose objects that couldn't be written.
+
+        This should happen only in race conditions on Windows. See `utils.ObjectWriter.__exit__` for its usage, and
+        `utils._store_duplicate_copy`.
+
+        It is a subfolder of the container folder.
+        """
+        return os.path.join(self._folder, 'duplicates')
+
     def _get_config_file(self):
         """Return the path to the container config file."""
         return os.path.join(self._folder, 'config.json')
@@ -231,8 +241,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 json.load(fhandle)
         except (ValueError, OSError, IOError):
             return False
-        # I also check that the three folders exist
-        for folder in [self._get_pack_folder(), self._get_loose_folder(), self._get_sandbox_folder()]:
+        # I also check that the four sub-folders exist
+        subfolders = [
+            self._get_pack_folder(),
+            self._get_loose_folder(),
+            self._get_duplicates_folder(),
+            self._get_sandbox_folder()
+        ]
+        for folder in subfolders:
             if not os.path.exists(folder):
                 return False
         return True
@@ -294,7 +310,12 @@ class Container:  # pylint: disable=too-many-public-methods
                 fhandle
             )
 
-        for folder in [self._get_pack_folder(), self._get_loose_folder(), self._get_sandbox_folder()]:
+        for folder in [
+            self._get_pack_folder(),
+            self._get_loose_folder(),
+            self._get_duplicates_folder(),
+            self._get_sandbox_folder()
+        ]:
             os.makedirs(folder)
 
         self._get_session(create=True)
@@ -756,6 +777,7 @@ class Container:  # pylint: disable=too-many-public-methods
             sandbox_folder=self._get_sandbox_folder(),
             loose_folder=self._get_loose_folder(),
             loose_prefix_len=self.loose_prefix_len,
+            duplicates_folder=self._get_duplicates_folder(),
             hash_type=self.hash_type
         )
 
@@ -1262,3 +1284,6 @@ class Container:  # pylint: disable=too-many-public-methods
                 # This can happen on Windows if one of the loose objects is still open.
                 # I just ignore, I will remove it in a future call of this method.
                 pass
+
+        # TODO: implement logic to check, remove duplicates if the corresponding existing
+        # (loose or packed) file exists and is correct, otherwise replace, or show an error.
