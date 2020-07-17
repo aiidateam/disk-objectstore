@@ -1040,20 +1040,25 @@ def test_stream_decompresser_seek():
     with pytest.raises(NotImplementedError):
         decompresser.seek(0, 2)
 
-    # Check that negative values and values > length are not valid
+    # Check that negative values are not valid
     with pytest.raises(ValueError):
         decompresser.seek(-3)
 
     # Seek and read all the rest; test also going beyond the length - in this case, I expect to get zero bytes returned
     for start in range(length + 10):
+        # These are often backward seeks
         decompresser.seek(start)
         assert decompresser.tell() == min(start, length)  # Never goes beyond length
         assert decompresser.read() == original_data[start:]
         assert decompresser.tell() == length
 
+    # Seek back to zero
+    decompresser.seek(0)
+
     # Seek and read up to byte #4; it make sense for start to get until 6
     last_byte = 6
     for start in range(last_byte + 1):
+        # At least the first one is a forward seek
         decompresser.seek(start)
         assert decompresser.tell() == start
         assert decompresser.read(last_byte - start) == original_data[start:last_byte]

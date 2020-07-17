@@ -525,8 +525,11 @@ class StreamDecompresser:
             self._pos = 0
             return 0
 
-        # Go back to zero
-        self.seek(0)
+        if target < self.tell():
+            # I cannot go backwards. In this case, I am forced to go back to zero and restart
+            # (I always know how to go back to zero). Otherwise, I just continue from where I am.
+            self.seek(0)
+
         # Read target bytes, but at most `read_chunk_size` at a time to avoid memory overflow
         while self.tell() < target:
             content = self.read(min(read_chunk_size, target - self.tell()))
