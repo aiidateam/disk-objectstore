@@ -10,8 +10,9 @@ import zlib
 
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
-from sqlalchemy import create_engine, event
+from enum import Enum
 
+from sqlalchemy import create_engine, event
 from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
 
@@ -23,6 +24,13 @@ from .utils import (
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
+
+
+class ObjectType(Enum):
+    """Enum that describes the various types of an objec (as returned in ``meta['type']``)."""
+    LOOSE = 'loose'
+    PACKED = 'packed'
+    MISSING = 'missing'
 
 
 class Container:  # pylint: disable=too-many-public-methods
@@ -473,7 +481,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     last_open_file = open(pack_path, mode='rb')
                 for metadata in pack_metadata:
                     meta = {
-                        'type': 'packed',
+                        'type': ObjectType.PACKED,
                         'size': metadata.size,
                         'pack_id': pack_int_id,
                         'pack_compressed': metadata.compressed,
@@ -507,7 +515,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # I do not use os.path.getsize in case the file has just
                     # been deleted by a concurrent writer
                     meta = {
-                        'type': 'loose',
+                        'type': ObjectType.LOOSE,
                         'size': os.fstat(last_open_file.fileno()).st_size,
                         'pack_id': None,
                         'pack_compressed': None,
@@ -520,7 +528,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # This will also raise a FileNotFoundError if the file does not exist
                     size = os.path.getsize(obj_path)
                     meta = {
-                        'type': 'loose',
+                        'type': ObjectType.LOOSE,
                         'size': size,
                         'pack_id': None,
                         'pack_compressed': None,
@@ -580,7 +588,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     for metadata in pack_metadata:
                         meta = {
-                            'type': 'packed',
+                            'type': ObjectType.PACKED,
                             'size': metadata.size,
                             'pack_id': pack_int_id,
                             'pack_compressed': metadata.compressed,
@@ -605,7 +613,7 @@ class Container:  # pylint: disable=too-many-public-methods
             if really_not_found and not skip_if_missing:
                 for missing_hashkey in really_not_found:
                     meta = {
-                        'type': 'missing',
+                        'type': ObjectType.MISSING,
                         'size': None,
                         'pack_id': None,
                         'pack_compressed': None,
@@ -684,8 +692,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :param hashkeys: a list of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
-            (i.e., neither packed nor loose). If False, return them (``meta['type']`` will be the
-            string ``none`` in this case).
+            (i.e., neither packed nor loose). If False, return them (``meta['type']`` will have value
+            ObjectType.MISSING in this case).
             In this latter case, the length of the generator returned by this context
             manager has always the same length as the input ``hashkeys`` list.
         """
@@ -712,7 +720,7 @@ class Container:  # pylint: disable=too-many-public-methods
             assert counter == 1, 'There is more than one item returned by get_objects_stream_and_meta'
             assert obj_hashkey == hashkey
 
-            if meta['type'] == 'missing':
+            if meta['type'] == ObjectType.MISSING:
                 raise NotExistent('No object with hash key {}'.format(hashkey))
 
             return meta
@@ -1375,3 +1383,74 @@ class Container:  # pylint: disable=too-many-public-methods
         old_new_obj_hashkey_mapping = dict(zip(old_obj_hashkeys, new_obj_hashkeys))
 
         return old_new_obj_hashkey_mapping
+
+    def validate(self):
+        """Perform a number of validations on the container content, to make sure it is not corrupt."""
+        # TODO: decide if to raise at the first error or to collect them and return all.
+        from .exceptions import WrongHash, WrongSize, OverlappingObjects
+
+        _CHUNKSIZE = 524288
+        hash_class = get_hash(self.hash_type)
+
+        with self.get_objects_stream_and_meta(self.list_all_objects()) as triplets:
+            for obj_hashkey, stream, meta in triplets:
+                hasher = hash_class()
+                computed_size = 0
+                while True:
+                    next_chunk = stream.read(_CHUNKSIZE)
+                    if not next_chunk:
+                        # Empty returned value: EOF
+                        break
+                    hasher.update(next_chunk)
+                    computed_size += len(next_chunk)
+                computed_hash = hasher.hexdigest()
+
+                if meta['type'] == ObjectType.PACKED and computed_size != meta['size']:
+                    raise WrongSize(
+                        "Object '{}' has expected size {} but it is {}".format(
+                            obj_hashkey, meta['size'], computed_size
+                        )
+                    )
+
+                if computed_hash != obj_hashkey:
+                    raise WrongHash("Object '{}' has instead hash '{}'".format(obj_hashkey, computed_hash))
+
+        session = self._get_cached_session()
+        pack_ids = sorted(set(res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()))
+
+        yield_per_size = 1000
+
+        for pack_id in pack_ids:
+            current_pos = 0
+
+            current_db_offset = 0
+            while True:
+                results_chunk = session.query(Obj).filter(Obj.pack_id == pack_id).order_by(
+                    Obj.offset
+                ).with_entities(Obj.offset, Obj.length).limit(yield_per_size).offset(current_db_offset).all()
+
+                if results_chunk:
+                    for object_offset, object_length in results_chunk:
+                        if object_offset < current_pos:
+                            raise OverlappingObjects(
+                                'current_pos: {}, object_offset: {}, pack_id: {}'.format(
+                                    current_pos, object_offset, pack_id
+                                )
+                            )
+                        elif object_offset > current_pos:
+                            print('Hole in range {}-{} in pack {}'.format(current_pos, object_offset, pack_id))
+                        current_pos = object_offset + object_length
+                    current_db_offset += len(results_chunk)
+                else:
+                    # No more packed objects
+                    break
+
+            this_pack_size = os.path.getsize(self._get_pack_path_from_pack_id(pack_id))
+            if current_pos > this_pack_size:
+                raise OverlappingObjects(
+                    'current_pos: {} beyond pack file size {}, pack_id: {}'.format(
+                        current_pos, this_pack_size, pack_id
+                    )
+                )
+            elif current_pos < this_pack_size:
+                print('Pack {} can be truncated ({} vs {})'.format(pack_id, current_pos, this_pack_size))

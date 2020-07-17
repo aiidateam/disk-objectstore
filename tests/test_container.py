@@ -12,7 +12,7 @@ import pathlib
 import psutil
 import pytest
 
-from disk_objectstore import Container
+from disk_objectstore import Container, ObjectType
 from disk_objectstore import utils
 import disk_objectstore.exceptions as exc
 
@@ -655,12 +655,12 @@ def test_validation_while_packing(temp_container, compress, corrupt, validate_ob
         with pytest.raises(exc.InconsistentContent):
             temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
         # hashkey2 should have been left as 'loose'. Hashkey1 could be either packed or loose, so we don't check.
-        assert temp_container.get_object_meta(hashkey2)['type'] == 'loose'
+        assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.LOOSE
     else:
         temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
         # Both should have been packed
-        assert temp_container.get_object_meta(hashkey1)['type'] == 'packed'
-        assert temp_container.get_object_meta(hashkey2)['type'] == 'packed'
+        assert temp_container.get_object_meta(hashkey1)['type'] == ObjectType.PACKED
+        assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.PACKED
 
     # Check content
     assert temp_container.get_object_content(hashkey1) == content1
@@ -1193,7 +1193,7 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
         hashkey_packed: {
             'content': content_packed,
             'meta': {
-                'type': 'packed',
+                'type': ObjectType.PACKED,
                 'size': len(content_packed),
                 'pack_id': 0,  # First pack, it's a new container
                 'pack_compressed': compress,
@@ -1204,7 +1204,7 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
         hashkey_loose: {
             'content': content_loose,
             'meta': {
-                'type': 'loose',
+                'type': ObjectType.LOOSE,
                 'size': len(content_loose),
                 'pack_id': None,
                 'pack_compressed': None,
@@ -1218,7 +1218,7 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
     expected_skip_missing_false[hashkey_missing] = {
         'content': None,
         'meta': {
-            'type': 'missing',
+            'type': ObjectType.MISSING,
             'size': None,
             'pack_id': None,
             'pack_compressed': None,
@@ -1284,7 +1284,7 @@ def test_stream_meta_single(temp_container, compress):
         hashkey_packed: {
             'content': content_packed,
             'meta': {
-                'type': 'packed',
+                'type': ObjectType.PACKED,
                 'size': len(content_packed),
                 'pack_id': 0,  # First pack, it's a new container
                 'pack_compressed': compress,
@@ -1295,7 +1295,7 @@ def test_stream_meta_single(temp_container, compress):
         hashkey_loose: {
             'content': content_loose,
             'meta': {
-                'type': 'loose',
+                'type': ObjectType.LOOSE,
                 'size': len(content_loose),
                 'pack_id': None,
                 'pack_compressed': None,
@@ -1553,7 +1553,7 @@ def test_simulate_concurrent_packing_multiple_meta_only(temp_container, compress
             # In the first step, I always pack the rest
 
             # Check that this is a loose object
-            assert meta['type'] == 'loose'
+            assert meta['type'] == ObjectType.LOOSE
             temp_container.pack_all_loose(compress=compress)
             # Remove loose files
             temp_container.clean_storage()
@@ -1561,7 +1561,7 @@ def test_simulate_concurrent_packing_multiple_meta_only(temp_container, compress
             # This should be the other object
             # This was loose when get_objects_stream_and_meta was called, but was packed in the meantime
             # I should still be able to get it correctly and discover it's packed
-            assert meta['type'] == 'packed'
+            assert meta['type'] == ObjectType.PACKED
         else:
             # Should not happen!
             raise ValueError('There should be only two objects!')
@@ -1662,7 +1662,7 @@ def test_seek_tell(temp_container, compress):
 
     # Check that the seek and tell method work for loose objects
     with temp_container.get_object_stream_and_meta(hashkey) as (fhandle, meta):
-        assert meta['type'] == 'loose'
+        assert meta['type'] == ObjectType.LOOSE
         fhandle.seek(seek_pos)
         assert fhandle.tell() == seek_pos
         read_data = fhandle.read(read_length)
@@ -1674,7 +1674,7 @@ def test_seek_tell(temp_container, compress):
 
     # Check that the seek and tell method work for packed objects (either compressed or not)
     with temp_container.get_object_stream_and_meta(hashkey) as (fhandle, meta):
-        assert meta['type'] == 'packed'
+        assert meta['type'] == ObjectType.PACKED
         assert meta['pack_compressed'] == compress
         fhandle.seek(seek_pos)
         assert fhandle.tell() == seek_pos
@@ -1694,7 +1694,7 @@ def test_get_objects_meta_to_dict(temp_container):
     hashkeys = list(expected_sizes)
     meta_dict = dict(temp_container.get_objects_meta(hashkeys))
     # Check tha the dict contains the right data
-    assert all(meta['type'] == 'loose' for meta in meta_dict.values())
+    assert all(meta['type'] == ObjectType.LOOSE for meta in meta_dict.values())
 
     assert expected_sizes == {hashkey: meta['size'] for hashkey, meta in meta_dict.items()}
 
@@ -1878,3 +1878,31 @@ def test_export_to_pack(temp_container, compress_source, compress_dest, target_m
 
         # close before exiting the context manager, so files are closed.
         other_container.close()
+
+
+@pytest.mark.parametrize('compress', [True, False])
+def test_validate(temp_container, compress):
+    """Test the validation function."""
+    obj1 = b'324r3w'  # Will be packed (from loose)
+    obj2 = b'jklf2wv'  # Will be loose
+    obj3 = b'9z0vx0'  # Will be stored directly packed
+    obj4 = b'jkljkljlk'  # Will be stored directly packed
+
+    # An empy container should be valid, should not raise nor print
+    temp_container.validate()
+
+    hashkey1 = temp_container.add_object(obj1)
+    temp_container.pack_all_loose(compress=compress)
+    hashkey2 = temp_container.add_object(obj2)
+    hashkey3 = temp_container.add_objects_to_pack([obj3])[0]
+
+    # Should not raise nor print
+    temp_container.validate()
+
+    # Add the same object - this will create a file that can be truncated and the validate() function should print
+    temp_container.add_objects_to_pack([obj3])  #[0]
+    temp_container.validate()
+
+    hashkey4 = temp_container.add_objects_to_pack([obj4])[0]
+    # The previous print should be converted from 'can be truncated' to 'there is a hole'
+    temp_container.validate()

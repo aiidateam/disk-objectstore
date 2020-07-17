@@ -21,7 +21,7 @@ import time
 import click
 import psutil
 
-from disk_objectstore.container import Container, NotExistent
+from disk_objectstore.container import Container, NotExistent, ObjectType
 from disk_objectstore.models import Obj
 
 MAX_RETRIES_NO_PERM = 1000
@@ -170,7 +170,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                         metas[obj_hashkey] = meta
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
-                    metas[obj_hashkey] = {'type': 'missing'}  # I don't put all the rest for simplicity
+                    metas[obj_hashkey] = {'type': ObjectType.MISSING}  # I don't put all the rest for simplicity
                 except (PermissionError, FileExistsError) as exc:
                     # This sometimes happen on Windows (I think during packing), see issue #37
                     # The error message typically shows the error and the path, showing if it's loose
