@@ -17,10 +17,10 @@ from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
 from .utils import (
-    HashWriterWrapper, ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext,
-    safe_flush_to_disk
+    ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext,
+    safe_flush_to_disk, get_hash
 )
-from .exceptions import NotExistent, NotInitialised
+from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
 
@@ -955,7 +955,7 @@ class Container:  # pylint: disable=too-many-public-methods
         for hashkey in loose_objects:
             yield hashkey
 
-    def _write_data_to_packfile(self, pack_handle, read_handle, compress):
+    def _write_data_to_packfile(self, pack_handle, read_handle, compress, hash_type=None):
         """Append data, read from read_handle until it ends, to the correct packfile.
 
         Return the number of bytes READ (note that this will be different
@@ -972,10 +972,16 @@ class Container:  # pylint: disable=too-many-public-methods
         :param read_handle: a file-like object to read from (must be a binary stream, needs to
            support at least the .read() method with a size parameter).
         :param compress: if True, compress the stream when writing to disk
-        :return: the number of bytes
+        :param hash_type: if None, no hash is computed (more efficient). If it is a string, use that hash type.
+        :return: a tuple with ``(number_of_bytes, hashkey)`` where ``number_of_bytes`` is the (uncompressed)
+            size and ``hash_key`` is ``None`` is ``hash_type`` is ``None``, otherwise it contains the hash
+            computed with the given ``hash_type`` algorithm.
         """
         assert 'b' in pack_handle.mode
         assert 'a' in pack_handle.mode
+
+        if hash_type:
+            hasher = get_hash(hash_type=hash_type)()
 
         if compress:
             compressobj = zlib.compressobj(level=self._COMPRESSLEVEL)
@@ -989,6 +995,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 # mode and no data is available at the moment.
                 break
             count_read_bytes += len(chunk)
+            if hash_type:
+                hasher.update(chunk)
             if compress:
                 pack_handle.write(compressobj.compress(chunk))
             else:
@@ -999,14 +1007,17 @@ class Container:  # pylint: disable=too-many-public-methods
             # compressobj
             pack_handle.write(compressobj.flush())
 
-        return count_read_bytes
+        return (count_read_bytes, hasher.hexdigest() if hash_type else None)
 
-    def pack_all_loose(self, compress=False):
+    def pack_all_loose(self, compress=False, validate_objects=True):
         """Pack all loose objects.
 
         This is a maintenance operation, needs to be done only by one process.
         :param compress: if True, compress objects before storing them.
+        :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
         """
+        hash_type = self.hash_type if validate_objects else None
+
         loose_objects = set(self._list_loose())
         pack_int_id = self._get_pack_id_to_write_to()
         session = self._get_cached_session()
@@ -1066,9 +1077,17 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj.compressed = compress
                     obj.offset = pack_handle.tell()
                     with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
-                        obj.size = self._write_data_to_packfile(
-                            pack_handle=pack_handle, read_handle=loose_handle, compress=compress
+                        # The second parameter is `None` since we are not computing the hash
+                        # We can instead pass the hash algorithm and assert that it is correct
+                        obj.size, new_hashkey = self._write_data_to_packfile(
+                            pack_handle=pack_handle, read_handle=loose_handle, compress=compress, hash_type=hash_type
                         )
+                        if hash_type and new_hashkey != loose_hashkey:
+                            raise InconsistentContent(
+                                "Error when packing object '{}': re-computed hash is different! '{}'".format(
+                                    loose_hashkey, new_hashkey
+                                )
+                            )
                     obj.length = pack_handle.tell() - obj.offset
                     session.add(obj)
 
@@ -1147,11 +1166,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict['compressed'] = compress
                     obj_dict['offset'] = pack_handle.tell()
                     with stream_context_manager as stream:
-                        wrapped_pack_handle = HashWriterWrapper(pack_handle, hash_type=self.hash_type)
-                        obj_dict['size'] = self._write_data_to_packfile(
-                            pack_handle=wrapped_pack_handle, read_handle=stream, compress=compress
+                        obj_dict['size'], obj_dict['hashkey'] = self._write_data_to_packfile(
+                            pack_handle=pack_handle, read_handle=stream, compress=compress, hash_type=self.hash_type
                         )
-                        obj_dict['hashkey'] = wrapped_pack_handle.hexdigest()
                     obj_dict['length'] = pack_handle.tell() - obj_dict['offset']
                     # Here, we have appended the object to the pack file.
                     # And now that we are done, we know the hash key.

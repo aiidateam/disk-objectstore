@@ -513,13 +513,13 @@ class ZeroStream:
 def is_known_hash(hash_type):
     """Return True if the hash_type is known, False otherwise."""
     try:
-        _get_hash(hash_type)
+        get_hash(hash_type)
         return True
     except ValueError:
         return False
 
 
-def _get_hash(hash_type):
+def get_hash(hash_type):
     """Return a hash class with an update method and a hexdigest method."""
     known_hashes = {
         'sha256': hashlib.sha256,
@@ -537,12 +537,12 @@ def _compute_hash_for_filename(filename, hash_type):
     Will read the file in chunks.
 
     :param filename: a filename to a file to check.
-    :param hash_type: a valid string as recognised by the _get_hash function
+    :param hash_type: a valid string as recognised by the get_hash function
     :return: the hash hexdigest (the hash key), or `None` if the file does not exist
     """
     _chunksize = 524288
 
-    hasher = _get_hash(hash_type)()
+    hasher = get_hash(hash_type)()
     try:
         with open(filename, 'rb') as fhandle:
             while True:
@@ -574,7 +574,7 @@ class HashWriterWrapper:
         assert 'b' in self._write_stream.mode
         self._hash_type = hash_type
 
-        self._hash = _get_hash(self._hash_type)()
+        self._hash = get_hash(self._hash_type)()
         self._position = self._write_stream.tell()
 
     @property

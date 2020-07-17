@@ -578,6 +578,69 @@ def test_initialisation(temp_dir):
     assert 'already some file or folder' in str(excinfo.value)
 
 
+@pytest.mark.parametrize('hash_type', ['sha256'])
+@pytest.mark.parametrize('compress', [True, False])
+def test_check_hash_computation(temp_container, hash_type, compress):
+    """Check that the hashes are correctly computed, when storing loose,
+    directly to packs, and while repacking all loose.
+
+    Check both compressed and uncompressed packed objects.
+    """
+    content1 = b'1'
+    content2 = b'222'
+    content3 = b'n2fwd'
+
+    expected_hasher = getattr(hashlib, hash_type)
+
+    hashkey1 = temp_container.add_object(content1)
+    assert hashkey1 == expected_hasher(content1).hexdigest()
+
+    hashkey2, hashkey3 = temp_container.add_objects_to_pack([content2, content3], compress=compress)
+    assert hashkey2 == expected_hasher(content2).hexdigest()
+    assert hashkey3 == expected_hasher(content3).hexdigest()
+
+    # No exceptions should be aised
+    temp_container.pack_all_loose(compress=compress, validate_objects=True)
+
+
+@pytest.mark.parametrize('validate_objects', [True, False])
+@pytest.mark.parametrize('corrupt', [True, False])
+@pytest.mark.parametrize('compress', [True, False])
+def test_validation_while_packing(temp_container, compress, corrupt, validate_objects):
+    """Check that, if while packing loose objects, the validation (when asked for) works."""
+    content1 = b'34gq34'
+    content2 = b'jsdklvjvldk'
+
+    corrupted_content2 = b'CORRUPTED'
+
+    hashkey1 = temp_container.add_object(content1)
+    hashkey2 = temp_container.add_object(content2)
+
+    # Corrupt the content of a loose object
+    if corrupt:
+        with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:  # pylint: disable=protected-access
+            fhandle.write(corrupted_content2)
+
+    if corrupt and validate_objects:
+        with pytest.raises(exc.InconsistentContent):
+            temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
+        # hashkey2 should have been left as 'loose'. Hashkey1 could be either packed or loose, so we don't check.
+        assert temp_container.get_object_meta(hashkey2)['type'] == 'loose'
+    else:
+        temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
+        # Both should have been packed
+        assert temp_container.get_object_meta(hashkey1)['type'] == 'packed'
+        assert temp_container.get_object_meta(hashkey2)['type'] == 'packed'
+
+    # Check content
+    assert temp_container.get_object_content(hashkey1) == content1
+    if corrupt:
+        # We can't do much, the content should be corrupt (not good, but that's it...)
+        assert temp_container.get_object_content(hashkey2) == corrupted_content2
+    else:
+        assert temp_container.get_object_content(hashkey2) == content2
+
+
 # Only three options: if pack_objects is False, the values of compress_packs is ignored
 @pytest.mark.parametrize('pack_objects,compress_packs', [(True, True), (True, False), (False, False)])
 def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, compress_packs):
@@ -1612,7 +1675,7 @@ def test_list_all_objects(temp_dir, loose_prefix_len):
 
 @pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
 def test_list_all_objects_extraneous(temp_dir, loose_prefix_len):  # pylint: disable=invalid-name
-    """x"""
+    """Test `list_all_objects` and check that files that do not match the format of a hash key are ignored."""
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, loose_prefix_len=loose_prefix_len)
 
