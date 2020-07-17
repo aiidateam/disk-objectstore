@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1595003276009,
+  "lastUpdate": 1595003636253,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1179,6 +1179,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.2554785539450136e-7",
             "extra": "mean: 360.54699147896247 nsec\nrounds: 138889"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "dbefa5af8e4b59d8b7e35f67f4597025e7f2b60d",
+          "message": "Avoid seeking back to zero for compressed streams when seeking forward\n\nFixes #81",
+          "timestamp": "2020-07-17T18:31:03+02:00",
+          "tree_id": "01ba21f85aaef7d3d3d31955b500af91455036bd",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/dbefa5af8e4b59d8b7e35f67f4597025e7f2b60d"
+        },
+        "date": 1595003635792,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.30813389671835206,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03310196962054796",
+            "extra": "mean: 3.245342400333333 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.9152734400041452,
+            "unit": "iter/sec",
+            "range": "stddev: 0.024006265406754507",
+            "extra": "mean: 1.0925696696666638 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.967130445810851,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008317495165243263",
+            "extra": "mean: 337.02596439999866 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 21.617194244965887,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0011169625315259",
+            "extra": "mean: 46.25947237499961 msec\nrounds: 16"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.7344633658948259,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00816363271083696",
+            "extra": "mean: 576.5472016666612 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2756781.16859352,
+            "unit": "iter/sec",
+            "range": "stddev: 1.4829619711691907e-7",
+            "extra": "mean: 362.7418858601972 nsec\nrounds: 131579"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2717012.492108335,
+            "unit": "iter/sec",
+            "range": "stddev: 5.008024410255316e-7",
+            "extra": "mean: 368.0513074208966 nsec\nrounds: 136987"
           }
         ]
       }
