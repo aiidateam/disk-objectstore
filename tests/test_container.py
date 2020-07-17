@@ -242,6 +242,36 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
         )
 
 
+@pytest.mark.parametrize('use_compression,use_packing', [(True, True), (True, False), (False, False)])
+def test_stream_seek(temp_container, use_compression, use_packing):
+    """Test that stream returned by `Container.get_object_stream` is properly seekable."""
+    content = b'0123456789abcdef'
+    hashkey = temp_container.add_object(content)
+
+    if use_packing:
+        temp_container.pack_all_loose(compress=use_compression)
+
+    with temp_container.get_object_stream(hashkey) as stream:
+        assert stream.read() == content
+
+        # Test whence=0, seeking to the fifth byte and reading all remaining bytes
+        offset = 5
+        stream.seek(offset, 0)
+        assert stream.read() == content[offset:]
+
+        # Test whence=1, by first seeking to the tenth byte, seeking 5 negative bytes and reading the rest
+        stream.seek(10)
+        offset = -5
+        stream.seek(offset, 1)
+        assert stream.read() == content[(10 + -5):]
+
+        # Test whence=1, by first seeking to the tenth byte, seeking 3 further bytes and reading the rest
+        stream.seek(10)
+        offset = 3
+        stream.seek(offset, 1)
+        assert stream.read() == content[(10 + 3):]
+
+
 def test_num_packs_with_target_size(temp_dir, generate_random_data):
     """Add a number of objects directly to packs, with a small pack_size_target.
 

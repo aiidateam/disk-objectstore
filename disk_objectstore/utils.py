@@ -328,14 +328,18 @@ class PackedObjectReader:
 
         Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
 
-        ..note:: only whence==0 (absolute position) is currently supported
+        :raises NotImplementedError: if ``whence`` is not 0 or 1.
         """
-        if whence:
-            raise NotImplementedError('Only whence=0 currently implemented')
+        if whence not in [0, 1]:
+            raise NotImplementedError('Invalid value for `whence`: only 0 and 1 are currently implemented.')
+
+        if whence == 1:
+            target = self.tell() + target
+
         if target < 0:
-            raise ValueError('negative seek position {}'.format(target))
+            raise ValueError('specified target would exceed the lower boundary of bytes that are accessible.')
         if target > self._length:
-            raise ValueError('seek position {} is beyond object length {}'.format(target, self._length))
+            raise ValueError('specified target would exceed the upper boundary of bytes that are accessible.')
         new_pos = self._offset + target
         self._fhandle.seek(new_pos)
         # Next function MUST be called every time we move into the _fhandle file, to update the position
@@ -345,7 +349,7 @@ class PackedObjectReader:
         return target
 
     def tell(self):
-        """Return current stream position."""
+        """Return current stream position, relative to the internal offset."""
         return self._fhandle.tell() - self._offset
 
     def __init__(self, fhandle, offset, length):
@@ -498,15 +502,19 @@ class StreamDecompresser:
     def seek(self, target, whence=0):
         """Change stream position.
 
-        ..note:: only whence==0 (absolute position) is currently supported
-
         ..note:: This is particularly inefficient if `target > 0` since it will have
            to decompress again from the beginning. So use with care!
+
+        :raises NotImplementedError: if ``whence`` is not 0 or 1.
         """
         read_chunk_size = 256 * 1024
 
-        if whence:
-            raise NotImplementedError('Only whence=0 currently implemented')
+        if whence not in [0, 1]:
+            raise NotImplementedError('Invalid value for `whence`: only 0 and 1 are currently implemented.')
+
+        if whence == 1:
+            target = self.tell() + target
+
         if target < 0:
             raise ValueError('negative seek position {}'.format(target))
         if target == 0:
