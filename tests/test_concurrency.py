@@ -13,11 +13,14 @@ CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, 'concurrent_tests')
 NUM_WORKERS = 4
 
 
-# Do the same test multiple times (repetition*2*2); can be set to > 1 to increase probability of seeing problems
-@pytest.mark.parametrize('repetition', list(range(5)))
+# Do the same test multiple times (repetition*2*2); can be set to > 1 to increase probability of seeing problems.
+# This is specified on the command line when running pytest with ``--concurrency-repetitions=VALUE``
+# (VALUE=1 by default) and passed as `concurrency_repetition_index`.
 @pytest.mark.parametrize('with_packing', [True, False])  # If it works with packing, no need to test also without
 @pytest.mark.parametrize('max_size', [1, 1000])
-def test_concurrency(temp_dir, repetition, with_packing, max_size):  # pylint: disable=unused-argument, too-many-statements, too-many-locals
+def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, unused-argument
+        temp_dir, with_packing, max_size, concurrency_repetition_index
+    ):
     """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
     This is needed to see that indeed these operations can happen at the same time.
@@ -27,6 +30,9 @@ def test_concurrency(temp_dir, repetition, with_packing, max_size):  # pylint: d
 
     .. note:: With max_size=1 I only have a maximum of 256+1 = 257 objects.
       In this way I stress-test also the creation of concurrent identical objects.
+
+    ``concurrency_repetition_index`` is an integer looking over the specified repetitions on the pytest command line.
+    We don't use this variable, it's just used to repeat the run multiple times.
     """
     packer_script = os.path.join(CONCURRENT_DIR, 'periodic_packer.py')
     worker_script = os.path.join(CONCURRENT_DIR, 'periodic_worker.py')

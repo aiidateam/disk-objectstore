@@ -10,6 +10,21 @@ import pytest
 from disk_objectstore import Container
 
 
+def pytest_addoption(parser):
+    """Parse a new option for the number of repetitions for the concurrency tests."""
+    parser.addoption(
+        '--concurrency-repetitions', type=int, default=1, help='Specify how many time to repeat the concurrency tests'
+    )
+
+
+def pytest_generate_tests(metafunc):
+    """Define a new fixture `concurrency_repetition_index` with the index of the repetition for concurrency tests.
+
+    The number of repetitions can be specified on the command line with ``--concurrency-repetitions=3``."""
+    if 'concurrency_repetition_index' in metafunc.fixturenames:
+        metafunc.parametrize('concurrency_repetition_index', range(metafunc.config.option.concurrency_repetitions))
+
+
 @pytest.fixture(scope='function')
 def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     """Return an object-store container in a given temporary directory.
