@@ -1784,15 +1784,18 @@ def test_list_all_objects_extraneous(temp_dir, loose_prefix_len):  # pylint: dis
     temp_container.close()
 
 
-@pytest.mark.parametrize('compress_dest', [True])  #, False])
-@pytest.mark.parametrize('compress_source', [True])  #, False])
-def test_export_to_pack(temp_container, compress_source, compress_dest):
+# With the default memory of 100MB, we always use the cache and flush at the end;
+# with a memory of 9, we put the first object in the cache (6 bytes) and the second
+# will need to flush the cache. With a single byte, all objects don't fit the cache so
+# we need to copy directly from stream to stream, without going via the cache.
+@pytest.mark.parametrize('target_memory_bytes', [1, 9, 100 * 1024 * 1024])
+@pytest.mark.parametrize('compress_dest', [True, False])
+@pytest.mark.parametrize('compress_source', [True, False])
+def test_export_to_pack(temp_container, compress_source, compress_dest, target_memory_bytes):
     """Test the functionality to export to a new container."""
-    obj1 = b'1'
-    obj2 = b'2'
-    obj3 = b'3'
-
-    target_memory_bytes = 100 * 1024 * 1024
+    obj1 = b'111111'
+    obj2 = b'222222'
+    obj3 = b'333332'
 
     with tempfile.TemporaryDirectory() as tmpdir:
         other_container = Container(tmpdir)
@@ -1811,7 +1814,6 @@ def test_export_to_pack(temp_container, compress_source, compress_dest):
         # Put only two objects
         old_new_mapping = temp_container.export([hashkey1, hashkey2],
                                                 other_container,
-                                                to_pack=True,
                                                 compress=compress_dest,
                                                 target_memory_bytes=target_memory_bytes)
         # Two objects should appear
@@ -1827,7 +1829,6 @@ def test_export_to_pack(temp_container, compress_source, compress_dest):
         old_new_mapping.update(
             temp_container.export([hashkey2, hashkey3],
                                   other_container,
-                                  to_pack=True,
                                   compress=compress_dest,
                                   target_memory_bytes=target_memory_bytes)
         )
@@ -1840,12 +1841,6 @@ def test_export_to_pack(temp_container, compress_source, compress_dest):
         assert other_container.get_object_content(old_new_mapping[hashkey1]) == obj1
         assert other_container.get_object_content(old_new_mapping[hashkey2]) == obj2
         assert other_container.get_object_content(old_new_mapping[hashkey3]) == obj3
-
-        for old_hashkey in [hashkey1, hashkey2, hashkey3]:
-            print(
-                old_hashkey, old_new_mapping[old_hashkey], temp_container.get_object_content(old_hashkey),
-                other_container.get_object_content(old_new_mapping[old_hashkey])
-            )
 
         old_hashkeys, new_hashkeys = zip(*old_new_mapping.items())
         # Since we are using the same hash algorithm, the hashes should be the same!
