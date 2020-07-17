@@ -270,7 +270,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     os.mkdir(loose_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
@@ -375,7 +375,7 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     os.mkdir(loose_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
@@ -446,7 +446,7 @@ def test_object_writer_existing_OK(temp_dir, trust_existing):  # pylint: disable
     os.mkdir(loose_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
@@ -497,7 +497,7 @@ def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: 
     os.mkdir(loose_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
