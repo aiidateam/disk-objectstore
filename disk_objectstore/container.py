@@ -1100,7 +1100,10 @@ class Container:  # pylint: disable=too-many-public-methods
                             # The second parameter is `None` since we are not computing the hash
                             # We can instead pass the hash algorithm and assert that it is correct
                             obj.size, new_hashkey = self._write_data_to_packfile(
-                                pack_handle=pack_handle, read_handle=loose_handle, compress=compress, hash_type=hash_type
+                                pack_handle=pack_handle,
+                                read_handle=loose_handle,
+                                compress=compress,
+                                hash_type=hash_type
                             )
                     except PermissionError:
                         # This might happen if the file is being written and is locked.

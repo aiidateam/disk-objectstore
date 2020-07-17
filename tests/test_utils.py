@@ -334,7 +334,7 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
@@ -414,7 +414,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name, to
     os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
-    hasher = utils._get_hash(hash_type=hash_type)()  # pylint: disable=protected-access
+    hasher = utils.get_hash(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
