@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1595002967094,
+  "lastUpdate": 1595003076713,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -2287,6 +2287,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.2506547534941204e-7",
             "extra": "mean: 286.0077736136304 nsec\nrounds: 190259"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38bfa5ed21e99016756308569337be1cdeaeb311",
+          "message": "Merge pull request #68 from sphuber/feature/067/packed-object-reader-seek-whence\n\nImplement `whence=1` for the `utils.PackedObjectReader.seek`",
+          "timestamp": "2020-07-17T18:20:39+02:00",
+          "tree_id": "57f4997cbdc791e0a32f9905fa065586842a7ad8",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/38bfa5ed21e99016756308569337be1cdeaeb311"
+        },
+        "date": 1595003075982,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.2854989387862171,
+            "unit": "iter/sec",
+            "range": "stddev: 0.26317012913211",
+            "extra": "mean: 3.502639989666667 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.2768271128169904,
+            "unit": "iter/sec",
+            "range": "stddev: 0.09564362558713246",
+            "extra": "mean: 783.1913890000012 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 2.495803629403732,
+            "unit": "iter/sec",
+            "range": "stddev: 0.02025806426707192",
+            "extra": "mean: 400.6725481999993 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.08995762258151,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00804615603345699",
+            "extra": "mean: 99.10844400000072 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.3044657361776877,
+            "unit": "iter/sec",
+            "range": "stddev: 0.014100190145361582",
+            "extra": "mean: 766.5973680000017 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2208384.7753375396,
+            "unit": "iter/sec",
+            "range": "stddev: 4.2752793263056895e-7",
+            "extra": "mean: 452.81964047553964 nsec\nrounds: 189466"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3566859.5110401055,
+            "unit": "iter/sec",
+            "range": "stddev: 1.2092035521485646e-7",
+            "extra": "mean: 280.3586731983017 nsec\nrounds: 191792"
           }
         ]
       }
