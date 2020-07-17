@@ -1290,9 +1290,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def export_to_new_container(
-        self, hashkeys, other_container, to_pack=True, compress=True, target_memory_bytes=100 * 1024 * 1024
-    ):
+    def export(self, hashkeys, other_container, to_pack=True, compress=True, target_memory_bytes=104857600):
         """Export the specified hashkeys to a new container (must be already initialised).
 
         :param hashkeys: an iterable of hash keys.
@@ -1305,7 +1303,7 @@ class Container:  # pylint: disable=too-many-public-methods
         :param target_memory_bytes: how much data to store in RAM before dumping to the new container. Larger values
             allow to read and write in bulk that is more efficient, but of course require more memory.
             Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
-            only counts the RAM needed for the object content).
+            only counts the RAM needed for the object content). Default: 100MB.
 
         :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
         """
@@ -1335,10 +1333,10 @@ class Container:  # pylint: disable=too-many-public-methods
                     # and transfer the data, before acting on this object.
 
                     # I create a list of hash keys and the corresponding list of streams (BytesIO objects)
-                    temp_old_hashkeys, stream_list = zip(*content_cache.items())
+                    temp_old_hashkeys, data = zip(*content_cache.items())
 
                     # I put all of them in bulk
-                    temp_new_hashkeys = other_container.add_streamed_objects_to_pack(stream_list, compress=compress)
+                    temp_new_hashkeys = other_container.add_objects_to_pack(data, compress=compress)
 
                     # I update the list of known old (this container) and new (other_container) hash keys
                     old_obj_hashkeys += temp_old_hashkeys
@@ -1350,14 +1348,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # I add this to the cache for the next round (I know it's going to fit in the memory,
                     # otherwise I would have processed it directly, bypassing the cache).
-                    content_cache[old_obj_hashkey] = io.BytesIO(stream.read())
+                    content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
                     cache_size += meta['size']
                 else:
                     # I can add this object to the memory cache, it is not too big.
                     # I store it as a BytesIO so it still provides the stream methods like `.read`.
                     # Key old hash key (in this repo); value: the stream
-                    content_cache[old_obj_hashkey] = io.BytesIO(stream.read())
+                    content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
                     cache_size += meta['size']
 
@@ -1365,8 +1363,10 @@ class Container:  # pylint: disable=too-many-public-methods
         # cache is in memory. Most probably I still have content in the cache, just flush it,
         # with the same logic as above.
 
+        # I create a list of hash keys and the corresponding list of streams (BytesIO objects)
+        temp_old_hashkeys, data = zip(*content_cache.items())
         # I put all of them in bulk
-        temp_new_hashkeys = other_container.add_streamed_objects_to_pack(stream_list, compress=compress)
+        temp_new_hashkeys = other_container.add_objects_to_pack(data, compress=compress)
 
         # I update the list of known old (this container) and new (other_container) hash keys
         old_obj_hashkeys += temp_old_hashkeys
