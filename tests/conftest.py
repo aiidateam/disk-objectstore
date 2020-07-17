@@ -10,6 +10,21 @@ import pytest
 from disk_objectstore import Container
 
 
+def pytest_addoption(parser):
+    """Parse a new option for the number of repetitions for the concurrency tests."""
+    parser.addoption(
+        '--concurrency-repetitions', type=int, default=1, help='Specify how many time to repeat the concurrency tests'
+    )
+
+
+def pytest_generate_tests(metafunc):
+    """Define a new fixture `concurrency_repetition_index` with the index of the repetition for concurrency tests.
+
+    The number of repetitions can be specified on the command line with ``--concurrency-repetitions=3``."""
+    if 'concurrency_repetition_index' in metafunc.fixturenames:
+        metafunc.parametrize('concurrency_repetition_index', range(metafunc.config.option.concurrency_repetitions))
+
+
 @pytest.fixture(scope='function')
 def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     """Return an object-store container in a given temporary directory.
@@ -74,3 +89,42 @@ def generate_random_data():
                 random.setstate(saved_state)
 
     yield _generate_random_data
+
+
+@pytest.fixture(scope='function')
+def lock_file_on_windows():
+    """
+    Return a function that, given a file desciptor (as returned by ``os.open``, locks it (on Windows)
+    also for read-only opening).
+
+    Note: The returned function can be called only on Windows.
+    """
+
+    def _locker(file_descriptor):
+        """Given a file descriptor, it locks.
+
+        .. note:: This function asserts if we are not on Windows.
+
+        :param file_descriptor: a file descriptor, opened with `os.open()`
+        """
+        assert os.name == 'nt', 'This fixture can only be used on Windows'
+
+        # This should run on Windows, but the linter runs on Ubuntu where these modules
+        # do not exist. Therefore, ignore errors in this function.
+        # pylint: disable=import-error
+        import win32file
+        import pywintypes
+        import win32con
+
+        winfd = win32file._get_osfhandle(file_descriptor)  # pylint: disable=protected-access
+        mode = win32con.LOCKFILE_EXCLUSIVE_LOCK | win32con.LOCKFILE_FAIL_IMMEDIATELY
+        overlapped = pywintypes.OVERLAPPED()
+        # additional parameters
+        # int : nbytesLow - low-order part of number of bytes to lock
+        # int : nbytesHigh - high-order part of number of bytes to lock
+        # ol=None : PyOVERLAPPED - An overlapped structure
+        # after the first two params: reserved, and nNumberOfBytesToLock
+        # then, overlapped
+        win32file.LockFileEx(winfd, mode, 0, -0x10000, overlapped)
+
+    yield _locker

@@ -24,6 +24,8 @@ import psutil
 from disk_objectstore.container import Container, NotExistent
 from disk_objectstore.models import Obj
 
+MAX_RETRIES_NO_PERM = 1000
+
 
 def timestamp():
     """Return a timestamp string to print for logging."""
@@ -118,8 +120,22 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             if not fname.endswith('.sha'):
                 continue
             file_count += 1
-            with open(os.path.join(shared_folder, fname)) as fhandle:
-                chunk_checksums = json.load(fhandle)
+
+            # Retry on Windows if, during the rename, I cannot read the file
+            # This is because renames are atomic, but while renaming the file is completely locked
+            for _ in range(MAX_RETRIES_NO_PERM):
+                try:
+                    with open(os.path.join(shared_folder, fname)) as fhandle:
+                        chunk_checksums = json.load(fhandle)
+                    break
+                except PermissionError:
+                    pass
+                time.sleep(0.01)  # Wait 10 ms and retry to open - probably it is renaming the file
+            else:
+                raise PermissionError(
+                    'Retried {} times but I never could get the content...'.format(MAX_RETRIES_NO_PERM)
+                )
+
             all_checksums.update(chunk_checksums)
         print(
             '[{} {}] {} object checksums read from {} files ({}).'.format(
@@ -155,10 +171,10 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
                     metas[obj_hashkey] = {'type': 'missing'}  # I don't put all the rest for simplicity
-                except PermissionError as exc:
+                except (PermissionError, FileExistsError) as exc:
                     # This sometimes happen on Windows (I think during packing), see issue #37
                     # The error message typically shows the error and the path, showing if it's loose
-                    print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+                    print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
 
                     # Before re-raising, I try to get the same object again, to see if this now works and is packed
                     # (or it crashes again!)
@@ -206,10 +222,10 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         for obj_hashkey in all_hashkeys:
             try:
                 content = container.get_object_content(obj_hashkey)
-            except PermissionError as exc:
+            except (PermissionError, FileExistsError) as exc:
                 # This sometimes happen on Windows (I think during packing), see issue #37
                 # The error message typically shows the error and the path, showing if it's loose
-                print('WARNING/ERROR: I got a permission error, message: {}'.format(str(exc)))
+                print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
 
                 # Before re-raising, I try to get the same object again, to see if this now works and is packed
                 # (or it crashes again!)

@@ -212,3 +212,118 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
 
     # The file should not be there on any platform, now
     assert not os.path.isfile(fname)
+
+
+def test_rename_when_existing(temp_dir):
+    """Check the different behavior of os.rename.
+
+    On POSIX: I can delete silently rename even if open.
+    On Windows: I cannot rename a file to a location where a file already exists.
+    """
+    fname = os.path.join(temp_dir, 'test_file')
+    fname_replacement = os.path.join(temp_dir, 'test_file_repl')
+
+    content = b'rfr23ewv3wg4w'
+    first_part_len = 4
+
+    new_content = b'NEWFILECONTENT'
+
+    # Write something to the file
+    with open(fname, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Write something to the file
+    with open(fname_replacement, 'wb') as fhandle:
+        fhandle.write(new_content)
+
+    # Now open again the file
+    with open(fname, 'rb') as fhandle:
+        read_content_pre = fhandle.read(first_part_len)
+
+        # I (try to) rename the file where the dest is the file that is open
+        try:
+            os.rename(fname_replacement, fname)
+        except FileExistsError:
+            # This should happen only on Windows
+            assert os.name == 'nt', 'I should get a FileExistsError only on Windows!'
+
+            # The source should still be there
+            assert os.path.exists(fname_replacement)
+            # I continue
+        else:
+            assert os.name == 'posix', 'I should be able to rername a file to an open destination on POSIX!'
+
+            # The source should still not be there anymore
+            assert not os.path.exists(fname_replacement)
+
+        # Read the rest. On Windows, it should still be the original,
+        # unreplaced file. On POSIX, it should be replaced, but I should
+        # still be reading the original file.
+        read_content = read_content_pre + fhandle.read()
+        assert read_content == content
+
+    # I reopen the file
+    with open(fname, 'rb') as fhandle:
+        read_content = fhandle.read()
+        if os.name == 'nt':
+            # On Windows I should still get the old content
+            assert read_content == content
+        else:
+            # On POSIX it should be the new content
+            assert read_content == new_content
+
+    # I remove and replace the file on Windows to check that
+    # I can indeed replace it
+    if os.name == 'nt':
+        os.remove(fname)
+        os.rename(fname_replacement, fname)
+
+    # Old file should not be there on any platform
+    assert not os.path.exists(fname_replacement)
+
+    # Now I should have the new file on any platform
+    with open(fname, 'rb') as fhandle:
+        read_content = fhandle.read()
+        assert read_content == new_content
+
+
+# Run only on Windows where we want to check the locking behavior
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
+def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
+    """Test that indeed I can open a file with exclusive lock on Windows.
+
+    This means someone else cannot even open the file in read mode.
+    """
+    fname = os.path.join(temp_dir, 'test_file')
+    content = b'sfsfdkl;2fd'
+
+    # Write something to the file
+    with open(fname, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Now open the file with exclusive locking
+    # we need to use os.open
+    fd = os.open(fname, os.O_RDONLY)
+    lock_file_on_windows(fd)
+
+    # I (try to) read the file in a different subprocess
+    try:
+        # I assume here that the fname does not contain double quotes
+        output = subprocess.check_output([
+            sys.executable, '-c', 'f=open(r"{}", "rb"); print(f.read()); f.close()'.format(os.path.realpath(fname))
+        ],
+                                         stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as exc:
+        # I should get a PermissionError
+        output = exc.output or b''  # It could be none
+        assert b'PermissionError' in output
+        read_content = os.fdopen(fd, 'rb', closefd=False).read()
+        assert read_content == content, 'Unexpeced content: {}'.format(read_content)
+        del read_content
+    else:
+        raise AssertionError('Subprocess should have raised! OUTPUT:\n{}'.format(output))
+    finally:
+        # Close the file at the end, important!
+        # If I close, I shouldn't need to unlock
+        #win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
+        os.close(fd)

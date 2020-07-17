@@ -17,7 +17,7 @@ except ImportError:
 
 from contextlib import contextmanager
 
-from .exceptions import ModificationNotAllowed, ClosingNotAllowed, DynamicInconsistentContent
+from .exceptions import ModificationNotAllowed, ClosingNotAllowed
 
 # For now I I don't always activate it as I need to think at the right balance between
 # safety and performance/disk wearing
@@ -91,7 +91,8 @@ def nullcontext(enter_result):
 class ObjectWriter:
     """A class to get direct write access for a new object."""
 
-    def __init__(self, sandbox_folder, loose_folder, loose_prefix_len, hash_type, trust_existing=False):
+    def __init__(  # pylint: disable=too-many-arguments
+            self, sandbox_folder, loose_folder, loose_prefix_len, duplicates_folder, hash_type, trust_existing=False):
         """Initialise an object to store a new loose object.
 
         :param sandbox_folder: the folder to store objects while still giving
@@ -102,11 +103,14 @@ class ObjectWriter:
           0 means store objects flat. Note that objects are always stored flat
           in the sandbox (there shouldn't be too many sandbox objects at the
           same time).
+        :param duplicates_folder: the folder to store the duplicates objects (for concurrent writes
+          on Windows where I cannot replace).
         :param trust_existing: if True, just continues if a file with the same hashkey is found.
           Otherwise, check the existing file content and overwrite if wrong.
         """
         self._sandbox_folder = sandbox_folder
         self._loose_folder = loose_folder
+        self._duplicates_folder = duplicates_folder
         self._hash_type = hash_type
         self._hashkey = None
         self._loose_prefix_len = loose_prefix_len
@@ -134,14 +138,14 @@ class ObjectWriter:
         if self._filehandle is not None:
             raise IOError('You have already opened this ObjectWriter instance')
         if self._stored:
-            raise ModificationNotAllowed("You have already stored this object '{}'".format(self.get_hashkey()))
+            raise ModificationNotAllowed("You have already tried to store this object '{}'".format(self.get_hashkey()))
         # Create a new uniquely-named file in the sandbox.
         # It seems faster than using a NamedTemporaryFile, see benchmarks.
         self._obj_path = os.path.join(self._sandbox_folder, uuid.uuid4().hex)
         self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
-    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches
+    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches, too-many-statements
         """
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
@@ -176,6 +180,7 @@ class ObjectWriter:
                     dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
 
                 dest_parent_folder = os.path.dirname(dest_loose_object)
+                exists_wrong_checksum = False
                 # At this point, if the destination exists, it means someone already put an object
                 # with the same content/hash key
                 if os.path.exists(dest_loose_object):
@@ -191,7 +196,16 @@ class ObjectWriter:
                     # process might in the meantime rewrite it again, and this might
                     # be wrong. But this is very difficult to catch, and in general
                     # the situation in which a process writes a corrupt node is really an error
-                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
+                    try:
+                        existing_checksum = _compute_hash_for_filename(
+                            filename=dest_loose_object, hash_type=self.hash_type
+                        )
+                    except PermissionError:
+                        # On Windows I might get a PermissionError. I store a copy and return.
+                        # This would happen if e.g. the file exists but is being moved in place and
+                        # I cannot open for reading.
+                        self._store_duplicate_copy(self._obj_path, self._hashkey)
+                        return
                     if existing_checksum == self._hashkey:
                         # The existing object has the correct hash, I just return.
                         return
@@ -203,6 +217,8 @@ class ObjectWriter:
                     # I therefore just return
                     if existing_checksum is None:
                         return
+                    # If we are here, the file exists and has the wrong checksum. I mark this condition
+                    exists_wrong_checksum = True
 
                 # If I am here, there are two options:
                 # 1. The object did not exist
@@ -213,26 +229,56 @@ class ObjectWriter:
                 # - os.rename() on Linux is atomic (see e.g. also
                 #   https://alexwlchan.net/2019/03/atomic-cross-filesystem-moves-in-python/
                 #   but needs to be on the same filesystem (this should always be the case for us)
-                # - Remembe that instead shutil.move is not guaranteed to be atomic!
+                # - Remember that instead shutil.move is not guaranteed to be atomic!
                 # - os.rename performs a silent overwrite if the file exists on Posix, so would be enough
                 #   on Linux/Mac; instead, it raises OSError on Windows if the file exists.
-                # - we use instead os.replace that, on Windows, calls a rename with the correct flags
-                #   to overwrite an existing destination.
-                try:
-                    os.replace(self._obj_path, dest_loose_object)
-                except PermissionError:
-                    # NOTE! This branch only happens on Windows, when the
-                    # file with the same name was opened in the meantime by someone else...
-                    # We do a final check of its content
-                    existing_checksum = _compute_hash_for_filename(filename=dest_loose_object, hash_type=self.hash_type)
-                    if existing_checksum == self._hashkey:
-                        # The existing object that has appeared in the meantime is OK. Fine, has the correct hash,
-                        # I just return.
-                        return
-                    raise DynamicInconsistentContent(
-                        "I am trying to create loose object with hash key '{}', "
-                        'but it is already open and has the wrong content!'.format(self._hashkey)
-                    )
+                # - we use os.rename: we make sure in this way, on Windows, that only one process writes
+                #   to the destination, avoiding race conditions with two processes trying to write the
+                #   same file.
+                if exists_wrong_checksum:
+                    # In this case I try a replace of the file
+                    try:
+                        os.replace(self._obj_path, dest_loose_object)
+                    except PermissionError:
+                        # NOTE! This branch only happens on Windows, when the
+                        # file with the same name is open by someone else...
+                        # I just store a duplicate copy. This happens if I find a file, it has a wrong
+                        # hash key, but then I cannot replace it (e.g. it's open, or two processes are writing
+                        # at the same time).
+                        self._store_duplicate_copy(self._obj_path, self._hashkey)
+                else:
+                    # In this case the file does not exist. I try just a rename of the file,
+                    # to put it in place and reduce the risk of multiple processes trying to overwrite
+                    # the same file
+                    try:
+                        os.rename(self._obj_path, dest_loose_object)
+                    except FileExistsError:
+                        # NOTE! This branch only happens on Windows, when the
+                        # file with the same name was opened in the meantime by someone else...
+                        if self._trust_existing:
+                            # If I trust existing files, I just return - someone put the file in place
+                            return
+                        # I'm here: the file did not exist, but appeared exactly at the same time: someone
+                        # else is writing it.
+                        # I do a final attempt to check the checksum! However, there is a high chance
+                        # that the file is being still locked for reading, so I need to take care of checking for those
+                        # error
+                        try:
+                            existing_checksum = _compute_hash_for_filename(
+                                filename=dest_loose_object, hash_type=self.hash_type
+                            )
+                            if existing_checksum == self._hashkey:
+                                # The existing object has the correct hash, I just return.
+                                return
+                        except PermissionError:
+                            # The file is probably being moved and I cannot open for reading.
+                            # I just pass, so in the lines below I will store a duplicate copy.
+                            pass
+
+                        # I'm here. Either I got a permission error, or the checksum is different (
+                        # and the file was created exactly in a concurrent process, it wasn't existing at the
+                        # beginning of this function): I just store a duplicate
+                        self._store_duplicate_copy(self._obj_path, self._hashkey)
 
                 # Flush also the parent directory, see e.g.
                 # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
@@ -242,12 +288,24 @@ class ObjectWriter:
                     dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
                     os.fsync(dirfd)
                     os.close(dirfd)
-                self._stored = True
         finally:
+            # I set the stored flag, even if there was a problem, to avoid reuse of the same object.
+            self._stored = True
+
             if self._filehandle is not None and not self._filehandle.closed:
                 self._filehandle.close()
             if os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
+
+    def _store_duplicate_copy(self, source_file, hashkey):
+        """This function is called (on Windows) when trying to store a file that already exists.
+
+        In the `clean_storage` I will clean up old copies if the hash matches.
+        """
+        # Destination file starts with the hashkey, then has an dot as a separator, and is
+        # followed by un UUID to make sure there is never a collision
+        dest_file = os.path.join(self._duplicates_folder, '{}.{}'.format(hashkey, uuid.uuid4().hex))
+        os.rename(source_file, dest_file)
 
 
 class PackedObjectReader:

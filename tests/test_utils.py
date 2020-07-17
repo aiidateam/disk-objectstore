@@ -1,4 +1,5 @@
 """Test of the utils wrappers."""
+# pylint: disable=too-many-lines
 import functools
 import hashlib
 import io
@@ -15,7 +16,12 @@ import disk_objectstore.exceptions as exc
 
 # I need these definitions later for the mocked function
 os._actual_replace_function = os.replace  # pylint: disable=protected-access
+os._actual_rename_function = os.rename  # pylint: disable=protected-access
 utils._actual_compute_hash_for_filename = utils._compute_hash_for_filename  # pylint: disable=protected-access
+
+# This is used by the mockreplace function to store files that are
+# reopened as locked, to be closed before the test finishes
+LOCKED_FILES_FD = []
 
 
 def test_lazy_opener_read():
@@ -90,6 +96,7 @@ def test_object_writer(temp_dir, loose_prefix_len):
     """Test the ObjectWriter, directly writing objects (loose, via a sandbox)."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
 
     hash_type = 'sha256'
     expected_hash = '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'
@@ -99,13 +106,16 @@ def test_object_writer(temp_dir, loose_prefix_len):
     # are empty
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
     assert not os.listdir(sandbox_folder)
     assert not os.listdir(loose_folder)
+    assert not os.listdir(duplicates_folder)
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
         hash_type=hash_type
     )
 
@@ -140,18 +150,61 @@ def test_object_writer(temp_dir, loose_prefix_len):
         assert fhandle.read() == content
 
 
+def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid-name
+    """Test that the _store_duplicate_copy function works."""
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
+
+    # The duplicates folder should be empty at the beginning
+    assert not os.listdir(duplicates_folder)
+
+    content = b'24tq34waSDV'
+    hash_type = 'sha256'
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=2,
+        duplicates_folder=duplicates_folder,
+        hash_type=hash_type
+    )
+
+    temp_path = os.path.join(sandbox_folder, 'tmp-file-name')
+    with open(temp_path, 'wb') as fhandle:
+        fhandle.write(content)
+    hashkey = getattr(hashlib, hash_type)(content).hexdigest()
+
+    object_writer._store_duplicate_copy(source_file=temp_path, hashkey=hashkey)  # pylint: disable=protected-access
+    # The duplicates folder should be empty at the beginning
+    duplicates_files = os.listdir(duplicates_folder)
+    assert len(duplicates_files) == 1, 'There is more than one file in the duplicates! {}'.format(duplicates_files)
+    duplicates_file = duplicates_files[0]
+    # The duplicate should start with the hashkey followed by a dot
+    assert duplicates_file.startswith('{}.'.format(hashkey))
+
+
 def test_object_writer_with_exc(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
+        hash_type='sha256'
     )
 
     assert not os.listdir(sandbox_folder)
@@ -180,14 +233,20 @@ def test_object_writer_manual_close(temp_dir):
     """Test that the ObjectWriter does not allow manually closing the stream."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
+        hash_type='sha256'
     )
 
     assert not os.listdir(sandbox_folder)
@@ -216,14 +275,20 @@ def test_object_writer_not_twice(temp_dir):
     """Test that the ObjectWriter cannot be opened twice."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
-        sandbox_folder=sandbox_folder, loose_folder=loose_folder, loose_prefix_len=loose_prefix_len, hash_type='sha256'
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
+        hash_type='sha256'
     )
 
     # The first open should go through
@@ -248,26 +313,222 @@ def test_object_writer_not_twice(temp_dir):
         # Should not allow to reuse the same object_writer after storing
         with object_writer:
             pass
-    assert 'already stored' in str(excinfo.value)
+    assert 'already tried to store' in str(excinfo.value)
 
 
-@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
 @pytest.mark.parametrize('trust_existing', [True, False])
-def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-name
-        temp_dir, trust_existing, reappears_corrupted, monkeypatch
+def test_object_writer_existing_locked(  # pylint: disable=invalid-name
+        temp_dir, trust_existing, lock_file_on_windows
     ):
-    """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object.
+    """If I am adding a new loose object, and it exists already, and it's locked, I cannot check its content.
 
-    Moreover, if reappears_corrupted is True, I patch `os.replace` to overwrite the destination with corrupted content
-    are re-open it in read mode before calling the replace function, to check if I get any exception (especially on
-    Windows).
-    """
+    Therefore, I should be creating a copy, unless I am trusting existing files."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils.get_hash(hash_type=hash_type)()
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    os.mkdir(os.path.dirname(loose_file))
+    with open(loose_file, 'wb') as fhandle:
+        fhandle.write(content)
+
+    # Check the starting condition
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    file_descriptor = os.open(loose_file, os.O_RDONLY)
+    lock_file_on_windows(file_descriptor)
+    # Let's try to write the object with the file locked
+    with object_writer as fhandle:
+        fhandle.write(content)
+    # I close the file (and unlock it)
+    os.close(file_descriptor)
+
+    if trust_existing:
+        # There should be not duplicate
+        duplicates_files = os.listdir(duplicates_folder)
+        assert not duplicates_files
+    else:
+        # If it exists and I cannot check, I should be creating a copy
+        duplicates_files = os.listdir(duplicates_folder)
+        assert len(duplicates_files) == 1
+        duplicates_file = duplicates_files[0]
+        assert duplicates_file.startswith('{}.'.format(hashkey))
+        with open(os.path.join(duplicates_folder, duplicates_file), 'rb') as fhandle:
+            # Check that the duplicate has the right content
+            assert fhandle.read() == content
+
+    # Check the end condition:
+    # nothing in the sandbox, nothing new in the loose_folder
+    assert not os.listdir(sandbox_folder)
+    assert len(os.listdir(loose_folder)) == 1
+    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
+@pytest.mark.parametrize('lock_new_file', [True, False])
+@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name, too-many-locals
+        temp_dir, trust_existing, reappears_corrupted, lock_new_file, lock_file_on_windows, monkeypatch
+    ):
+    """Check what happens when the loose file does not exist at the beginning, but appears concurrently
+    right before renaming.
+
+    :param trust_existing: is used in the constructor of the ObjectWriter
+    :param reappears_corrupted: if True, the file that reappears has corrupted content
+    :param lock_new_file: if True, it also reopen the file after replacing it, and lock it also for reading.
+        NOTE: This can only be done on Windows.
+    """
+    # Needed by the mocked function, but we need as well here to close the files before the test ends
+    global LOCKED_FILES_FD  # pylint: disable=global-statement
+
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
+
+    content = b'523453dfvsd'
+    hasher = utils.get_hash(hash_type=hash_type)()
+    hasher.update(content)
+    hashkey = hasher.hexdigest()
+
+    corrupted_content = b'SOME_CORRUPTED_CONTENT'
+
+    loose_file = os.path.join(loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:])
+    # Just prepare the parent folder, but don't put any file
+    os.mkdir(os.path.dirname(loose_file))
+
+    object_writer = utils.ObjectWriter(
+        sandbox_folder=sandbox_folder,
+        loose_folder=loose_folder,
+        loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
+        hash_type=hash_type,
+        trust_existing=trust_existing
+    )
+
+    def mockrename(src, dest, mocked_dest, new_bytes_content, lock_new_file):
+        """Renames a file, but if the dest is the mocked destination, it creates a file first with specified content.
+
+        :param new_bytes_content: content to be written in ``dest`` before replacing.
+        :param lock_new_file: if we should also lock the file (on Windows).
+            NOTE: The file needs to be closed by hand outside!! The file descriptors of the open (locked) files
+            are stored in the global list `LOCKED_FILES_FD`, and need to be closed with os.close() outside the mocked
+            function.
+        """
+        # Needed to store the files that should be closed outside this mocked function
+        global LOCKED_FILES_FD  # pylint: disable=global-statement
+
+        if os.path.realpath(dest) == os.path.realpath(mocked_dest):
+            # Write a file just before calling the rename function, in this case
+            # The folder should have been already created
+            with open(dest, 'wb') as fhandle:
+                fhandle.write(new_bytes_content)
+
+            if lock_new_file:
+                file_descriptor = os.open(dest, os.O_RDONLY)
+                lock_file_on_windows(file_descriptor)
+                LOCKED_FILES_FD.append(file_descriptor)
+
+        # Call the actual os.rename function (renamed as this at the top of this module)
+        os._actual_rename_function(src, dest)  # pylint: disable=protected-access
+
+    # Decide if I should create the new file with corrupted content or not
+    new_bytes_content = corrupted_content if reappears_corrupted else content
+    monkeypatch.setattr(
+        os, 'rename',
+        functools.partial(
+            mockrename, mocked_dest=loose_file, new_bytes_content=new_bytes_content, lock_new_file=lock_new_file
+        )
+    )
+
+    # Let's try to write the function - the os.rename will enter the `except FileExistsError` branch
+    with object_writer as fhandle:
+        fhandle.write(content)
+
+    # Make sure to close any open file (files might be left open when lock_new_file == True)
+    if lock_new_file:
+        # Make sure the file (and only one) was locked in this case
+        assert len(LOCKED_FILES_FD) == 1
+        # Close the file (otherwise the test will fail when trying to delete the temp_dir at the end)
+        os.close(LOCKED_FILES_FD[0])
+        # Empty the list
+        LOCKED_FILES_FD.pop()
+    else:
+        # Just check that the mocked function did not lock any file, if we didn't ask to lock
+        assert not LOCKED_FILES_FD
+
+    if trust_existing or (not lock_new_file and not reappears_corrupted):
+        # There should be not duplicate: Either I am trusting existing files, or the file reappears and is
+        # not locked nor corrupted, so I can check the content and is OK
+        duplicates_files = os.listdir(duplicates_folder)
+        assert not duplicates_files
+    else:
+        # If I don't trust_existing, in all other cases (the file is there, locked or unlocked, with correct or
+        # wrong content) I should have the same behavior, i.e. I create a duplicate
+        duplicates_files = os.listdir(duplicates_folder)
+        assert len(duplicates_files) == 1
+        duplicates_file = duplicates_files[0]
+        assert duplicates_file.startswith('{}.'.format(hashkey))
+        with open(os.path.join(duplicates_folder, duplicates_file), 'rb') as fhandle:
+            # Check that the duplicate has the right content
+            assert fhandle.read() == content
+
+    # Let's check the content of the file - this should never have changed from what we wrote at the beginning
+    with open(loose_file, 'rb') as fhandle:
+        assert fhandle.read() == new_bytes_content
+
+
+@pytest.mark.parametrize('dest_is_open', [True, False])
+@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-name, too-many-locals, too-many-statements
+        temp_dir, trust_existing, reappears_corrupted, dest_is_open, monkeypatch
+    ):
+    """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object.
+
+    Moreover, if reappears_corrupted is True, I patch `os.replace` to overwrite the destination with corrupted content.
+
+    Finally, if existing_is_locked is True, after recreating a (correct or corrupted) file,
+    I re-open it in read mode before calling the replace function, to check the behavior in this case.
+    On Windows, I should be not be able to overwrite (but I should be able to read to check the content)
+    so I should get a duplicate *ONLY* if I don't trust existing objects AND I rewrite a corrupted file AND the file
+    is kept open, so I cannot rewrite it.
+    """
+    sandbox_folder = os.path.join(temp_dir, 'sandbox')
+    loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
+    loose_prefix_len = 2
+    hash_type = 'sha256'
+    os.mkdir(sandbox_folder)
+    os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
     hasher = utils.get_hash(hash_type=hash_type)()
@@ -291,23 +552,30 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
         hash_type=hash_type,
         trust_existing=trust_existing
     )
 
-    def mockreplace(src, dest, mocked_dest, new_bytes_content):
+    def mockreplacefail(src, dest, mocked_dest, new_bytes_content, dest_is_open):
         """Replace a file, but if the dest is the mocked destination, before replacing, opens the existing file.
 
         It also rewrites the file with the new_bytes_content beforehand.
+
+        If dest_is_open: call replace while the destinaton is open
         """
         if os.path.realpath(dest) == os.path.realpath(mocked_dest):
             # Write back the file, with possibly a different content
             with open(dest, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
 
-                # Call the actual replace function, but while the file is open in read mode
+            # Call the actual replace function, but while the file is open in read mode
+            # This will fail on Windows
+            if dest_is_open:
                 with open(dest, 'rb') as fhandle:
                     os._actual_replace_function(src, dest)  # pylint: disable=protected-access
+            else:
+                os._actual_replace_function(src, dest)  # pylint: disable=protected-access
         else:
             # It's a different path: just pipe through
             # I renamed this at module load to avoid infinite recursion, see above
@@ -315,22 +583,35 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
 
     new_bytes_content = corrupted_content if reappears_corrupted else content
     monkeypatch.setattr(
-        os, 'replace', functools.partial(mockreplace, mocked_dest=loose_file, new_bytes_content=new_bytes_content)
+        os, 'replace',
+        functools.partial(
+            mockreplacefail, mocked_dest=loose_file, new_bytes_content=new_bytes_content, dest_is_open=dest_is_open
+        )
     )
 
-    if os.name == 'nt' and not trust_existing and reappears_corrupted:
-        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open)
-        # we cannot do much and the libary raises an exception (this should really
-        # never happen, and if it happens, it means there is something really wrong!)
-        with pytest.raises(exc.DynamicInconsistentContent):
-            with object_writer as fhandle:
-                # Write some content (this should end up in the same `loose_file` location)
-                fhandle.write(content)
+    # Let's try to write the function
+    with object_writer as fhandle:
+        fhandle.write(content)
+
+    if os.name == 'nt' and not trust_existing and dest_is_open:
+
+        # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open),
+        # then we store a duplicate copy.
+        duplicates_files = os.listdir(duplicates_folder)
+        assert len(duplicates_files) == 1
+        duplicates_file = duplicates_files[0]
+        assert duplicates_file.startswith('{}.'.format(hashkey))
+        with open(os.path.join(duplicates_folder, duplicates_file), 'rb') as fhandle:
+            # Check that the duplicate has the right content
+            assert fhandle.read() == content
     else:
-        # I would like that on any other OS (POSIX), the object_writer works without exceptions
-        with object_writer as fhandle:
-            # Write some content (this should end up in the same `loose_file` location)
-            fhandle.write(content)
+        # I would like that on any other OS (POSIX), and
+        # in all other cases on Windows (trust_existing if True, or reappears corrupted but is not locked)
+        # the object_writer works without exceptions
+
+        # There should be not duplicate
+        duplicates_files = os.listdir(duplicates_folder)
+        assert not duplicates_files
 
     # Check the end condition:
     # nothing in the sandbox, nothing new in the loose_folder
@@ -347,9 +628,10 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         # (and the logic for reappears_corrupted is not really triggered)
         assert object_content == corrupted_content
     else:
-        if os.name == 'nt' and not trust_existing and reappears_corrupted:
-            # Here I am just checking the current behavior: if the exception was raised,
-            # the corrupted file is left in place (there isn't much I can do)
+        if os.name == 'nt' and not trust_existing and reappears_corrupted and dest_is_open:
+            # Only in this extreme case (don't trust existing, the file reappears, it is
+            # corrupted, and I couldn't overwrite the dest (loose file) because it was open,
+            # then I'm left with the old content)
             assert object_content == corrupted_content
         else:
             # In all other cases, if I don't trust existing files, the content should have been replaced,
@@ -368,11 +650,13 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     """
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     hash_type = 'sha256'
     trust_existing = False  # This branch is only called in this case
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
     hasher = utils.get_hash(hash_type=hash_type)()
@@ -416,6 +700,7 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
         hash_type=hash_type,
         trust_existing=trust_existing
     )
@@ -440,10 +725,12 @@ def test_object_writer_existing_OK(temp_dir, trust_existing):  # pylint: disable
     """Test that the ObjectWriter works if the loose object already exists (with the correct content)."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
     hasher = utils.get_hash(hash_type=hash_type)()
@@ -465,6 +752,7 @@ def test_object_writer_existing_OK(temp_dir, trust_existing):  # pylint: disable
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
         hash_type=hash_type,
         trust_existing=trust_existing
     )
@@ -491,10 +779,12 @@ def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: 
     """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     content = b'523453dfvsd'
     hasher = utils.get_hash(hash_type=hash_type)()
@@ -518,6 +808,7 @@ def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: 
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
+        duplicates_folder=duplicates_folder,
         hash_type=hash_type,
         trust_existing=trust_existing
     )
@@ -548,15 +839,18 @@ def test_unknown_hash_type(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
     sandbox_folder = os.path.join(temp_dir, 'sandbox')
     loose_folder = os.path.join(temp_dir, 'loose')
+    duplicates_folder = os.path.join(temp_dir, 'duplicates')
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
+    os.mkdir(duplicates_folder)
 
     with pytest.raises(ValueError):
         object_writer = utils.ObjectWriter(
             sandbox_folder=sandbox_folder,
             loose_folder=loose_folder,
             loose_prefix_len=loose_prefix_len,
+            duplicates_folder=duplicates_folder,
             hash_type='unknown_hash_string'
         )
         # The exception is actually raised here
