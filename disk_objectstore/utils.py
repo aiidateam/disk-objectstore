@@ -763,3 +763,26 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
         # Also here call the correct fsync function
         _fsync_function(dirfd)
         os.close(dirfd)
+
+
+def compute_hash_and_size(stream, hash_type):
+    """Given a stream and a hash type, return the hash key (hexdigest) and the total size.
+
+    :param stream: an open stream
+    :param hash_type: the string with a name of a valid hash type
+    :return: a tuple with ``(hash, size)`` where ``hash`` is the hexdigest and ``size`` is the size in bytes
+    """
+    _hash_chunksize = 524288
+    hasher = get_hash(hash_type)()
+
+    # Read and hash all content
+    size = 0
+    while True:
+        next_chunk = stream.read(_hash_chunksize)
+        if not next_chunk:
+            # Empty returned value: EOF
+            break
+        hasher.update(next_chunk)
+        size += len(next_chunk)
+
+    return hasher.hexdigest(), size
