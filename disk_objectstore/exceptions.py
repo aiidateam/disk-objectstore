@@ -23,17 +23,3 @@ class InconsistentContent(Exception):
     This should really never happen, if it happens it might either be a bug in the implementation, some serious
     problem e.g. with your disk, or someone accessing the directory manually and modifying the files.
     """
-
-
-class WrongSize(InconsistentContent):
-    """A subclass of InconsistentContent raised when the size is different than the expected one.
-
-    This can only be checked for packed objects."""
-
-
-class WrongHash(InconsistentContent):
-    """A subclass of InconsistentContent raised when the hash of the content is different from the hash key."""
-
-
-class OverlappingObjects(InconsistentContent):
-    """A subclass of InconsistentContent raised when the two packed objects are overlapping."""

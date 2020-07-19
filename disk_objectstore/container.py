@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from .models import Base, Obj
 from .utils import (
     ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext,
-    safe_flush_to_disk, get_hash
+    safe_flush_to_disk, get_hash, compute_hash_and_size
 )
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
@@ -1384,73 +1384,147 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return old_new_obj_hashkey_mapping
 
-    def validate(self):
-        """Perform a number of validations on the container content, to make sure it is not corrupt."""
-        # TODO: decide if to raise at the first error or to collect them and return all.
-        from .exceptions import WrongHash, WrongSize, OverlappingObjects
+    # Let us also compute the hash
+    def _validate_hashkeys_pack(self, pack_id, callback=None):  # pylint: disable=too-many-locals
+        """Validate all hashkeys and returns a dictionary of problematic entries.
 
-        _CHUNKSIZE = 524288
-        hash_class = get_hash(self.hash_type)
+        The keys are the problem type, the values are a list of hashkeys of problematic objects.
+        Currently implemented problems:
 
-        with self.get_objects_stream_and_meta(self.list_all_objects()) as triplets:
-            for obj_hashkey, stream, meta in triplets:
-                hasher = hash_class()
-                computed_size = 0
-                while True:
-                    next_chunk = stream.read(_CHUNKSIZE)
-                    if not next_chunk:
-                        # Empty returned value: EOF
-                        break
-                    hasher.update(next_chunk)
-                    computed_size += len(next_chunk)
-                computed_hash = hasher.hexdigest()
+        - ``invalid_hashes_packed``: the (re)computed hash does not match the hash key
+        - ``invalid_sizes_packed``: the (re)computed size does not match the object size (this can happen for
+          compressed objects)
 
-                if meta['type'] == ObjectType.PACKED and computed_size != meta['size']:
-                    raise WrongSize(
-                        "Object '{}' has expected size {} but it is {}".format(
-                            obj_hashkey, meta['size'], computed_size
-                        )
-                    )
+        Note that the same hash key can appear in multiple lists.
 
-                if computed_hash != obj_hashkey:
-                    raise WrongHash("Object '{}' has instead hash '{}'".format(obj_hashkey, computed_hash))
+        The correct, future-proof way to check if there is any error is:
+
+          retdict = _validate_hashkeys_pack(...)
+          has_error = any(retdict.values())
+
+        :param pack_id: the pack ID to check
+        :param callback: a callback to be called at every iteration of an object. This is useful to show e.g. a
+            progress bar.
+            This callback shold have the following signature: ``def callback(action, value)``.
+            The call back is called:
+            - at the very beginning, with ``action=='init'`` and value being a dictionary with the following keys:
+              ``total``, with the total number of objects that the function will loop on, and ``description`` with a
+              human-readable description with the current pack number.
+            - after every object has been processed, with ``action=='update'`` and value equal to the number of
+              newly processed entries since the last call.
+            - at the end, with ``action=='close'`` and value equal to ``None``.
+
+        Here is a minimal example of progress bar using the ``tqdm`` library:
+
+            class CallbackTqdm:
+                def __init__(self):
+                    self.progress_bar = None
+
+                def callback(self, action, value):
+                    import tqdm
+
+                    if action == 'init':
+                        if self.progress_bar is not None:
+                            self.progress_bar.close()
+                        self.progress_bar = tqdm.tqdm(total=value['total'], desc=value['description'])
+                    elif action == 'update':
+                        if value is None:
+                            value = 1
+                        self.progress_bar.update(n=value)
+                    elif action == 'close':
+                        self.progress_bar.close()
+                        self.progress_bar = None
+
+            callback_tqdm = CallbackTqdm()
+            container.validate(callback=callback_tqdm.callback)
+        """
+        # Will contain hashkeys of invalid objects
+        invalid_hashes = []
+        invalid_sizes = []
+        overlapping = []
 
         session = self._get_cached_session()
-        pack_ids = sorted(set(res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()))
 
-        yield_per_size = 1000
+        if callback:
+            # If we have a callback, compute the total count of objects in this pack
+            total = session.query(Obj).filter(Obj.pack_id == pack_id).count()
+            callback(action='init', value={'total': total, 'description': 'Pack {}'.format(pack_id)})
+            # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+            update_every = max(int(total / 400), 1)
+            # Counter of how many objects have been since since the last update.
+            # A new callback will be performed when this value is > update_every.
+            since_last_update = 0
 
-        for pack_id in pack_ids:
-            current_pos = 0
+        # Open the pack only once, read it in order
+        pack_path = self._get_pack_path_from_pack_id(str(pack_id))
+        current_pos = 0
+        with open(pack_path, mode='rb') as pack_handle:
+            query = session.query(Obj.hashkey, Obj.size, Obj.offset, Obj.length,
+                                  Obj.compressed).filter(Obj.pack_id == 0).order_by(Obj.offset)
+            for hashkey, size, offset, length, compressed in query:
+                obj_reader = PackedObjectReader(fhandle=pack_handle, offset=offset, length=length)
+                if compressed:
+                    obj_reader = StreamDecompresser(obj_reader)
 
-            current_db_offset = 0
-            while True:
-                results_chunk = session.query(Obj).filter(Obj.pack_id == pack_id).order_by(
-                    Obj.offset
-                ).with_entities(Obj.offset, Obj.length).limit(yield_per_size).offset(current_db_offset).all()
+                computed_hash, computed_size = compute_hash_and_size(obj_reader, self.hash_type)
 
-                if results_chunk:
-                    for object_offset, object_length in results_chunk:
-                        if object_offset < current_pos:
-                            raise OverlappingObjects(
-                                'current_pos: {}, object_offset: {}, pack_id: {}'.format(
-                                    current_pos, object_offset, pack_id
-                                )
-                            )
-                        elif object_offset > current_pos:
-                            print('Hole in range {}-{} in pack {}'.format(current_pos, object_offset, pack_id))
-                        current_pos = object_offset + object_length
-                    current_db_offset += len(results_chunk)
-                else:
-                    # No more packed objects
-                    break
+                # Check object correctness
+                if computed_hash != hashkey:
+                    invalid_hashes.append(hashkey)
+                if computed_size != size:
+                    invalid_sizes.append(hashkey)
 
-            this_pack_size = os.path.getsize(self._get_pack_path_from_pack_id(pack_id))
-            if current_pos > this_pack_size:
-                raise OverlappingObjects(
-                    'current_pos: {} beyond pack file size {}, pack_id: {}'.format(
-                        current_pos, this_pack_size, pack_id
-                    )
-                )
-            elif current_pos < this_pack_size:
-                print('Pack {} can be truncated ({} vs {})'.format(pack_id, current_pos, this_pack_size))
+                # Check that there are no overlapping objects
+                if offset < current_pos:
+                    overlapping.append(hashkey)
+                current_pos = offset + length
+
+                if callback:
+                    since_last_update += 1
+                    if since_last_update >= update_every:
+                        callback(action='update', value=since_last_update)
+                        since_last_update = 0
+
+        if callback:
+            # Final call to complete the bar
+            if since_last_update:
+                callback(action='update', value=since_last_update)
+            # Perform any wrap-up, if needed
+            callback(action='close', value=None)
+
+        return {
+            'invalid_hashes_packed': invalid_hashes,
+            'invalid_sizes_packed': invalid_sizes,
+            'overlapping_packed': overlapping
+        }
+
+    def validate(self, callback=None):
+        """Perform a number of validations on the container content, to make sure it is not corrupt."""
+        all_errors = defaultdict(list)
+
+        all_loose = set(self._list_loose())
+
+        if callback:
+            callback(action='init', value={'total': len(all_loose), 'description': 'Loose objects'})
+
+        for hashkey in all_loose:
+            with open(self._get_loose_path_from_hashkey(hashkey), 'rb') as fhandle:
+                computed_hash, _ = compute_hash_and_size(fhandle, self.hash_type)
+                if computed_hash != hashkey:
+                    all_errors['invalid_hashes_loose'].append(hashkey)
+                if callback:
+                    # Update for each object
+                    callback(action='update', value=1)
+        if callback:
+            callback(action='close', value=None)
+
+        session = self._get_cached_session()
+
+        all_pack_ids = sorted(set(res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()))
+
+        for pack_id in all_pack_ids:
+            pack_errors = self._validate_hashkeys_pack(pack_id=pack_id, callback=callback)
+            for error_type, problematic_objects in pack_errors.items():
+                all_errors[error_type] += problematic_objects
+
+        return dict(all_errors)

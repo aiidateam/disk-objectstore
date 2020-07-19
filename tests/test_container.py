@@ -13,7 +13,7 @@ import psutil
 import pytest
 
 from disk_objectstore import Container, ObjectType
-from disk_objectstore import utils
+from disk_objectstore import utils, models
 import disk_objectstore.exceptions as exc
 
 
@@ -1888,21 +1888,211 @@ def test_validate(temp_container, compress):
     obj3 = b'9z0vx0'  # Will be stored directly packed
     obj4 = b'jkljkljlk'  # Will be stored directly packed
 
-    # An empy container should be valid, should not raise nor print
-    temp_container.validate()
+    # An empy container should be valid
+    errors = temp_container.validate()
+    assert not any(errors.values())
 
-    hashkey1 = temp_container.add_object(obj1)
+    temp_container.add_object(obj1)
     temp_container.pack_all_loose(compress=compress)
-    hashkey2 = temp_container.add_object(obj2)
-    hashkey3 = temp_container.add_objects_to_pack([obj3])[0]
+    temp_container.add_object(obj2)
+    temp_container.add_objects_to_pack([obj3], compress=compress)
 
     # Should not raise nor print
-    temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
 
-    # Add the same object - this will create a file that can be truncated and the validate() function should print
-    temp_container.add_objects_to_pack([obj3])  #[0]
-    temp_container.validate()
+    # Add the same object
+    temp_container.add_objects_to_pack([obj3])
+    errors = temp_container.validate()
+    assert not any(errors.values())
 
-    hashkey4 = temp_container.add_objects_to_pack([obj4])[0]
-    # The previous print should be converted from 'can be truncated' to 'there is a hole'
+    # Add a fourth object directly to packs
+    temp_container.add_objects_to_pack([obj4], compress=compress)
     temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+
+def test_validate_corrupt_loose(temp_container):
+    """Test the validation function."""
+    obj1 = b'jklsfjsdlkdj'
+
+    hashkey1 = temp_container.add_object(obj1)
+
+    # No errors yet
+    temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Corrupt the object
+    with open(temp_container._get_loose_path_from_hashkey(hashkey1), 'wb') as fhandle:  # pylint: disable=protected-access
+        fhandle.write(b'CORRUPT')
+
+    errors = temp_container.validate()
+    problems = errors.pop('invalid_hashes_loose')
+
+    assert set(problems) == set([hashkey1])
+
+    # There shouldn't be any other error
+    assert not any(errors.values())
+
+
+def test_validate_corrupt_packed(temp_container):
+    """Test the validation function."""
+    obj1 = b'jklsfjsdlkdj'
+
+    hashkey1 = temp_container.add_objects_to_pack([obj1], compress=False)[0]
+    meta = temp_container.get_object_meta(hashkey1)
+    assert meta['type'] == ObjectType.PACKED
+
+    # No errors yet
+    temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Corrupt the object
+    with open(temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb') as fhandle:  # pylint: disable=protected-access
+        fhandle.write(b'CORRU890890890809PT')
+
+    errors = temp_container.validate()
+    problems = errors.pop('invalid_hashes_packed')
+
+    assert set(problems) == set([hashkey1])
+
+    # There shouldn't be any other error
+    assert not any(errors.values())
+
+
+def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid-name
+    """Test the validation function."""
+    # Both of length 10
+    obj1 = b'0123456789'
+    obj2 = b'a123456789'
+
+    hashkey1, hashkey2 = temp_container.add_objects_to_pack([obj1, obj2])
+    meta1 = temp_container.get_object_meta(hashkey1)
+    meta2 = temp_container.get_object_meta(hashkey2)
+    assert meta1['type'] == ObjectType.PACKED
+    assert meta2['type'] == ObjectType.PACKED
+
+    # Hashkey of the object stored later in the pack
+    hashkey_second = hashkey2 if meta1['pack_offset'] < meta2['pack_offset'] else hashkey1
+
+    # No errors yet
+    temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Change the offset of the second object so that it's overlapping
+    temp_container._get_cached_session().query(  # pylint: disable=protected-access
+        models.Obj
+    ).filter(models.Obj.hashkey == hashkey_second).update({models.Obj.offset: models.Obj.offset - 1})
+
+    errors = temp_container.validate()
+    problems = errors.pop('overlapping_packed')
+
+    assert set(problems) == set([hashkey_second])
+
+    # There are also other errors for the way I changed the set - I don't check those
+
+
+def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invalid-name
+    """Test the validation function."""
+    obj1 = b'jklsfjsdlkdj'
+
+    hashkey1 = temp_container.add_objects_to_pack([obj1], compress=False)[0]
+    meta = temp_container.get_object_meta(hashkey1)
+    assert meta['type'] == ObjectType.PACKED
+
+    # No errors yet
+    temp_container.validate()
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Corrupt the object
+    with open(temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Short corrupted string so also the size is wrong
+        fhandle.write(b'COR')
+
+    errors = temp_container.validate()
+    problems = errors.pop('invalid_hashes_packed')
+    assert set(problems) == set([hashkey1])
+
+    problems = errors.pop('invalid_sizes_packed')
+    assert set(problems) == set([hashkey1])
+
+    # There shouldn't be any other error
+    assert not any(errors.values())
+
+
+def test_validate_callback(temp_container):
+    """Test the correctness of the callbacks.
+
+    Stores the calls to check at the end that everything was called correctly."""
+
+    class CallbackClass:
+        """Class that manages the callback."""
+
+        def __init__(self):
+            """Initialise the class."""
+            self.current_action = None
+            self.performed_actions = []
+
+        def callback(self, action, value):
+            """Check how the callback is called."""
+
+            if action == 'init':
+                assert self.current_action is None, "Starting a new action '{}' without closing the old one {}".format(
+                    action, self.current_action
+                )
+                self.current_action = {'start_value': value, 'value': 0}
+            elif action == 'update':
+                # Track the current position
+                self.current_action['value'] += value
+            elif action == 'close':
+                # Add to list of performed actions
+                self.performed_actions.append(self.current_action)
+                self.current_action = None
+            else:
+                raise AssertionError("Unknown action '{}'".format(action))
+
+    # Add packed objects (2001, 10 chars each), *not* a multiple of 400 (that is the internal value
+    # of how many events should be triggered as a maximum)
+    len_packed = 2001
+    data = ['p{:09d}'.format(i).encode('ascii') for i in range(len_packed)]
+    temp_container.add_objects_to_pack(data)
+
+    # Add loose objects (1x)
+    len_loose = 101
+    data = ['l{:09d}'.format(i).encode('ascii') for i in range(len_loose)]
+    for content in data:
+        temp_container.add_object(content)
+
+    callback_instance = CallbackClass()
+    temp_container.validate(callback=callback_instance.callback)
+
+    assert callback_instance.current_action is None, (
+        "The 'validate' call did not perform a final callback with a 'close' event"
+    )
+
+    # I convert to dict because I the order of the actions can change
+    performed_actions_dict = {
+        action['start_value']['description']: action for action in callback_instance.performed_actions
+    }
+
+    assert performed_actions_dict == {
+        'Loose objects': {
+            'start_value': {
+                'total': len_loose,
+                'description': 'Loose objects'
+            },
+            'value': len_loose
+        },
+        'Pack 0': {
+            'start_value': {
+                'total': len_packed,
+                'description': 'Pack 0'
+            },
+            'value': len_packed
+        }
+    }

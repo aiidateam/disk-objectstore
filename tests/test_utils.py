@@ -1195,3 +1195,19 @@ def test_is_known_hash():
     assert utils.is_known_hash('sha256')
     # A weird string should not be a valid known hash
     assert not utils.is_known_hash('SOME_UNKNOWN_HASH_TYPE')
+
+
+@pytest.mark.parametrize('hash_type', ['sha256'])
+def test_compute_hash_and_size(hash_type):
+    """Check the funtion to compute the hash and size."""
+
+    # Try both a small object, and something larger than the chunk size to have full coverage
+    for content in [b'wgarwfsfsdf', b'3gvn3rnv3o' * 100000]:
+        stream = io.BytesIO(content)
+
+        expected_hash = getattr(hashlib, hash_type)(content).hexdigest()
+        expected_size = len(content)
+
+        hashkey, size = utils.compute_hash_and_size(stream, hash_type=hash_type)
+        assert hashkey == expected_hash
+        assert size == expected_size
