@@ -1460,7 +1460,7 @@ class Container:  # pylint: disable=too-many-public-methods
         current_pos = 0
         with open(pack_path, mode='rb') as pack_handle:
             query = session.query(Obj.hashkey, Obj.size, Obj.offset, Obj.length,
-                                  Obj.compressed).filter(Obj.pack_id == 0).order_by(Obj.offset)
+                                  Obj.compressed).filter(Obj.pack_id == pack_id).order_by(Obj.offset)
             for hashkey, size, offset, length, compressed in query:
                 obj_reader = PackedObjectReader(fhandle=pack_handle, offset=offset, length=length)
                 if compressed:
