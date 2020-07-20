@@ -790,14 +790,31 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
     def add_object(self, content):
-        """Add a loose object.
+        """Add a loose object from its content.
 
         :param content: a binary stream with the file content.
         :return: the hash key of the newly created object.
         """
+        stream = io.BytesIO(content)
+        return self.add_streamed_object(stream)
+
+    def add_streamed_object(self, stream):
+        """Add a loose object getting the content from a stream and limiting memory usage even for large objects.
+
+        :param stream: an (open) stream. The stream will be read from the current position, so make sure that
+           the seek() position on the stream is at zero. The stream will be read until the end, and the content
+           will be then stored as an object.
+        :return: the hash key of the newly created loose object.
+        """
+        _read_chunk_size = 524288
         writer = self._new_object_writer()
+
         with writer as fhandle:
-            fhandle.write(content)
+            while True:
+                chunk = stream.read(_read_chunk_size)
+                if not chunk:
+                    break
+                fhandle.write(chunk)
 
         return writer.get_hashkey()
 

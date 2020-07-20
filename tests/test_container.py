@@ -152,6 +152,24 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
         )
 
 
+def test_add_loose_from_stream(temp_container):
+    """Test adding an object from a stream (from an open file, for instance)."""
+    # Write 10*100000 = 1 million bytes, larger than a chunk
+    content = b'0123456789' * 1000000
+
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False) as temp_handle:
+        temp_handle.write(content)
+
+    with open(temp_handle.name, 'rb') as read_handle:
+        hashkey = temp_container.add_streamed_object(read_handle)
+
+    read_content = temp_container.get_object_content(hashkey)
+
+    assert read_content == content
+
+    os.remove(temp_handle.name)
+
+
 @pytest.mark.parametrize('use_compression,retrieve_bulk', [(True, True), (True, False), (False, True), (False, False)])
 def test_add_get_with_packing(temp_container, generate_random_data, use_compression, retrieve_bulk):
     """Add a number of objects (one by one, loose) to the container.

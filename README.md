@@ -142,6 +142,10 @@ You can find various examples of this pattern in the utility wrapper classes in 
 Note also that if you use `get_objects_stream_and_meta`, you can use `meta['size']` to know the size
 of the object before starting to read, so you can e.g. simply do a `.read()` if you know the size is small.
 
+Finally, when writing objects, if the objects are big, instead of reading in memory the whole content, you should use
+the methods ``container.add_streamed_object(stream)`` (loose objects) or ``add_streamed_objects_to_pack(stream_list)``
+(directly to packs).
+
 ## Packing
 As said above, from the user point of view, accessing a `Container` where objects are all loose, all packed, or partially loose and partially packed, does not change anything from the user-interface point of view, but performance might improve a lot after packing.
 
