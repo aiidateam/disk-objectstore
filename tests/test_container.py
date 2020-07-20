@@ -1,5 +1,6 @@
 """Test of the object-store container module."""
 # pylint: disable=too-many-lines
+import functools
 import hashlib
 import io
 import os
@@ -2603,3 +2604,100 @@ def test_clean_storage_with_duplicates_original_deleted(temp_container):  # pyli
     # There should be no duplicates anymore, nor objects in the container
     assert not os.listdir(duplicates_folder)
     assert not list(temp_container.list_all_objects())
+
+
+@pytest.mark.parametrize('no_holes, no_holes_read_twice', [[True, True], [True, False], [False, True]])
+@pytest.mark.parametrize('use_streams', [True, False])
+@pytest.mark.parametrize('compress', [True, False])
+def test_packs_no_holes(temp_container, no_holes, no_holes_read_twice, use_streams, compress, monkeypatch):
+    """Test what happens when writing directly to packs and asking not to leave back holes."""
+    content1 = b'1234567'
+    content2 = b'wefvmafsf'
+    content3 = b'224f'
+
+    hashkey1 = utils.get_hash(temp_container.hash_type)(content1).hexdigest()
+    hashkey2 = utils.get_hash(temp_container.hash_type)(content2).hexdigest()
+    hashkey3 = utils.get_hash(temp_container.hash_type)(content3).hexdigest()
+
+    # Add twice each object, in some order, in the same call, with at least one at the very end (to check truncation)
+    contents_to_add = [content1, content1, content2, content3, content2, content3]
+    expected_hashkeys = [hashkey1, hashkey1, hashkey2, hashkey3, hashkey2, hashkey3]
+
+    # They should provide the same behavior
+    if use_streams:
+        streams_list = [io.BytesIO(content) for content in contents_to_add]
+        hashkeys = temp_container.add_streamed_objects_to_pack(
+            streams_list, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, compress=compress
+        )
+    else:
+        hashkeys = temp_container.add_objects_to_pack(
+            contents_to_add, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, compress=compress
+        )
+
+    assert hashkeys == expected_hashkeys
+    assert set(temp_container.list_all_objects()) == set(hashkeys)
+
+    sizes = temp_container.get_total_size()
+    assert sizes['total_size_packed'] == len(content1) + len(content2) + len(content3)
+
+    if no_holes:
+        assert sizes['total_size_packed_on_disk'] == sizes['total_size_packfiles_on_disk']
+    else:
+        # We have added twice each object. Note: we cannot use total_size_packed because this would be
+        # before compression
+        assert 2 * sizes['total_size_packed_on_disk'] == sizes['total_size_packfiles_on_disk']
+
+    # Add again the same objects, in a new call
+    # I first monkeypatch the method `_write_data_to_packfile`. This writes to disk, and should never be called
+    # if no_holes is True and no_holes_read_twice is True, because I am just adding existing objects.
+    # So I assert in it.
+
+    # This is a list with a counter. It's a list because we want to get the integer by reference so we can increment it
+    # from inside the function.
+    call_counter = [0]
+
+    def new_write_data_to_packfile(self, call_counter, *args, **kwargs):
+        """ Just pass through to the original call."""
+        assert not (no_holes and no_holes_read_twice)
+        call_counter[0] += 1
+        return self._tmp_write_to_packfile(*args, **kwargs)  # pylint: disable=protected-access
+
+    temp_container._tmp_write_to_packfile = temp_container._write_data_to_packfile  # pylint: disable=protected-access
+    monkeypatch.setattr(
+        temp_container, '_write_data_to_packfile',
+        functools.partial(new_write_data_to_packfile, self=temp_container, call_counter=call_counter)
+    )
+
+    if use_streams:
+        streams_list = [io.BytesIO(content) for content in contents_to_add]
+        hashkeys = temp_container.add_streamed_objects_to_pack(
+            streams_list, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, compress=compress
+        )
+    else:
+        hashkeys = temp_container.add_objects_to_pack(
+            contents_to_add, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, compress=compress
+        )
+
+    # Check that the mocked function was indeeed called (and it was called the right number of times)
+    # This is an indirect way to check the internal behavior, i.e. if the `no_holes_read_twice` is honored and
+    # nothing was written on disk.
+    if no_holes and no_holes_read_twice:
+        assert call_counter[0] == 0
+    else:
+        assert call_counter[0] == len(contents_to_add)
+
+    assert hashkeys == expected_hashkeys
+
+    new_sizes = temp_container.get_total_size()
+    # No new objects, so same size
+    assert new_sizes['total_size_packed'] == len(content1) + len(content2) + len(content3)
+
+    if no_holes:
+        # Shouldn't have created more space on disk
+        assert new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
+        assert new_sizes['total_size_packfiles_on_disk'] == sizes['total_size_packfiles_on_disk']
+    else:
+        # We have doubled the space on disk
+        assert new_sizes['total_size_packfiles_on_disk'] == 2 * sizes['total_size_packfiles_on_disk']
+        # (but shouldn't have increased the size of packed objects on disk)
+        assert new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
