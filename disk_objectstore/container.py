@@ -1161,7 +1161,8 @@ class Container:  # pylint: disable=too-many-public-methods
             # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
             # and deletion is deferred to a manual clean-up operation.
 
-    def add_streamed_objects_to_pack(self, stream_list, compress=False, open_streams=False):
+    def add_streamed_objects_to_pack(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
+            self, stream_list, compress=False, open_streams=False, no_holes=False, no_holes_read_twice=True):
         """Add objects directly to a pack, reading from a list of streams.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1174,8 +1175,19 @@ class Container:  # pylint: disable=too-many-public-methods
             manager. Otherwise, just read from them (assuming the responsibility of opening
             them is on the caller). Setting to True is useful when reading from many files,
             and passing here a number of ``LazyOpener`` objects.
+        :param no_holes: if True, goes back and truncate the pack if the object that was just
+            added already exists on the container. It is False by default because if you add millions of times
+            objects that already exist, you risk to keep writing on the same bits and damaging the hard drive.
+            If ``no_holes`` is False, you will need a full repack to claim back disk space. (Note that repacking
+            is always needed after deleting an object).
+        :param no_holes_read_twice: Read the objects and streams twice (and recompute the hash twice but avoid
+            to write on disk and then overwrite with another object).
+            This of course gives a performance hit as data has to be read twice, and rehashed twice; but avoids
+            risking to damage the hard drive if e.g. re-importing the exact same data).
+            This variable is ignored if `no_holes` is False.
         :return: a list of object hash keys
         """
+        yield_per_size = 1000
         hashkeys = []
 
         # Make a copy of the list and revert its order, so we can pop from the list
@@ -1183,6 +1195,25 @@ class Container:  # pylint: disable=too-many-public-methods
         working_stream_list = list(stream_list[::-1])
         pack_int_id = self._get_pack_id_to_write_to()
         session = self._get_cached_session()
+
+        if no_holes:
+            known_packed_hashkeys = set()
+            # I need to get the full list of PKs to know if the object exists
+            # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
+            last_pk = -1
+            while True:
+                results_chunk = session.query(Obj).filter(Obj.id > last_pk).order_by(
+                    Obj.id
+                ).limit(yield_per_size).with_entities(Obj.id, Obj.hashkey).all()
+
+                for _, hashkey in results_chunk:
+                    known_packed_hashkeys.add(hashkey)
+
+                if results_chunk:
+                    last_pk = results_chunk[-1][0]
+                else:
+                    # No more packed objects
+                    break
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while working_stream_list:
@@ -1212,12 +1243,32 @@ class Container:  # pylint: disable=too-many-public-methods
                     else:
                         stream_context_manager = nullcontext(next_stream)
 
-                    #obj = Obj()
+                    # Get the position before writing the object - I need it if `no_holes` is True and the object
+                    # is already there
+                    position_before = pack_handle.tell()
+
                     obj_dict = {}
                     obj_dict['pack_id'] = pack_int_id
                     obj_dict['compressed'] = compress
                     obj_dict['offset'] = pack_handle.tell()
                     with stream_context_manager as stream:
+                        if no_holes and no_holes_read_twice:
+                            # Compute the hash key before writing (I just read once)
+                            obj_dict['hashkey'], obj_dict['size'] = compute_hash_and_size(
+                                stream, hash_type=self.hash_type
+                            )
+                            if obj_dict['hashkey'] in known_packed_hashkeys:
+                                # I recomputed the hashkey and this was already there: I don't try to write on disk,
+                                # but I just continue.
+                                # Note, however, that I first need to append the hash key to the list of
+                                # hash keys to return at the end
+                                hashkeys.append(obj_dict['hashkey'])
+                                continue
+                            # I didn't continue. Then, I need to store on disk, as it is a new unknown object.
+                            # I therefore need to seek back to zero, because the next line will read it again
+                            # in _write_data_to_packfile.
+                            stream.seek(0)
+
                         obj_dict['size'], obj_dict['hashkey'] = self._write_data_to_packfile(
                             pack_handle=pack_handle, read_handle=stream, compress=compress, hash_type=self.hash_type
                         )
@@ -1230,9 +1281,26 @@ class Container:  # pylint: disable=too-many-public-methods
                     # We need instead to rely of the unique constraint on the DB.
                     # However, the IntegrityError is raised not during the `add` call, but at the final
                     # `commit`.
-                    # One option is to use this, instead of a session.add()
-                    insert_command = Obj.__table__.insert().prefix_with('OR IGNORE').values(obj_dict)
-                    session.execute(insert_command)
+
+                    # In this case, I have in memory a set of hash keys already in packs.
+                    # Note that known_packed_hashkeys is defined only if no_holes is True.
+                    if no_holes and obj_dict['hashkey'] in known_packed_hashkeys:
+                        # The object is there!
+                        # I seek back; I don't truncate, it's not needed.
+                        # I will truncate only at the very end, if needed.
+                        pack_handle.seek(position_before)
+                    else:
+                        # I use this, instead of a session.add()
+                        # Either no_holes is False: then I don't know if the object exists, so I just try to insert
+                        # it and in case do nothing; the space on disk might remain allocated (but unreferenced).
+                        # Or `no_holes` is True and I don't have the object: this will insert the entry
+                        insert_command = Obj.__table__.insert().prefix_with('OR IGNORE').values(obj_dict)
+                        session.execute(insert_command)
+
+                        # I also add the hash key in the known_packed_hashkeys (if no_holes, when this is defined)
+                        if no_holes:
+                            known_packed_hashkeys.add(obj_dict['hashkey'])
+
                     # Now, I have two options.
                     # 1. I just leave in the unused bits, and we do a re-packing later.
                     #    This is ok for efficiency, but might be problematic if you put a lot of
@@ -1255,6 +1323,11 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Append the new hash key to the list of hash keys to return
                     hashkeys.append(obj_dict['hashkey'])
 
+                if no_holes:
+                    # If I don't want holes, I might be left in a case where at the end of the pack
+                    # I have written some bytes and then I have seeked back. I truncate then the file at the current
+                    # position.
+                    pack_handle.truncate()
                 # flush and sync to disk before closing
                 safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
@@ -1267,7 +1340,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return hashkeys
 
-    def add_objects_to_pack(self, content_list, compress=False):
+    def add_objects_to_pack(self, content_list, compress=False, no_holes=False, no_holes_read_twice=True):
         """Add objects directly to a pack, reading from a list of content byte arrays.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1279,10 +1352,18 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :param content_list: a list of content bytestreams to add.
         :param compress: if True, compress objects before storing them.
+        :param no_holes: if True, goes back and truncate the pack if the object that was just
+            added already exists on the container. See comments in the docstring of ``add_streamed_objects_to_pack``.
+        :param no_holes_read_twice: Read the objects and streams twice (and recompute the hash twice but avoid
+            to write on disk and then overwrite with another object).
+            See comments in the docstring of ``add_streamed_objects_to_pack``.
+            This variable is ignored if `no_holes` is False.
         :return: a list of object hash keys
         """
         stream_list = [io.BytesIO(content) for content in content_list]
-        return self.add_streamed_objects_to_pack(stream_list=stream_list, compress=compress)
+        return self.add_streamed_objects_to_pack(
+            stream_list=stream_list, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice
+        )
 
     def clean_storage(self):  # pylint: disable=too-many-branches
         """Perform some maintenance clean-up of the container.
@@ -1405,8 +1486,14 @@ class Container:  # pylint: disable=too-many-public-methods
                     # maybe it's still almost empty.
                     old_obj_hashkeys.append(old_obj_hashkey)
                     # I put this object to the pack, in streamed form, and I store the hash key
+                    # I accept the performance hit of reading twice (possibly uncompressing from the source)
+                    # but I avoid to write a huge object to disk when it's not needed because already available
+                    # on the destination
                     new_obj_hashkeys.append(
-                        other_container.add_streamed_objects_to_pack([stream], compress=compress)[0]
+                        other_container.add_streamed_objects_to_pack([stream],
+                                                                     compress=compress,
+                                                                     no_holes=True,
+                                                                     no_holes_read_twice=True)[0]
                     )
                 elif cache_size + meta['size'] > target_memory_bytes:
                     # I were to read the content, I would be filling too much memory - I flush the cache first,
@@ -1419,7 +1506,10 @@ class Container:  # pylint: disable=too-many-public-methods
                         temp_old_hashkeys, data = zip(*content_cache.items())
 
                         # I put all of them in bulk
-                        temp_new_hashkeys = other_container.add_objects_to_pack(data, compress=compress)
+                        # I accept the performance hit of reading twice (especially since it's already on memory)
+                        temp_new_hashkeys = other_container.add_objects_to_pack(
+                            data, compress=compress, no_holes=True, no_holes_read_twice=True
+                        )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
                         old_obj_hashkeys += temp_old_hashkeys
@@ -1451,7 +1541,9 @@ class Container:  # pylint: disable=too-many-public-methods
             # I create a list of hash keys and the corresponding content
             temp_old_hashkeys, data = zip(*content_cache.items())
             # I put all of them in bulk
-            temp_new_hashkeys = other_container.add_objects_to_pack(data, compress=compress)
+            temp_new_hashkeys = other_container.add_objects_to_pack(
+                data, compress=compress, no_holes=True, no_holes_read_twice=True
+            )
 
             # I update the list of known old (this container) and new (other_container) hash keys
             old_obj_hashkeys += temp_old_hashkeys
