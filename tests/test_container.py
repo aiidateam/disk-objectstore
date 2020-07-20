@@ -2214,8 +2214,9 @@ def test_delete_with_duplicates(temp_container):
     assert temp_container.get_object_content(hashkey2) != content2
 
     # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
-    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
-    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    # I will create duplicates. Note that I will need to change permissions on the parent folder (on POSIX)
+    # so I cannot rewrite it. S_IEXEC is needed on folders on Unix, is ignored on Windows. On Windows, I need
+    # to change the permissions on the file, instead.
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
@@ -2223,6 +2224,14 @@ def test_delete_with_duplicates(temp_container):
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey),  # pylint: disable=protected-access
+        stat.S_IREAD
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey2),  # pylint: disable=protected-access
+        stat.S_IREAD
     )
 
     # This should create two duplicates
@@ -2246,6 +2255,14 @@ def test_delete_with_duplicates(temp_container):
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey2),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
     )
 
     # Also put back the correct content - this was just to trigger the creation of a duplicate
@@ -2314,8 +2331,9 @@ def test_clean_storage_with_duplicates(temp_container):  # pylint: disable=too-m
     assert temp_container.get_object_content(hashkey3) != content3
 
     # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
-    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
-    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    # I will create duplicates. Note that I will need to change permissions on the parent folder (on POSIX)
+    # so I cannot rewrite it. S_IEXEC is needed on folders on Unix, is ignored on Windows. On Windows, I need
+    # to change the permissions on the file, instead.
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
@@ -2327,6 +2345,18 @@ def test_clean_storage_with_duplicates(temp_container):  # pylint: disable=too-m
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey3)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey2),  # pylint: disable=protected-access
+        stat.S_IREAD
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey3),  # pylint: disable=protected-access
+        stat.S_IREAD
     )
 
     # Let's create three duplicates of each object
@@ -2362,6 +2392,18 @@ def test_clean_storage_with_duplicates(temp_container):  # pylint: disable=too-m
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey3)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey2),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey3),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
     )
 
     # Let's now do the following
@@ -2429,11 +2471,16 @@ def test_clean_storage_with_duplicates_all_corrupt(temp_container):  # pylint: d
     assert temp_container.get_object_content(hashkey1) != content1
 
     # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
-    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
-    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    # I will create duplicates. Note that I will need to change permissions on the parent folder (on POSIX)
+    # so I cannot rewrite it. S_IEXEC is needed on folders on Unix, is ignored on Windows. On Windows, I need
+    # to change the permissions on the file, instead.
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD
     )
 
     # Let's create three duplicates of each object
@@ -2451,6 +2498,10 @@ def test_clean_storage_with_duplicates_all_corrupt(temp_container):  # pylint: d
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
     )
 
     # Let's now do the following
@@ -2483,11 +2534,16 @@ def test_clean_storage_with_duplicates_original_deleted(temp_container):  # pyli
     assert temp_container.get_object_content(hashkey1) != content1
 
     # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
-    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
-    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    # I will create duplicates. Note that I will need to change permissions on the parent folder (on POSIX)
+    # so I cannot rewrite it. S_IEXEC is needed on folders on Unix, is ignored on Windows. On Windows, I need
+    # to change the permissions on the file, instead.
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD
     )
 
     # Let's create a duplicate
@@ -2502,6 +2558,10 @@ def test_clean_storage_with_duplicates_original_deleted(temp_container):  # pyli
     os.chmod(
         os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
         stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        temp_container._get_loose_path_from_hashkey(hashkey1),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE
     )
 
     # Let's now do the following: I delete the loose object by hand
