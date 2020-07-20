@@ -62,5 +62,7 @@ jobs:
       with:
         file: ./coverage.xml
         name: disk-objectstore
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         ## Commenting the following lines - if often fails, and if at least one manages to push, it should be enough
         # fail_ci_if_error: true
