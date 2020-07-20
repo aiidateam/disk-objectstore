@@ -5,6 +5,7 @@ import io
 import os
 import random
 import shutil
+import stat
 import tempfile
 import zlib
 import pathlib
@@ -1897,7 +1898,7 @@ def test_validate(temp_container, compress):
     temp_container.add_object(obj2)
     temp_container.add_objects_to_pack([obj3], compress=compress)
 
-    # Should not raise nor print
+    # Should not raise
     errors = temp_container.validate()
     assert not any(errors.values())
 
@@ -2096,3 +2097,431 @@ def test_validate_callback(temp_container):
             'value': len_packed
         }
     }
+
+
+@pytest.mark.parametrize('ask_deleting_unknown', [True, False])
+@pytest.mark.parametrize('compress', [True, False])
+def test_delete(temp_container, compress, ask_deleting_unknown):  # pylint: disable=too-many-statements
+    """Test the deletion logic."""
+    obj1 = b'324r3w'  # Will be packed (from loose)
+    obj2 = b'jklf2wv'  # Will be loose
+    obj3 = b'9z0vx0'  # Will be stored directly packed
+
+    unknown_hashkey = utils.get_hash(temp_container.hash_type)(b'NOT_EXISTING_OBJECT_CONTENT').hexdigest()
+
+    hashkey1 = temp_container.add_object(obj1)
+    temp_container.pack_all_loose(compress=compress)
+    hashkey2 = temp_container.add_object(obj2)
+    hashkey3 = temp_container.add_objects_to_pack([obj3], compress=compress)[0]
+
+    # Add again the same object, so it's both packed *and* loose - I check this is the case (the type is packed,
+    # but the loose object is there)
+    temp_container.add_object(obj1)
+    assert os.path.exists(temp_container._get_loose_path_from_hashkey(hashkey1))  # pylint: disable=protected-access
+
+    # Assert the objects are of the expected type
+    assert temp_container.get_object_meta(hashkey1)['type'] == ObjectType.PACKED
+    assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.LOOSE
+    assert temp_container.get_object_meta(hashkey3)['type'] == ObjectType.PACKED
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(unknown_hashkey)
+
+    assert set(temp_container.list_all_objects()) == set([hashkey1, hashkey2, hashkey3])
+
+    #####################################
+    # Delete the packed object (hashkey3)
+    if ask_deleting_unknown:
+        deleted = temp_container.delete_objects([hashkey3, unknown_hashkey])
+    else:
+        deleted = temp_container.delete_objects([hashkey3])
+
+    # In any case, only one object should have been deleted
+    assert list(deleted) == [hashkey3]
+    # Assert the objects are of the expected type
+    assert temp_container.get_object_meta(hashkey1)['type'] == ObjectType.PACKED
+    assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.LOOSE
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey3)
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(unknown_hashkey)
+
+    assert set(temp_container.list_all_objects()) == set([hashkey1, hashkey2])
+
+    #####################################
+    # Delete the object that is both loose and packed object (hashkey1)
+    if ask_deleting_unknown:
+        deleted = temp_container.delete_objects([hashkey1, unknown_hashkey])
+    else:
+        deleted = temp_container.delete_objects([hashkey1])
+
+    # In any case, only one object should have been deleted
+    assert list(deleted) == [hashkey1]
+    # Assert the objects are of the expected type
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey1)
+    assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.LOOSE
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey3)
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(unknown_hashkey)
+    # Check that also the loose version has been deleted
+    assert not os.path.exists(temp_container._get_loose_path_from_hashkey(hashkey1))  # pylint: disable=protected-access
+
+    assert set(temp_container.list_all_objects()) == set([hashkey2])
+
+    #####################################
+    # Delete the object that is loose (hashkey2)
+    if ask_deleting_unknown:
+        deleted = temp_container.delete_objects([hashkey2, unknown_hashkey])
+    else:
+        deleted = temp_container.delete_objects([hashkey2])
+
+    # In any case, only one object should have been deleted
+    assert list(deleted) == [hashkey2]
+    # Assert the objects are of the expected type
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey1)
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey2)
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(hashkey3)
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_meta(unknown_hashkey)
+
+    assert set(temp_container.list_all_objects()) == set()
+
+
+def test_delete_with_duplicates(temp_container):
+    """Test the deletion logic."""
+    content = b'324r3w'
+    hashkey = temp_container.add_object(content)
+
+    content2 = b'dsfsa'
+    # Add a second object
+    hashkey2 = temp_container.add_object(content2)
+
+    assert not os.listdir(temp_container._get_duplicates_folder())  # pylint: disable=protected-access
+
+    with open(temp_container._get_loose_path_from_hashkey(hashkey), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+    with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+
+    # I should get the corrupted content
+    assert temp_container.get_object_content(hashkey) != content
+    assert temp_container.get_object_content(hashkey2) != content2
+
+    # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
+    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
+    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+
+    # This should create two duplicates
+    temp_container.add_object(content)
+    temp_container.add_object(content)
+    # This should create another duplicate for the other object
+    temp_container.add_object(content2)
+
+    # For this test I want that it wasn't writable so I still get the corrupted content
+    assert temp_container.get_object_content(hashkey) != content
+    assert temp_container.get_object_content(hashkey2) != content2
+
+    assert len(os.listdir(temp_container._get_duplicates_folder())) == 3  # pylint: disable=protected-access
+
+    # Put back write permissions on the folder - it's also needed to be able to delete the temp_dir at the end
+    # of the test, but also to run the delete() call
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+
+    # Also put back the correct content - this was just to trigger the creation of a duplicate
+    with open(temp_container._get_loose_path_from_hashkey(hashkey), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(content)
+    with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(content2)
+    assert temp_container.get_object_content(hashkey) == content
+    assert temp_container.get_object_content(hashkey2) == content2
+
+    # Let's delete the object
+    temp_container.delete_objects([hashkey])
+    # The container should be empty
+    assert list(temp_container.list_all_objects()) == [hashkey2]
+    # The object should not be there
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_content(hashkey)
+    assert temp_container.get_object_content(hashkey2) == content2
+
+    # I should also have deleted the corresponding duplicates, but only for the object I deleted
+    duplicates = os.listdir(temp_container._get_duplicates_folder())  # pylint: disable=protected-access
+    assert len(duplicates) == 1
+    # The only duplicate left should be for the second object
+    duplicate = duplicates[0]
+    assert duplicate.startswith('{}.'.format(hashkey2))
+
+    # I delete also the second object: also those files should go away
+    temp_container.delete_objects([hashkey2])
+    assert not list(temp_container.list_all_objects())
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_content(hashkey2)
+    assert not os.listdir(temp_container._get_duplicates_folder())  # pylint: disable=protected-access
+
+
+def test_clean_storage_with_duplicates(temp_container):  # pylint: disable=too-many-statements, invalid-name
+    """Check the logic when using the clean storage method and where there are duplicates."""
+    duplicates_folder = temp_container._get_duplicates_folder()  # pylint: disable=protected-access
+    content1 = b'324r3w'
+    hashkey1 = temp_container.add_object(content1)
+
+    content2 = b'dsfsa'
+    # Add a second object
+    hashkey2 = temp_container.add_object(content2)
+
+    content3 = b'wejvlweekf'
+    # Add a second object
+    hashkey3 = temp_container.add_object(content3)
+
+    assert not os.listdir(duplicates_folder)
+
+    with open(temp_container._get_loose_path_from_hashkey(hashkey1), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+    with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+    with open(temp_container._get_loose_path_from_hashkey(hashkey3), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+
+    # I should get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+    assert temp_container.get_object_content(hashkey2) != content2
+    assert temp_container.get_object_content(hashkey3) != content3
+
+    # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
+    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
+    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey3)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+
+    # Let's create three duplicates of each object
+    temp_container.add_object(content1)
+    temp_container.add_object(content1)
+    temp_container.add_object(content1)
+    # This should create another duplicate for the other object
+    temp_container.add_object(content2)
+    temp_container.add_object(content2)
+    temp_container.add_object(content2)
+    # This should create another duplicate for the other object
+    temp_container.add_object(content3)
+    temp_container.add_object(content3)
+    temp_container.add_object(content3)
+
+    # For this test I want that it wasn't writable so I still get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+    assert temp_container.get_object_content(hashkey2) != content2
+    assert temp_container.get_object_content(hashkey3) != content3
+
+    assert len(os.listdir(duplicates_folder)) == 9
+
+    # Put back write permissions on the folder - it's also needed to be able to delete the temp_dir at the end
+    # of the test, but also to run the delete() call
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey2)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey3)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+
+    # Let's now do the following
+    # - for the first object I put back the correct content: all duplicates should be deleted
+    # - for the second object I put back the correct content but corrupt all duplicates:
+    #   all duplicates should be deleted
+    # - for the third object I leave the corrupted object, and corrupt all duplicates but one: the correct
+    #   object should be restored, not duplicates should be left behind
+    # Also put back the correct content - this was just to trigger the creation of a duplicate
+    with open(temp_container._get_loose_path_from_hashkey(hashkey1), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write back correct content
+        fhandle.write(content1)
+    with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write back correct content
+        fhandle.write(content2)
+    assert temp_container.get_object_content(hashkey1) == content1
+    assert temp_container.get_object_content(hashkey2) == content2
+    assert temp_container.get_object_content(hashkey3) != content3
+
+    hash3_corrupt_count = 0
+    for duplicate in os.listdir(duplicates_folder):
+        if duplicate.startswith('{}.'.format(hashkey2)):
+            # All duplicates of object 2 are corrupt
+            with open(os.path.join(duplicates_folder, duplicate), 'wb') as fhandle:
+                fhandle.write(b'CORRUPT')
+
+        if duplicate.startswith('{}.'.format(hashkey3)):
+            hash3_corrupt_count += 1
+            if hash3_corrupt_count <= 2:
+                # I corrupt 2 out of three duplicates of object three
+                with open(os.path.join(duplicates_folder, duplicate), 'wb') as fhandle:
+                    fhandle.write(b'CORRUPT')
+
+    # No exception here
+    temp_container.clean_storage()
+
+    # All duplicates should have been deleted
+    assert not os.listdir(duplicates_folder)
+
+    # All objects are there and no new ones
+    assert set(temp_container.list_all_objects()) == set([hashkey1, hashkey2, hashkey3])
+
+    # All contents have been restored, and no mistake has been done by replacing the content of wrong objects
+    assert {hashkey: temp_container.get_object_content(hashkey) for hashkey in [hashkey1, hashkey2, hashkey3]} == {
+        hashkey1: content1,
+        hashkey2: content2,
+        hashkey3: content3
+    }
+
+
+def test_clean_storage_with_duplicates_all_corrupt(temp_container):  # pylint: disable=invalid-name
+    """Check the logic when using the clean storage method and where there are duplicates,
+    and object and all duplicates are corrupt."""
+    duplicates_folder = temp_container._get_duplicates_folder()  # pylint: disable=protected-access
+    content1 = b'324r3w'
+    hashkey1 = temp_container.add_object(content1)
+
+    assert not os.listdir(duplicates_folder)
+
+    with open(temp_container._get_loose_path_from_hashkey(hashkey1), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+
+    # I should get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+
+    # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
+    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
+    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+
+    # Let's create three duplicates of each object
+    temp_container.add_object(content1)
+    temp_container.add_object(content1)
+    temp_container.add_object(content1)
+
+    # For this test I want that it wasn't writable so I still get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+
+    assert len(os.listdir(duplicates_folder)) == 3
+
+    # Put back write permissions on the folder - it's also needed to be able to delete the temp_dir at the end
+    # of the test, but also to run the delete() call
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+
+    # Let's now do the following
+    # - I leave the object corrupted, and I corrupt *ALL* duplicates
+
+    for duplicate in os.listdir(duplicates_folder):
+        assert duplicate.startswith('{}.'.format(hashkey1))  # Just to check the behavior
+        with open(os.path.join(duplicates_folder, duplicate), 'wb') as fhandle:
+            fhandle.write(b'CORRUPT')
+
+    # I check that I get an error because everything is inconsistent
+    with pytest.raises(exc.InconsistentContent) as excinfo:
+        temp_container.clean_storage()
+    assert 'all corrupt' in str(excinfo.value)
+
+
+def test_clean_storage_with_duplicates_original_deleted(temp_container):  # pylint: disable=invalid-name
+    """Check the logic when using the clean storage method and where there are duplicates."""
+    duplicates_folder = temp_container._get_duplicates_folder()  # pylint: disable=protected-access
+    content1 = b'324r3w'
+    hashkey1 = temp_container.add_object(content1)
+
+    assert not os.listdir(duplicates_folder)
+
+    with open(temp_container._get_loose_path_from_hashkey(hashkey1), 'wb') as fhandle:  # pylint: disable=protected-access
+        # Write some corrupted content
+        fhandle.write(b'CORRUPTED')
+
+    # I should get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+
+    # Change permissions to the loose object so I cannot rename it and so (since the file is corrupt)
+    # I will create duplicates. Note that I will need to change permissions on the parent folder so I cannot rewrite
+    # it. S_IEXEC is needed on folders on Unix, is ignored on Windows
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IEXEC
+    )
+
+    # Let's create a duplicate
+    temp_container.add_object(content1)
+
+    # For this test I want that it wasn't writable so I still get the corrupted content
+    assert temp_container.get_object_content(hashkey1) != content1
+    assert len(os.listdir(duplicates_folder)) == 1
+
+    # Put back write permissions on the folder - it's also needed to be able to delete the temp_dir at the end
+    # of the test, but also to run the delete() call
+    os.chmod(
+        os.path.dirname(temp_container._get_loose_path_from_hashkey(hashkey1)),  # pylint: disable=protected-access
+        stat.S_IREAD | stat.S_IWRITE | stat.S_IEXEC
+    )
+
+    # Let's now do the following: I delete the loose object by hand
+    os.remove(temp_container._get_loose_path_from_hashkey(hashkey1))  # pylint: disable=protected-access
+
+    # The object should not exist anymore
+    with pytest.raises(exc.NotExistent):
+        temp_container.get_object_content(hashkey1)
+
+    # I check that I get an error because the original is not there but there are duplicates
+    with pytest.raises(exc.InconsistentContent) as excinfo:
+        temp_container.clean_storage()
+    assert 'does not exist anymore' in str(excinfo.value)
+
+    # Deleting the object should be enough to clean up the issue
+    temp_container.delete_objects([hashkey1])
+
+    # This should now not raise
+    temp_container.clean_storage()
+
+    # There should be no duplicates anymore, nor objects in the container
+    assert not os.listdir(duplicates_folder)
+    assert not list(temp_container.list_all_objects())
