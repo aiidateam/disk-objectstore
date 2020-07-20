@@ -1,0 +1,21 @@
+t = time.time(); uuids = [str(uuid.uuid4()) for _ in range(1000000)] ; print(time.time() - t)
+# 6.099022150039673
+
+
+t = time.time()
+for uuid_ in uuids:
+    os.path.exists(os.path.join(uuid_[:2], uuid_[2:]))
+print(time.time() - t)
+# 12.501297950744629
+
+
+t = time.time()
+for uuid_ in uuids:
+    try:
+        os.remove(os.path.join(uuid_[:2], uuid_[2:]))
+    except FileNotFoundError:
+        pass
+print(time.time() - t)
+# 12.428303003311157
+
+

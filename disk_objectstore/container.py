@@ -1267,14 +1267,75 @@ class Container:  # pylint: disable=too-many-public-methods
         stream_list = [io.BytesIO(content) for content in content_list]
         return self.add_streamed_objects_to_pack(stream_list=stream_list, compress=compress)
 
-    def clean_storage(self):
+    def clean_storage(self):  # pylint: disable=too-many-branches
         """Perform some maintenance clean-up of the container.
 
         .. note:: this is a maintenance operation, must be performed when nobody is using the container!
 
         In particular:
+        - it removes duplicates if any, with some validation
         - it cleans up loose objects that are already in packs
         """
+        all_duplicates = os.listdir(self._get_duplicates_folder())
+        duplicates_mapping = defaultdict(list)
+
+        for duplicate in all_duplicates:
+            # I check only duplicates, but I don't delete files that start with a dot
+            # (these might have been added by some process scanning the folders or something similar, like
+            # .DS_Store on macOS)
+            if '.' in duplicate and not duplicate.startswith('.'):
+                reference_obj_hashkey = duplicate.partition('.')[0]
+                duplicates_mapping[reference_obj_hashkey].append(duplicate)
+
+        for reference_obj_hashkey in duplicates_mapping:
+            try:
+                with self.get_object_stream(reference_obj_hashkey) as stream:
+                    computed_hash, _ = compute_hash_and_size(stream, self.hash_type)
+            except NotExistent:
+                # The object is not in the repository. It has probably been deleted and for some
+                # reason the duplicates have not been cleaned. I raise: this might have appened for instance
+                # because two processes tried to write, the first locked, the second gave up and created a
+                # duplicate, but then the first failed.
+                # We don't implement it, but what should be done is to pick one of the duplicates, check that
+                # the hash is correct, and put it in the right place as a loose object.
+                raise InconsistentContent(
+                    "There is at least a duplicate for object '{}' that however does not exist anymore. "
+                    "If you don't need it, use `delete_objects()` passing this hash key to clean up the repository, "
+                    'or attempt a manual recovery of the duplicate'.format(reference_obj_hashkey)
+                )
+
+            if computed_hash == reference_obj_hashkey:
+                # The object is in the repo and has the correct hashkey: we just remove all duplicates
+                for duplicate in duplicates_mapping[reference_obj_hashkey]:
+                    os.remove(os.path.join(self._get_duplicates_folder(), duplicate))
+            else:
+                good_duplicate = None
+                for duplicate in duplicates_mapping[reference_obj_hashkey]:
+                    with open(os.path.join(self._get_duplicates_folder(), duplicate), 'rb') as fhandle:
+                        computed_hash, _ = compute_hash_and_size(fhandle, self.hash_type)
+                    if computed_hash == reference_obj_hashkey:
+                        # We found a duplicate that has the correct hash key: let's put it in place
+                        good_duplicate = duplicate
+                        break
+                else:
+                    # No valid duplicates found! I raise
+                    raise InconsistentContent(
+                        "There are duplicates of '{}' but they are all corrupt".format(reference_obj_hashkey)
+                    )
+                # If we are here, we found the "good duplicate"; let's put it in place
+                # It should not be None, I should have raised!
+                assert good_duplicate is not None
+                os.replace(
+                    os.path.join(self._get_duplicates_folder(), good_duplicate),
+                    self._get_loose_path_from_hashkey(reference_obj_hashkey)
+                )
+                # Let's remove all other duplicates
+                for duplicate in duplicates_mapping[reference_obj_hashkey]:
+                    if duplicate == good_duplicate:
+                        # Let's skip the one I already moved
+                        continue
+                    os.remove(os.path.join(self._get_duplicates_folder(), duplicate))
+
         loose_objects = set(self._list_loose())
         # Force reload of the session to get the most up-to-date packed objects
         self.close()
@@ -1528,3 +1589,83 @@ class Container:  # pylint: disable=too-many-public-methods
                 all_errors[error_type] += problematic_objects
 
         return dict(all_errors)
+
+    def delete_objects(self, hashkeys):
+        """Delete the selected objects.
+
+        .. note:: In the current version, this has to be considered a maintenance operation, and as such it should
+           be executed when *no process is accessing the repository*.
+
+           If processes are accessing in parallel, a few race conditions might happen:
+
+           - The delete might fail because the loose object is open or reading the object might fail with
+             a PermissionError because the object is being deleted (on Windows)
+           - On MacOS, there is an unexpected race condition for which when reading the object during concurrent delete,
+             one gets an empty handle instead of either FileNotFoundError or the actual content
+           - Routines might get the list of files before performing operations, and the objects might disappear in the
+             meantime
+           - Write access to packs is not possible as the DB will be locked (e.g. writing directly to packs, or
+             packing loose objects).
+
+          For this reason, we stop at the first error (a subset of the objects requested might have been deleted), i.e.
+          the delete operation is not atomic or transacted.
+
+        .. note:: If an object is both loose and packed, this is a valid condition. For this reason, when deleting,
+           we first remove it from loose objects - if the object is also packed, this is a no-op from the point of
+           view of the container. Only then we delete the packed versions. If we did the opposite, we would have
+           situations, e.g. in failures, where objects go back from packed to loose.
+           In addition, however, especially on Windows we might have created some duplicates in the duplicates folder.
+           I will delete those, if they exist, as the first thing.
+
+        .. note:: Deletion of loose objects is done by directly removing the objects.
+           Deletion of packed objects is a 'soft' delete, meaning that the entry is just removed from the SQLite DB,
+           but the data will still occupy data on disk.
+           One needs to do a full repack to recover disk space.
+
+        :param hashkeys: hashkeys to be deleted
+        :return: a list of hashkeys that were actually deleted (might be shorted if non-existing hashkeys were asked)
+        """
+        deleted_loose = set()
+        deleted_packed = set()
+
+        all_duplicates = os.listdir(self._get_duplicates_folder())
+
+        for hashkey in hashkeys:
+            # Filter only duplicates of this object and delete them
+            duplicates_this_object = [
+                duplicate_fname for duplicate_fname in all_duplicates
+                if duplicate_fname.startswith('{}.'.format(hashkey))
+            ]
+            for duplicate_fname in duplicates_this_object:
+                # For now I don't put checks - I should be the only one accessing the container, so I should not
+                # get PermissionError or similar exceptionss
+                os.remove(os.path.join(self._get_duplicates_folder(), duplicate_fname))
+            try:
+                os.remove(self._get_loose_path_from_hashkey(hashkey))
+                deleted_loose.add(hashkey)
+            except FileNotFoundError:
+                # No loose object: it's OK
+                pass
+
+        session = self._get_cached_session()
+
+        # Operate in chunks, due to the SQLite limits
+        # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
+        for chunk in chunk_iterator(hashkeys, size=self._IN_SQL_MAX_LENGTH):
+            query = session.query(Obj.hashkey).filter(Obj.hashkey.in_(chunk))
+            deleted_this_chunk = [res[0] for res in query]
+            # I need to specify either `False` or `'fetch'`
+            # otherwise one gets 'sqlalchemy.exc.InvalidRequestError: Could not evaluate current criteria in Python'
+            # `'fetch'` will run the query twice so it's less efficient
+            # False is beter but one needs to either `expire_all` at the end, or commit.
+            # I will commit at the end.
+            query.delete(synchronize_session=False)
+            deleted_packed.update(deleted_this_chunk)
+
+        session.commit()
+
+        # If no error occurred, then the union is the list of all objects deleted.
+        # Note: in the future, if we allow partial deletion, if an object was deleted from loose but there was
+        # an error while deleting the packed version of an object (even if the loose version of the same object
+        # was deleted) should be considered as if the object has *not* been deleted
+        return list(deleted_loose.union(deleted_packed))
