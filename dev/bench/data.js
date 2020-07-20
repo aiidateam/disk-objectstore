@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1595266978203,
+  "lastUpdate": 1595267223559,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6388,6 +6388,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000014562039908364605",
             "extra": "mean: 327.8289091580143 nsec\nrounds: 151516"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "gio.piz@gmail.com",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9aa52ca307119522cbcb110a505b77c6b7562513",
+          "message": "Merge pull request #91 from giovannipizzi/test-codecov\n\nTesting Codecov after moving the repo",
+          "timestamp": "2020-07-20T19:40:16+02:00",
+          "tree_id": "da603cd023341129a9ef4d74d860764b02631c3f",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/9aa52ca307119522cbcb110a505b77c6b7562513"
+        },
+        "date": 1595267221111,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.28324662225806535,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016253309212691098",
+            "extra": "mean: 3.5304922333333324 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.10892668804723271,
+            "unit": "iter/sec",
+            "range": "stddev: 0.2473009742963626",
+            "extra": "mean: 9.1804866 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.2619952372260523,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008851564401450983",
+            "extra": "mean: 306.5608399999945 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 11.89545229721349,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003851142659061087",
+            "extra": "mean: 84.06574000000404 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.34279574639904,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011365657899121707",
+            "extra": "mean: 744.7149000000101 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3230558.57673033,
+            "unit": "iter/sec",
+            "range": "stddev: 6.948993874739497e-7",
+            "extra": "mean: 309.54399254745016 nsec\nrounds: 147059"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2986697.023272517,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000004162817008072879",
+            "extra": "mean: 334.81802546672736 nsec\nrounds: 158731"
           }
         ]
       }
