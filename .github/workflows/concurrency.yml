@@ -22,7 +22,7 @@ jobs:
         python-version: [3.7, 3.8]
 
     # Do not run on forks
-    if: github.repository_owner == 'giovannipizzi'
+    if: github.repository_owner == 'aiidateam'
 
     steps:
     - uses: actions/checkout@v2

@@ -20,7 +20,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     # Do not run on forks
-    if: github.repository_owner == 'giovannipizzi'
+    if: github.repository_owner == 'aiidateam'
 
     steps:
     - uses: actions/checkout@v2

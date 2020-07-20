@@ -24,7 +24,7 @@ VERSION = VERSIONLINE.partition('=')[2].replace('"', '').replace("'", '').strip(
 setup(
     name=MODULENAME,
     description='An implementation of an efficient object store writing directly into a disk folder',
-    url='http://github.com/giovannipizzi/disk-objectstore',
+    url='http://github.com/aiidateam/disk-objectstore',
     license=THE_LICENSE,
     author='Giovanni Pizzi',
     version=VERSION,

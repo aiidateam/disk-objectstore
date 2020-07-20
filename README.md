@@ -6,7 +6,7 @@ and does not require a server running.
 |    | |
 |-----|----------------------------------------------------------------------------|
 |Latest release| [![PyPI version](https://badge.fury.io/py/disk-objectstore.svg)](https://badge.fury.io/py/disk-objectstore) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/disk-objectstore.svg)](https://pypi.python.org/pypi/disk-objectstore/) |
-|Build status| [![Build Status](https://github.com/giovannipizzi/disk-objectstore/workflows/Continuous%20integration/badge.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Supported platforms](https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg)](https://github.com/giovannipizzi/disk-objectstore/actions) [![Coverage Status](https://codecov.io/gh/giovannipizzi/disk-objectstore/branch/develop/graph/badge.svg)](https://codecov.io/gh/giovannipizzi/disk-objectstore) [Performance benchmarks](https://giovannipizzi.github.io/disk-objectstore/dev/bench/) |
+|Build status| [![Build Status](https://github.com/aiidateam/disk-objectstore/workflows/Continuous%20integration/badge.svg)](https://github.com/aiidateam/disk-objectstore/actions) [![Supported platforms](https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg)](https://github.com/aiidateam/disk-objectstore/actions) [![Coverage Status](https://codecov.io/gh/aiidateam/disk-objectstore/branch/develop/graph/badge.svg)](https://codecov.io/gh/aiidateam/disk-objectstore) [Performance benchmarks](https://aiidateam.github.io/disk-objectstore/dev/bench/) |
 
 
 ## Goal
@@ -256,9 +256,13 @@ This implementation, in particular, addresses the following aspects:
 
   **Note**: only one process can act on packs at a given time.
 
-  **Note**: while the goal is to make it possible to pack while the object store
-  is in use (possibly only with a temporary impact read performance), this is not
-  yet supported (see discussion in [#4](https://github.com/giovannipizzi/disk-objectstore/issues/4)).
+  **Note**: (one single) packer project can happen also while many other processes are
+  writing *loose* objects and reading *any type* of object.
+  To guarantee the possibility of concurrent operations, the loose objects are not removed
+  while repacking.
+  It is instead needed to run the `clean_storage()` method as discussed earlier,
+  but this is a maintenance operation, so this can be run when noone is using
+  the container in read or write mode.
 
   This packing operation takes all loose objects and puts them together in packs.
   Pack files are just concatenation of bytes of the packed objects. Any new object
