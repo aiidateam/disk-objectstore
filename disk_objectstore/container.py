@@ -1457,7 +1457,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def export(self, hashkeys, other_container, compress=True, target_memory_bytes=104857600):
+    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600):
         """Export the specified hashkeys to a new container (must be already initialised).
 
         :param hashkeys: an iterable of hash keys.
