@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1595249215832,
+  "lastUpdate": 1595249695753,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1471,6 +1471,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.993225461997166e-7",
             "extra": "mean: 355.9564553226574 nsec\nrounds: 120482"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "3f3cd07ea6627bbf6d0637e69e409ef4801b4f90",
+          "message": "Adding nightly concurrency extensive tests\n\nThis runs only the main branch of the main fork, at 5AM UTC.\nTests are repeated 5 times to increase the change of seeing random errors.\n\nFixes #76",
+          "timestamp": "2020-07-20T14:51:14+02:00",
+          "tree_id": "01658224411ac3acb670ee1ef1e9d5081979f9ee",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/3f3cd07ea6627bbf6d0637e69e409ef4801b4f90"
+        },
+        "date": 1595249695319,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.39735167619081435,
+            "unit": "iter/sec",
+            "range": "stddev: 0.040590414309501485",
+            "extra": "mean: 2.5166623419999987 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.9045676048034105,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0865927666245492",
+            "extra": "mean: 1.1055005669999975 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.3744434079999244,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006395043410957255",
+            "extra": "mean: 296.34516839999776 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 26.298049612198135,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0033212160472582226",
+            "extra": "mean: 38.025633640000365 msec\nrounds: 25"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.9570384615262206,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013373092381426407",
+            "extra": "mean: 510.97616099999266 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1870192.2892243543,
+            "unit": "iter/sec",
+            "range": "stddev: 5.797218171857238e-7",
+            "extra": "mean: 534.7043754600983 nsec\nrounds: 169492"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2942638.0178022226,
+            "unit": "iter/sec",
+            "range": "stddev: 2.549888622902953e-7",
+            "extra": "mean: 339.83112905858616 nsec\nrounds: 151516"
           }
         ]
       }
