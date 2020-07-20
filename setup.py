@@ -52,8 +52,7 @@ setup(
         'Programming Language :: Python :: 3', 'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6', 'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8', 'License :: OSI Approved :: MIT License',
-        'Operating System :: OS Independent', 'Operating System :: MacOS :: MacOS X',
-        'Operating System :: Microsoft :: Windows', 'Operating System :: POSIX :: Linux',
-        'Topic :: Software Development :: Libraries :: Python Modules'
+        'Operating System :: MacOS :: MacOS X', 'Operating System :: Microsoft :: Windows',
+        'Operating System :: POSIX :: Linux', 'Topic :: Software Development :: Libraries :: Python Modules'
     ],
 )
