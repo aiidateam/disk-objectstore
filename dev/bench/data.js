@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1595253396449,
+  "lastUpdate": 1595256884145,
   "repoUrl": "https://github.com/giovannipizzi/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -1617,6 +1617,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.472929627595861e-7",
             "extra": "mean: 316.21092717481645 nsec\nrounds: 153823"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6304d727083b3e119ba6015b89bf05ed396d63e6",
+          "message": "Merge pull request #89 from giovannipizzi/fix_85_no_holes\n\nAdding the `no_holes` and `no_holes_read_twice` flags",
+          "timestamp": "2020-07-20T16:52:36+02:00",
+          "tree_id": "9e910cfbe5f17904d39b416b6b491cf8ba01fad4",
+          "url": "https://github.com/giovannipizzi/disk-objectstore/commit/6304d727083b3e119ba6015b89bf05ed396d63e6"
+        },
+        "date": 1595256883708,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.3824686507447717,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0029681522177338214",
+            "extra": "mean: 2.6145933739999996 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.242882355577996,
+            "unit": "iter/sec",
+            "range": "stddev: 0.052509799072824",
+            "extra": "mean: 804.5813793333281 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 3.2846622267033303,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013556172293187127",
+            "extra": "mean: 304.4453070000003 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 26.005814705124532,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0032154555891742765",
+            "extra": "mean: 38.45293874999989 msec\nrounds: 24"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.879291225264264,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013368420572235692",
+            "extra": "mean: 532.1155053333371 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1929282.0957152704,
+            "unit": "iter/sec",
+            "range": "stddev: 5.639353473862002e-7",
+            "extra": "mean: 518.3275178994784 nsec\nrounds: 156251"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2948973.1149135036,
+            "unit": "iter/sec",
+            "range": "stddev: 2.2372520965806042e-7",
+            "extra": "mean: 339.1010907977363 nsec\nrounds: 138889"
           }
         ]
       }
