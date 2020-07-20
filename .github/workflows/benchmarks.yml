@@ -19,6 +19,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
+    # Do not run on forks
+    if: github.repository_owner == 'giovannipizzi'
+
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
