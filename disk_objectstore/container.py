@@ -18,8 +18,8 @@ from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
 from .utils import (
-    ObjectWriter, PackedObjectReader, StreamDecompresser, chunk_iterator, is_known_hash, nullcontext,
-    safe_flush_to_disk, get_hash, compute_hash_and_size
+    ObjectWriter, PackedObjectReader, StreamDecompresser, CallbackStreamWrapper, chunk_iterator, is_known_hash,
+    nullcontext, safe_flush_to_disk, get_hash, compute_hash_and_size
 )
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
@@ -441,7 +441,7 @@ class Container:  # pylint: disable=too-many-public-methods
             (i.e., neither packed nor loose). If False, return ``None`` instead of the
             stream.
         :param with_streams: if True, yield triplets (hashkey, stream, meta).
-        :param with_streams: if False, yield pairs (hashkey, meta) and avoid to open any file.
+            If False, yield pairs (hashkey, meta) and avoid to open any file.
         """
         # pylint: disable=too-many-nested-blocks
 
@@ -1181,8 +1181,46 @@ class Container:  # pylint: disable=too-many-public-methods
             # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
             # and deletion is deferred to a manual clean-up operation.
 
-    def add_streamed_objects_to_pack(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
-            self, stream_list, compress=False, open_streams=False, no_holes=False, no_holes_read_twice=True):
+    def add_streamed_object_to_pack(  # pylint: disable=too-many-arguments
+            self,
+            stream,
+            compress=False,
+            open_streams=False,
+            no_holes=False,
+            no_holes_read_twice=True,
+            callback=None,
+            callback_size_hint=0
+        ):
+        """Add a single object in streamed form to a pack.
+
+        For the description of the parameters, see the docstring of ``add_streamed_objects_to_pack``.
+
+        The only difference is that here the callback will provide feedback on the progress of this specific object.
+        :param callback_size_hint: the expected size of the stream - if not provided, it is used send back the total
+            length in the callbacks
+        :return: a single objec hash key
+        """
+        streams = [CallbackStreamWrapper(stream, callback=callback, total_length=callback_size_hint)]
+
+        # I specifically set the callback to None
+        retval = self.add_streamed_objects_to_pack(
+            streams,
+            compress=compress,
+            open_streams=open_streams,
+            no_holes=no_holes,
+            no_holes_read_twice=no_holes_read_twice,
+            callback=None
+        )
+
+        # Close the callback so the bar doesn't remaing open
+        streams[0].close_callback()
+
+        return retval[0]
+
+
+    def add_streamed_objects_to_pack(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements, too-many-arguments
+            self, stream_list, compress=False, open_streams=False, no_holes=False, no_holes_read_twice=True,
+            callback=None):
         """Add objects directly to a pack, reading from a list of streams.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1217,6 +1255,17 @@ class Container:  # pylint: disable=too-many-public-methods
         session = self._get_cached_session()
 
         if no_holes:
+            if callback:
+                total = session.query(Obj).count()
+                if total:
+                    # If we have a callback, compute the total count of objects in this pack
+                    callback(action='init', value={'total': total, 'description': 'List existing'})
+                    # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+                    update_every = max(int(total / 400), 1)
+                    # Counter of how many objects have been since since the last update.
+                    # A new callback will be performed when this value is > update_every.
+                    since_last_update = 0
+
             known_packed_hashkeys = set()
             # I need to get the full list of PKs to know if the object exists
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
@@ -1226,19 +1275,42 @@ class Container:  # pylint: disable=too-many-public-methods
                     Obj.id
                 ).limit(yield_per_size).with_entities(Obj.id, Obj.hashkey).all()
 
+                if not results_chunk:
+                    # No more packed objects
+                    break
+
                 for _, hashkey in results_chunk:
                     known_packed_hashkeys.add(hashkey)
 
-                if results_chunk:
-                    last_pk = results_chunk[-1][0]
-                else:
-                    # No more packed objects
-                    break
+                last_pk = results_chunk[-1][0]
+                if callback:
+                    since_last_update += len(results_chunk)
+                    if since_last_update >= update_every:
+                        callback(action='update', value=since_last_update)
+                        since_last_update = 0
+
+            if callback and total:
+                # Final call to complete the bar
+                if since_last_update:
+                    callback(action='update', value=since_last_update)
+                # Perform any wrap-up, if needed
+                callback(action='close', value=None)
+
+        if callback:
+            total = len(working_stream_list)
+            # If we have a callback, compute the total count of objects in this pack
+            callback(action='init', value={'total': total, 'description': 'Bulk storing'})
+            # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+            update_every = max(int(total / 400), 1)
+            # Counter of how many objects have been since since the last update.
+            # A new callback will be performed when this value is > update_every.
+            since_last_update = 0
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while working_stream_list:
             # Store the last pack integer ID, needed to know later if I need to open a new pack
             last_pack_int_id = pack_int_id
+
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
                 # Inner loop: continue until when there is a file, or
@@ -1268,6 +1340,12 @@ class Container:  # pylint: disable=too-many-public-methods
                         stream_context_manager = next_stream
                     else:
                         stream_context_manager = nullcontext(next_stream)
+
+                    if callback:
+                        since_last_update += 1
+                        if since_last_update >= update_every:
+                            callback(action='update', value=since_last_update)
+                            since_last_update = 0
 
                     # Get the position before writing the object - I need it if `no_holes` is True and the object
                     # is already there
@@ -1378,9 +1456,20 @@ class Container:  # pylint: disable=too-many-public-methods
             # Note: because of the logic above, in theory this should not raise an IntegrityError!
             session.commit()
 
+        if callback:
+            # Final call to complete the bar
+            if since_last_update:
+                callback(action='update', value=since_last_update)
+            # Perform any wrap-up, if needed
+            callback(action='close', value=None)
+
         return hashkeys
 
-    def add_objects_to_pack(self, content_list, compress=False, no_holes=False, no_holes_read_twice=True):
+    # yapf: disable
+    def add_objects_to_pack(
+            self, content_list, compress=False, no_holes=False, no_holes_read_twice=True, callback=None
+        ):
+        # yapf: enable
         """Add objects directly to a pack, reading from a list of content byte arrays.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1402,7 +1491,11 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         stream_list = [io.BytesIO(content) for content in content_list]
         return self.add_streamed_objects_to_pack(
-            stream_list=stream_list, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice
+            stream_list=stream_list,
+            compress=compress,
+            no_holes=no_holes,
+            no_holes_read_twice=no_holes_read_twice,
+            callback=callback
         )
 
     def clean_storage(self):  # pylint: disable=too-many-branches
@@ -1497,7 +1590,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600):
+    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
         """Export the specified hashkeys to a new container (must be already initialised).
 
         :param hashkeys: an iterable of hash keys.
@@ -1530,10 +1623,14 @@ class Container:  # pylint: disable=too-many-public-methods
                     # but I avoid to write a huge object to disk when it's not needed because already available
                     # on the destination
                     new_obj_hashkeys.append(
-                        other_container.add_streamed_objects_to_pack([stream],
-                                                                     compress=compress,
-                                                                     no_holes=True,
-                                                                     no_holes_read_twice=True)[0]
+                        other_container.add_streamed_object_to_pack(
+                            stream,
+                            compress=compress,
+                            no_holes=True,
+                            no_holes_read_twice=True,
+                            callback=callback,
+                            callback_size_hint=meta['size']
+                        )
                     )
                 elif cache_size + meta['size'] > target_memory_bytes:
                     # I were to read the content, I would be filling too much memory - I flush the cache first,
@@ -1548,7 +1645,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         # I put all of them in bulk
                         # I accept the performance hit of reading twice (especially since it's already on memory)
                         temp_new_hashkeys = other_container.add_objects_to_pack(
-                            data, compress=compress, no_holes=True, no_holes_read_twice=True
+                            data, compress=compress, no_holes=True, no_holes_read_twice=True, callback=callback
                         )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
@@ -1582,7 +1679,7 @@ class Container:  # pylint: disable=too-many-public-methods
             temp_old_hashkeys, data = zip(*content_cache.items())
             # I put all of them in bulk
             temp_new_hashkeys = other_container.add_objects_to_pack(
-                data, compress=compress, no_holes=True, no_holes_read_twice=True
+                data, compress=compress, no_holes=True, no_holes_read_twice=True, callback=callback
             )
 
             # I update the list of known old (this container) and new (other_container) hash keys

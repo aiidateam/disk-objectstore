@@ -413,6 +413,107 @@ class PackedObjectReader:
         return stream
 
 
+class CallbackStreamWrapper:
+    """A class to just wrap a read stream, but perform a callback every few bytes.
+
+    Should be used only for streams open in read mode.
+    """
+
+    @property
+    def mode(self):
+        return self._stream.mode
+
+    @property
+    def seekable(self):
+        """Return whether object supports random access."""
+        return self._stream.seekable
+
+    def seek(self, target, whence=0):
+        """Change stream position."""
+        if target > self.tell():
+            if self._callback:
+                self._since_last_update += target - self.tell()
+                if self._since_last_update >= self._update_every:
+                    self._callback(action='update', value=self._since_last_update)
+                    self._since_last_update = 0
+        else:
+            self.close_callback()
+            if self._callback:
+                # If we have a callback, compute the total count of objects in this pack
+                self._callback(
+                    action='init',
+                    value={
+                        'total': self._total_length,
+                        'description': '{} [rewind]'.format(self._description)
+                    }
+                )
+                # Counter of how many objects have been since since the last update.
+                # A new callback will be performed when this value is > update_every.
+                self._since_last_update = target
+                self._callback(action='update', value=self._since_last_update)
+
+        return self._stream.seek(target, whence)
+
+    def tell(self):
+        """Return current stream position."""
+        return self._stream.tell()
+
+    def __init__(self, stream, callback, total_length=0, description='Streamed object'):
+        """
+        Initialises the reader to a given stream.
+
+        :param stream: an open stream
+        :param callback: a callback to call to update the status (or None if not needed)
+        :param total_length: the expected length
+        """
+        self._stream = stream
+        self._callback = callback
+        self._total_length = total_length
+        self._description = description
+
+        if self._callback:
+            # If we have a callback, compute the total count of objects in this pack
+            self._callback(action='init', value={'total': total_length, 'description': description})
+            # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+            self._update_every = max(int(total_length / 400), 1) if total_length else 1
+            # Counter of how many objects have been since since the last update.
+            # A new callback will be performed when this value is > update_every.
+            self._since_last_update = 0
+
+    def read(self, size=-1):
+        """
+        Read and return up to n bytes.
+
+        If the argument is omitted, None, or negative, reads and
+        returns all data until EOF (that corresponds to the length specified
+        in the __init__ method).
+
+        Returns an empty bytes object on EOF.
+        """
+        data = self._stream.read(size)
+
+        if self._callback:
+            self._since_last_update += len(data)
+            if self._since_last_update >= self._update_every:
+                self._callback(action='update', value=self._since_last_update)
+                self._since_last_update = 0
+
+        return data
+
+    def close_callback(self):
+        """
+        Call the wrap up closing calls for the callback.
+
+        .. note:: it DOES NOT close the stream.
+        """
+        if self._callback:
+            # Final call to complete the bar
+            if self._since_last_update:
+                self._callback(action='update', value=self._since_last_update)
+            # Perform any wrap-up, if needed
+            self._callback(action='close', value=None)
+
+
 class StreamDecompresser:
     """A class that gets a stream of compressed zlib bytes, and returns the corresponding
     uncompressed bytes when being read via the .read() method.
