@@ -2701,3 +2701,77 @@ def test_packs_no_holes(temp_container, no_holes, no_holes_read_twice, use_strea
         assert new_sizes['total_size_packfiles_on_disk'] == 2 * sizes['total_size_packfiles_on_disk']
         # (but shouldn't have increased the size of packed objects on disk)
         assert new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
+
+
+def test_packs_read_in_order(temp_dir):
+    """Test that when reading the objects from packs, they are read grouped by packs, and in offset order.
+
+    This is very important for performance.
+
+    .. note:: IMPORTANT: This is not running with concurrent packing, so only the first internal loop of
+       get_objects_stream_and_meta is triggered and the order is the one described above.
+       The application should NOT make any assumption on this because, during concurrent packing of loose objects,
+       the recently packed/clean_stored objects might be returned later.
+
+    .. note:: We are not checking the order in which packs are considered
+    """
+    num_objects = 10000  # Number of objects
+    obj_size = 999
+    # This will generate N objects of size obj_size each
+    # They are different because the at least the first characters until the first dash are different
+
+    temp_container = Container(temp_dir)
+    # A apck should accomodate ~100 objects, and there should be > 90 packs
+    temp_container.init_container(clear=True, pack_size_target=100000)
+
+    data = [('{}-'.format(i).encode('ascii') * obj_size)[:obj_size] for i in range(num_objects)]
+    hashkeys = temp_container.add_objects_to_pack(data, compress=False)
+
+    # Check that I indeed created num_objects (different) objects
+    assert len(set(hashkeys)) == num_objects
+
+    # Shuffle the array. When retrieving data, I should still fetch them per pack, and then in offset order
+    # (so the pack file is read sequentially rather than randomly)
+    random.shuffle(hashkeys)
+
+    last_offset = None
+    last_pack = None
+    seen_packs = set()
+
+    with temp_container.get_objects_stream_and_meta(hashkeys, skip_if_missing=False) as triplets:
+        for _, _, meta in triplets:
+            assert meta['type'] == ObjectType.PACKED
+            if last_pack is None:
+                last_pack = meta['pack_id']
+                seen_packs.add(meta['pack_id'])
+                last_offset = 0
+            elif meta['pack_id'] != last_pack:
+                assert meta['pack_id'] not in seen_packs, (
+                    'Objects were already retrieved from pack {}, the last pack was {} '
+                    'and we are trying to retrieve again from pack {}'.format(
+                        meta['pack_id'], last_pack, meta['pack_id']
+                    )
+                )
+                last_pack = meta['pack_id']
+                seen_packs.add(meta['pack_id'])
+                last_offset = 0
+            # We are still in the same pack
+            assert last_offset <= meta['pack_offset'], (
+                'in pack {} we are reading offset {}, but before we were reading a later offset {}'.format(
+                    meta['pack_id'], meta['pack_offset'], last_offset
+                )
+            )
+            last_offset = meta['pack_offset']
+
+    # I want to make sure to have generated enough packs, meaning this function is actually testing the behavior
+    # This should generated 90 packs
+    # NOTE: if you use compress = True, you get many less packs since the data is very compressible! (only 2)
+    # So we only test with compress=False
+    largest_pack = max(seen_packs)
+    assert largest_pack > 80
+
+    # Check that all packs were scanned through
+    assert sorted(seen_packs) == list(range(largest_pack + 1))
+
+    # Important before exiting from the tests
+    temp_container.close()

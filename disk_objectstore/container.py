@@ -467,12 +467,12 @@ class Container:  # pylint: disable=too-many-public-methods
         for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
             query = session.query(Obj).filter(
                 Obj.hashkey.in_(chunk)
-            ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                            Obj.size).order_by(Obj.offset)
+            ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
             for res in query:
                 packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
         for pack_int_id, pack_metadata in packs.items():
+            pack_metadata.sort(key=lambda metadata: metadata.offset)
             hashkeys_in_packs.update(obj.hashkey for obj in pack_metadata)
             pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
             try:
@@ -568,8 +568,7 @@ class Container:  # pylint: disable=too-many-public-methods
             for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
                 query = session.query(Obj).filter(
                     Obj.hashkey.in_(chunk)
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed,
-                                Obj.size).order_by(Obj.offset)
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
                 for res in query:
                     packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
@@ -578,6 +577,7 @@ class Container:  # pylint: disable=too-many-public-methods
             really_not_found = loose_not_found.copy()
 
             for pack_int_id, pack_metadata in packs.items():
+                pack_metadata.sort(key=lambda metadata: metadata.offset)
                 # I remove those that I found
                 really_not_found.difference_update(obj.hashkey for obj in pack_metadata)
 
@@ -1100,6 +1100,12 @@ class Container:  # pylint: disable=too-many-public-methods
             with self.lock_pack(str(pack_int_id)) as pack_handle:
                 # Inner loop: continue until when there is a file, or
                 # if we need to change pack (in this case `break` is called)
+
+                # We will store here the dictionaries with the data to be pushed in the DB
+                # By collecting the data and committing as a bulk operation at the end,
+                # we highly improve performance
+                obj_dicts = []
+
                 while loose_objects:
                     # Check in which pack I need to write to the next object
                     pack_int_id = self._get_pack_id_to_write_to()
@@ -1116,15 +1122,16 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Get next hash key to process
                     loose_hashkey = loose_objects.pop()
 
-                    obj = Obj(hashkey=loose_hashkey)
-                    obj.pack_id = pack_int_id
-                    obj.compressed = compress
-                    obj.offset = pack_handle.tell()
+                    obj_dict = {}
+                    obj_dict['hashkey'] = loose_hashkey
+                    obj_dict['pack_id'] = pack_int_id
+                    obj_dict['compressed'] = compress
+                    obj_dict['offset'] = pack_handle.tell()
                     try:
                         with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
                             # The second parameter is `None` since we are not computing the hash
                             # We can instead pass the hash algorithm and assert that it is correct
-                            obj.size, new_hashkey = self._write_data_to_packfile(
+                            obj_dict['size'], new_hashkey = self._write_data_to_packfile(
                                 pack_handle=pack_handle,
                                 read_handle=loose_handle,
                                 compress=compress,
@@ -1140,8 +1147,21 @@ class Container:  # pylint: disable=too-many-public-methods
                                 loose_hashkey, new_hashkey
                             )
                         )
-                    obj.length = pack_handle.tell() - obj.offset
-                    session.add(obj)
+                    obj_dict['length'] = pack_handle.tell() - obj_dict['offset']
+
+                    # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
+                    obj_dicts.append(obj_dict)
+
+                # It's now time to write to the DB, in a single bulk operation (per pack)
+                if obj_dicts:
+                    # Here I shouldn't need to do `OR IGNORE` as in `add_streamed_objects_to_pack`
+                    # Because I'm already checking the hash keys and avoiding to add twice the same
+                    session.execute(Obj.__table__.insert(), obj_dicts)
+                    # Clean up the list - this will be cleaned up also later,
+                    # but it's better to make sure that we do it here, to avoid trying to rewrite
+                    # the same objects again
+                    obj_dicts = []
+                # I don't commit here; I commit after making sure the file is flushed and closed
 
                 # flush and sync to disk before closing
                 safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
@@ -1223,6 +1243,12 @@ class Container:  # pylint: disable=too-many-public-methods
             with self.lock_pack(str(pack_int_id)) as pack_handle:
                 # Inner loop: continue until when there is a file, or
                 # if we need to change pack (in this case `break` is called)
+
+                # We will store here the dictionaries with the data to be pushed in the DB
+                # By collecting the data and committing as a bulk operation at the end,
+                # we highly improve performance
+                obj_dicts = []
+
                 while working_stream_list:
                     # Check in which pack I need to write to the next object
                     pack_int_id = self._get_pack_id_to_write_to()
@@ -1294,8 +1320,12 @@ class Container:  # pylint: disable=too-many-public-methods
                         # Either no_holes is False: then I don't know if the object exists, so I just try to insert
                         # it and in case do nothing; the space on disk might remain allocated (but unreferenced).
                         # Or `no_holes` is True and I don't have the object: this will insert the entry
-                        insert_command = Obj.__table__.insert().prefix_with('OR IGNORE').values(obj_dict)
-                        session.execute(insert_command)
+                        obj_dicts.append(obj_dict)
+
+                        # In the future, if there are memory issues with millions of objects,
+                        # We can flush here to DB if there are too many objects in the cache.
+                        # Also, there are other optimisations that can be done, like deleting
+                        # the pack_metadata when not needed anymore etc.
 
                         # I also add the hash key in the known_packed_hashkeys (if no_holes, when this is defined)
                         if no_holes:
@@ -1328,6 +1358,16 @@ class Container:  # pylint: disable=too-many-public-methods
                     # I have written some bytes and then I have seeked back. I truncate then the file at the current
                     # position.
                     pack_handle.truncate()
+
+                # It's now time to write to the DB, in a single bulk operation (per pack)
+                if obj_dicts:
+                    session.execute(Obj.__table__.insert().prefix_with('OR IGNORE'), obj_dicts)
+                    # Clean up the list - this will be cleaned up also later,
+                    # but it's better to make sure that we do it here, to avoid trying to rewrite
+                    # the same objects again
+                    obj_dicts = []
+                # I don't commit here; I commit after making sure the file is flushed and closed
+
                 # flush and sync to disk before closing
                 safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
