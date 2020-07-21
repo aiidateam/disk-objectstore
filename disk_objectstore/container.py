@@ -1590,7 +1590,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
+    def export(  # pylint: disable=too-many-locals
+            self,
+            hashkeys,
+            other_container,
+            compress=False,
+            target_memory_bytes=104857600,
+            callback=None
+        ):
         """Export the specified hashkeys to a new container (must be already initialised).
 
         :param hashkeys: an iterable of hash keys.
@@ -1611,6 +1618,17 @@ class Container:  # pylint: disable=too-many-public-methods
         # We then flush in 'bulk' to the `other_container`, thus speeding up the process
         content_cache = {}
         cache_size = 0
+
+        if callback:
+            # If we have a callback, compute the total count of objects in this pack
+            total = len(hashkeys)
+            callback(action='init', value={'total': total, 'description': 'Objects'})
+            # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+            update_every = max(int(total / 1000), 1)
+            # Counter of how many objects have been since since the last update.
+            # A new callback will be performed when this value is > update_every.
+            since_last_update = 0
+
         with self.get_objects_stream_and_meta(hashkeys) as triplets:
             for old_obj_hashkey, stream, meta in triplets:
                 if meta['size'] > target_memory_bytes:
@@ -1628,8 +1646,6 @@ class Container:  # pylint: disable=too-many-public-methods
                             compress=compress,
                             no_holes=True,
                             no_holes_read_twice=True,
-                            callback=callback,
-                            callback_size_hint=meta['size']
                         )
                     )
                 elif cache_size + meta['size'] > target_memory_bytes:
@@ -1645,7 +1661,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         # I put all of them in bulk
                         # I accept the performance hit of reading twice (especially since it's already on memory)
                         temp_new_hashkeys = other_container.add_objects_to_pack(
-                            data, compress=compress, no_holes=True, no_holes_read_twice=True, callback=callback
+                            data, compress=compress, no_holes=True, no_holes_read_twice=True
                         )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
@@ -1668,6 +1684,19 @@ class Container:  # pylint: disable=too-many-public-methods
                     content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
                     cache_size += meta['size']
+
+                if callback:
+                    since_last_update += 1
+                    if since_last_update >= update_every:
+                        callback(action='update', value=since_last_update)
+                        since_last_update = 0
+
+        if callback:
+            # Final call to complete the bar
+            if since_last_update:
+                callback(action='update', value=since_last_update)
+            # Perform any wrap-up, if needed
+            callback(action='close', value=None)
 
         # The for loop is finished. I can also go out of the `with` context manager because whatever is in the
         # cache is in memory. Most probably I still have content in the cache, just flush it,
