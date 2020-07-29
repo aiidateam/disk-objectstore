@@ -14,7 +14,7 @@ import pathlib
 import psutil
 import pytest
 
-from disk_objectstore import Container, ObjectType
+from disk_objectstore import Container, ObjectType, CompressMode
 from disk_objectstore import utils, models
 import disk_objectstore.exceptions as exc
 
@@ -2775,3 +2775,82 @@ def test_packs_read_in_order(temp_dir):
 
     # Important before exiting from the tests
     temp_container.close()
+
+
+def test_repack(temp_dir):
+    """Test the repacking functionality."""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b'-123456789', b'a123456789', b'b123456789', b'c123456789', b'd123456789', b'e123456789', b'f123456789',
+        b'g123456789', b'h123456789'
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+
+    assert temp_container.get_object_meta(hashkeys[0])['pack_id'] == 0
+    assert temp_container.get_object_meta(hashkeys[1])['pack_id'] == 0
+    assert temp_container.get_object_meta(hashkeys[2])['pack_id'] == 0
+    assert temp_container.get_object_meta(hashkeys[3])['pack_id'] == 0
+    assert temp_container.get_object_meta(hashkeys[4])['pack_id'] == 1
+    assert temp_container.get_object_meta(hashkeys[5])['pack_id'] == 1
+    assert temp_container.get_object_meta(hashkeys[6])['pack_id'] == 1
+    assert temp_container.get_object_meta(hashkeys[7])['pack_id'] == 1
+    assert temp_container.get_object_meta(hashkeys[8])['pack_id'] == 2
+
+    # I check which packs exist
+    assert sorted(temp_container._list_packs()) == ['0', '1', '2']  # pylint: disable=protected-access
+
+    counts = temp_container.count_objects()
+    assert counts['packed'] == len(data)
+    size = temp_container.get_total_size()
+    assert size['total_size_packed'] == 10 * len(data)
+    assert size['total_size_packfiles_on_disk'] == 10 * len(data)
+
+    # I delete an object in the middle, an object at the end of a pack, and an object at the beginning.
+    # I also delete the only object
+    to_delete = [hashkeys[1], hashkeys[3], hashkeys[4], hashkeys[8]]
+    temp_container.delete_objects(to_delete)
+
+    # I check that all packs are still there
+    assert sorted(temp_container._list_packs()) == ['0', '1', '2']  # pylint: disable=protected-access
+
+    counts = temp_container.count_objects()
+    assert counts['packed'] == len(data) - len(to_delete)
+    size = temp_container.get_total_size()
+    # I deleted 4 objects
+    assert size['total_size_packed'] == 10 * (len(data) - len(to_delete))
+    # Still full size on disk
+    assert size['total_size_packfiles_on_disk'] == 10 * len(data)
+
+    # I now repack
+    temp_container.repack(compress_mode=CompressMode.KEEP)
+
+    # I check that all packs are still there, but pack 2 was deleted
+    assert sorted(temp_container._list_packs()) == ['0', '1']  # pylint: disable=protected-access
+
+    counts = temp_container.count_objects()
+    assert counts['packed'] == len(data) - len(to_delete)
+    size = temp_container.get_total_size()
+    assert size['total_size_packed'] == 10 * (len(data) - len(to_delete))
+    # This time also the size on disk should be adapted (it's the main goal of repacking)
+    assert size['total_size_packfiles_on_disk'] == 10 * (len(data) - len(to_delete))
+
+    # Important before exiting from the tests
+    temp_container.close()
+
+
+def test_not_implemented_repacks(temp_container):
+    """Check the error for not implemented repack methods."""
+    # We need to have at least one pack
+    temp_container.add_objects_to_pack([b'23r2'])
+    for compress_mode in CompressMode:
+        if compress_mode == CompressMode.KEEP:
+            continue
+        with pytest.raises(NotImplementedError):
+            temp_container.repack(compress_mode=compress_mode)

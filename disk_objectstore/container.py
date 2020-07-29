@@ -33,6 +33,17 @@ class ObjectType(Enum):
     MISSING = 'missing'
 
 
+class CompressMode(Enum):
+    """Various possible behaviors when compressing.
+
+    For now used only in the `repack` function, should probably be applied to all functions
+    that have a `compress` kwarg.
+    """
+    NO = 'no'  # pylint: disable=invalid-name
+    YES = 'yes'
+    KEEP = 'keep'  # Keep the current compression when repacking.
+
+
 class Container:  # pylint: disable=too-many-public-methods
     """A class representing a container of objects (which is stored on a disk folder)"""
 
@@ -43,6 +54,10 @@ class Container:  # pylint: disable=too-many-public-methods
     # Size in bytes of each of the chunks used when (internally) reading or writing in chunks, e.g.
     # when packing.
     _CHUNKSIZE = 65536
+
+    # The pack ID that is used for repacking as a temporary location.
+    # NOTE: It MUST be an integer and it MUST be < 0 to avoid collisions with 'actual' packs
+    _REPACK_PACK_ID = -1
 
     # When performing an `in_` query in SQLite, this is converted to something like
     # 'SELECT * FROM db_object WHERE db_object.hashkey IN (?, ?)' with parameters = ('hash1', 'hash2')
@@ -199,13 +214,15 @@ class Container:  # pylint: disable=too-many-public-methods
         # if loose_prefix_len is zero, there is no subfolder
         return os.path.join(self._get_loose_folder(), hashkey)
 
-    def _get_pack_path_from_pack_id(self, pack_id):
+    def _get_pack_path_from_pack_id(self, pack_id, allow_repack_pack=False):
         """Return the path of the pack file on disk for the given pack ID.
 
         :param pack_id: the pack ID.
+        :param pack_id: Whether to allow the repack pack id
         """
         pack_id = str(pack_id)
-        assert self._is_valid_pack_id(pack_id), 'Invalid pack ID {}'.format(pack_id)
+        assert self._is_valid_pack_id(pack_id,
+                                      allow_repack_pack=allow_repack_pack), 'Invalid pack ID {}'.format(pack_id)
         return os.path.join(self._get_pack_folder(), pack_id)
 
     def _get_pack_index_path(self):
@@ -835,15 +852,20 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return retval
 
-    @staticmethod
-    def _is_valid_pack_id(pack_id):
-        """Return True if the name is a valid pack ID."""
+    @classmethod
+    def _is_valid_pack_id(cls, pack_id, allow_repack_pack=False):
+        """Return True if the name is a valid pack ID.
+
+        If allow_repack_pack is True, also the pack id used for repacking is considered as valid.
+        """
         if not pack_id:
             # Must be a non-empty string
             return False
         if pack_id != '0' and pack_id[0] == '0':
             # The ID must be a valid integer: either zero, or it should not start by zero
             return False
+        if allow_repack_pack and pack_id == str(cls._REPACK_PACK_ID):
+            return True
         if not all(char in '0123456789' for char in pack_id):
             return False
         return True
@@ -904,7 +926,7 @@ class Container:  # pylint: disable=too-many-public-methods
         return retval
 
     @contextmanager
-    def lock_pack(self, pack_id):
+    def lock_pack(self, pack_id, allow_repack_pack=False):
         """Lock the given pack id. Use as a context manager.
 
         Raise if the pack is already locked. If you enter the context manager,
@@ -912,14 +934,16 @@ class Container:  # pylint: disable=too-many-public-methods
 
         Important to use for avoiding concurrent access/append to the same file.
         :param pack_id: a string with a valid pack name.
+        :param allow_pack_repack: if True, allow to open the pack file used for repacking
         """
-        assert self._is_valid_pack_id(pack_id)
+        assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
 
         # Open file in exclusive mode
         lock_file = os.path.join(self._get_pack_folder(), '{}.lock'.format(pack_id))
+        pack_file = self._get_pack_path_from_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
         try:
             with open(lock_file, 'x'):
-                with open(self._get_pack_path_from_pack_id(pack_id), 'ab') as pack_handle:
+                with open(pack_file, 'ab') as pack_handle:
                     yield pack_handle
         finally:
             # Release resource (I check if it exists in case there was an exception)
@@ -1944,3 +1968,115 @@ class Container:  # pylint: disable=too-many-public-methods
         # an error while deleting the packed version of an object (even if the loose version of the same object
         # was deleted) should be considered as if the object has *not* been deleted
         return list(deleted_loose.union(deleted_packed))
+
+    def repack(self, compress_mode=CompressMode.KEEP):
+        """Perform a repack of the packed objects."""
+        for pack_id in self._list_packs():
+            self.repack_pack(pack_id, compress_mode=compress_mode)
+
+    def repack_pack(self, pack_id, compress_mode=CompressMode.KEEP):
+        """Perform a repack of a given pack object.
+
+        This is a maintenance operation."""
+        if compress_mode != CompressMode.KEEP:
+            raise NotImplementedError('Only keep method currently implemented')
+
+        assert pack_id != self._REPACK_PACK_ID, (
+            "The specified pack_id '{}' is invalid, it is the one used for repacking".format(pack_id)
+        )
+
+        # Check that it does not exist
+        assert not os.path.exists(
+            self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True)
+        ), ("The repack pack '{}' already exists, probably a previous repacking aborted?".format(self._REPACK_PACK_ID))
+
+        session = self._get_cached_session()
+        one_object_in_pack = session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        if not one_object_in_pack:
+            # No objects. Clean up the pack file, if it exists.
+            if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
+                os.remove(self._get_pack_path_from_pack_id(pack_id))
+            return
+
+        obj_dicts = []
+        # At least one object. Let's repack. We have checked before that the
+        # REPACK_PACK_ID did not exist.
+        with self.lock_pack(str(self._REPACK_PACK_ID), allow_repack_pack=True) as write_pack_handle:
+            with open(self._get_pack_path_from_pack_id(pack_id), 'rb') as read_pack:
+                query = session.query(Obj.id, Obj.hashkey, Obj.size, Obj.offset, Obj.length,
+                                      Obj.compressed).filter(Obj.pack_id == pack_id).order_by(Obj.offset)
+                for rowid, hashkey, size, offset, length, compressed in query:
+                    # Since I am assuming above that the method is `KEEP`, I will just transfer
+                    # the bytes. Otherwise I have to properly take into account compression in the
+                    # source and in the destination.
+                    read_handle = PackedObjectReader(read_pack, offset, length)
+
+                    obj_dict = {}
+                    obj_dict['id'] = rowid
+                    obj_dict['hashkey'] = hashkey
+                    obj_dict['pack_id'] = self._REPACK_PACK_ID
+                    obj_dict['compressed'] = compressed
+                    obj_dict['size'] = size
+                    obj_dict['offset'] = write_pack_handle.tell()
+
+                    # Transfer data in chunks.
+                    # No need to rehash - it's the same container so the same hash.
+                    # Not checking the compression on source or destination - we are assuming
+                    # for now that the mode is KEEP.
+                    while True:
+                        chunk = read_handle.read(self._CHUNKSIZE)
+                        if chunk == b'':
+                            # Returns an empty bytes object on EOF.
+                            break
+                        write_pack_handle.write(chunk)
+                    obj_dict['length'] = write_pack_handle.tell() - obj_dict['offset']
+
+                    # Appending for later bulk commit
+                    # I will assume that all objects of a single pack fit in memory
+                    obj_dicts.append(obj_dict)
+            safe_flush_to_disk(
+                write_pack_handle, self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True)
+            )
+
+        # We are done with data transfer.
+        # At this stage we just have a new pack -1 (_REPACK_PACK_ID) but it is never referenced.
+        # Let us store the information in the DB.
+        # We had already checked earlier that this at least one exists.
+        session.bulk_update_mappings(Obj, obj_dicts)
+        # I also commit.
+        session.commit()
+        # Clean up the cache
+        obj_dicts = []
+
+        # Now we can safely delete the old object. I just check that there is no object still
+        # refencing the old pack, to be sure.
+        one_object_in_pack = session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        assert not one_object_in_pack, (
+            "I moved the objects of pack '{pack_id}' to pack '{repack_id}' "
+            "but there are still references to pack '{pack_id}'!".format(
+                pack_id=pack_id, repack_id=self._REPACK_PACK_ID
+            )
+        )
+        os.remove(self._get_pack_path_from_pack_id(pack_id))
+
+        # I need now to move the file back. I need to be careful, to avoid conditions in which
+        # I remain with inconsistent data.
+        # Since hard links seem to be supported on all three platforms, I do a hard link
+        # of -1 back to the correct pack ID.
+        os.link(
+            self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True),
+            self._get_pack_path_from_pack_id(pack_id)
+        )
+
+        # Before deleting the source (pack -1) I need now to update again all
+        # entries to point to the correct pack id
+        session.query(Obj).filter(Obj.pack_id == self._REPACK_PACK_ID).update({Obj.pack_id: pack_id})
+        session.commit()
+
+        # Technically, to be crash safe, before deleting I should also fsync the folder
+        # I am not doing this for now
+        # I now can unlink/delete the original source
+        os.unlink(self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True))
+
+        # We are now done. The temporary pack is gone, and the old `pack_id`
+        # has now been replaced with an udpated, repacked pack.
