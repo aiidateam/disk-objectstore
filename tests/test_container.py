@@ -2841,6 +2841,11 @@ def test_repack(temp_dir):
     # This time also the size on disk should be adapted (it's the main goal of repacking)
     assert size['total_size_packfiles_on_disk'] == 10 * (len(data) - len(to_delete))
 
+    # Check that the content is still correct
+    # Should not raise
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
     # Important before exiting from the tests
     temp_container.close()
 
