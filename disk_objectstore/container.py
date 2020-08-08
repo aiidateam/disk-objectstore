@@ -1523,15 +1523,34 @@ class Container:  # pylint: disable=too-many-public-methods
             callback=callback
         )
 
-    def clean_storage(self):  # pylint: disable=too-many-branches
+    def _vacuum(self):
+        """Perform a `VACUUM` operation on the SQLite operation.
+
+        This is critical for two aspects:
+
+        1. reclaiming unused space after many deletions
+        2. reordering data on disk to make data access *much* more efficient
+
+        (See also description in issue #94).
+        """
+        engine = self._get_cached_session().get_bind()
+        engine.execute('VACUUM')
+
+    def clean_storage(self, vacuum=False):  # pylint: disable=too-many-branches
         """Perform some maintenance clean-up of the container.
 
         .. note:: this is a maintenance operation, must be performed when nobody is using the container!
 
         In particular:
+        - if `vacuum` is True, it first VACUUMs the DB, reclaiming unused space and
+          making access much faster
         - it removes duplicates if any, with some validation
         - it cleans up loose objects that are already in packs
         """
+        # I start by VACUUMing the DB - this is something useful to do
+        if vacuum:
+            self._vacuum()
+
         all_duplicates = os.listdir(self._get_duplicates_folder())
         duplicates_mapping = defaultdict(list)
 
@@ -2057,14 +2076,30 @@ class Container:  # pylint: disable=too-many-public-methods
         return list(deleted_loose.union(deleted_packed))
 
     def repack(self, compress_mode=CompressMode.KEEP):
-        """Perform a repack of the packed objects."""
+        """Perform a repack of all packed objects.
+
+        At the end, it also VACUUMs the DB to reclaim unused space and make
+        access more efficient.
+
+        This is a maintenance operation.
+
+        :param compress_mode: see docstring of ``repack_pack``.
+        """
         for pack_id in self._list_packs():
             self.repack_pack(pack_id, compress_mode=compress_mode)
+        self._vacuum()
 
     def repack_pack(self, pack_id, compress_mode=CompressMode.KEEP):
         """Perform a repack of a given pack object.
 
-        This is a maintenance operation."""
+        This is a maintenance operation.
+
+        :param compress_mode: must be a valid CompressMode enum type.
+            Currently, the only implemented mode is KEEP, meaning that it
+            preserves the same compression (this means that repacking is *much* faster
+            as it can simply transfer the bytes without decompressing everything first,
+            and recompressing it back again).
+        """
         if compress_mode != CompressMode.KEEP:
             raise NotImplementedError('Only keep method currently implemented')
 
