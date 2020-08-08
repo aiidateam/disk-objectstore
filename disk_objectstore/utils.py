@@ -3,11 +3,14 @@
 Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
+#  pylint: disable= too-many-lines
 import hashlib
 import itertools
 import os
 import uuid
 import zlib
+
+from enum import Enum
 
 try:
     import fcntl
@@ -23,6 +26,13 @@ from .exceptions import ModificationNotAllowed, ClosingNotAllowed
 # safety and performance/disk wearing
 # I use it only when storing packs
 _MACOS_ALWAYS_USE_FULLSYNC = False
+
+
+class Location(Enum):
+    """Enum that describes if an element is only on the left or right iterator, or on both."""
+    LEFTONLY = -1
+    BOTH = 0
+    RIGHTONLY = 1
 
 
 class LazyOpener:
@@ -887,3 +897,130 @@ def compute_hash_and_size(stream, hash_type):
         size += len(next_chunk)
 
     return hasher.hexdigest(), size
+
+
+def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-many-branches, too-many-statements
+    """Generator that loops in alternation (but only once each) the two iterators and yields an element, specifying if
+    it's only on the left, only on the right, or in both.
+
+    .. note:: IMPORTANT! The two iterators MUST return unique and sorted results.
+
+    This function will check and raise a ValueError if it detects non-unique or non-sorted elements.
+    HOWEVER, this exception is raised only at the first occurrence of the issue, that can be very late in the execution,
+    so if you process results in a streamed way, please ensure that you pass sorted iterators.
+    """
+    left_exhausted = False
+    right_exhausted = False
+
+    # Convert first in iterators (in case they are, e.g., lists)
+    left_iterator = iter(left_iterator)
+    right_iterator = iter(right_iterator)
+
+    try:
+        last_left = next(left_iterator)
+    except StopIteration:
+        left_exhausted = True
+
+    try:
+        last_right = next(right_iterator)
+    except StopIteration:
+        right_exhausted = True
+
+    if left_exhausted and right_exhausted:
+        # Nothing to be done, both iterators are empty
+        return
+
+    now_left = True
+    if left_exhausted or (not right_exhausted and last_left > last_right):
+        now_left = False  # I want the 'current' (now) to be behind or at the same position of the other at any time
+
+    while not (left_exhausted and right_exhausted):
+        advance_both = False
+        if now_left:
+            if right_exhausted:
+                yield last_left, Location.LEFTONLY
+            else:
+                if last_left == last_right:
+                    # They are equal: add to intersection and continue
+                    yield last_left, Location.BOTH
+                    # I need to consume and advance on both iterators at the next iteration
+                    advance_both = True
+                elif last_left < last_right:
+                    # the new entry (last_left) is still smaller: it's on the left only
+                    yield last_left, Location.LEFTONLY
+                else:
+                    # the new entry (last_left) is now larger: then, last_right is only on the right
+                    # and I switch to now_right
+                    yield last_right, Location.RIGHTONLY
+                    now_left = False
+        else:
+            if left_exhausted:
+                yield last_right, Location.RIGHTONLY
+            else:
+                if last_left == last_right:
+                    # They are equal: add to intersection and continue
+                    yield last_right, Location.BOTH
+                    # I need to consume and advance on both iterators at the next iteration
+                    advance_both = True
+                elif last_left > last_right:
+                    # the new entry (last_right) is still smaller: it's on the right only
+                    yield last_right, Location.RIGHTONLY
+                else:
+                    # the new entry (last_right) is now larger: then, last_left is only on the left
+                    # and I switch to now_left
+                    yield last_left, Location.LEFTONLY
+                    now_left = True
+
+        # When we are here: if now_left, then last_left has been inserted in one of the lists;
+        # if not now_left, then last_right has been insterted in one of the lists.
+        # If advance both, they both can be discarded. So if I exhausted an iterator, I am not losing
+        # any entry.
+
+        # I will need to cache the old value, see comments below in the `except StopIteration` block
+        new_now_left = now_left
+        if now_left or advance_both:
+            try:
+                new = next(left_iterator)
+                if new <= last_left:
+                    raise ValueError(
+                        "The left iterator does not return sorted unique entries, I got '{}' after '{}'".format(
+                            new, last_left
+                        )
+                    )
+                last_left = new
+            except StopIteration:
+                left_exhausted = True
+                # I need to store in a different variable, otherwise in this case
+                # I would also enter the next iteration even if advance_both is False!
+                new_now_left = False
+
+        if not now_left or advance_both:
+            try:
+                new = next(right_iterator)
+                if new <= last_right:
+                    raise ValueError(
+                        "The right iterator does not return sorted unique entries, I got '{}' after '{}'".format(
+                            new, last_right
+                        )
+                    )
+                last_right = new
+            except StopIteration:
+                right_exhausted = True
+                # For consistency, also here I set new_now_left
+                new_now_left = True
+
+        # Set the new now_left value
+        now_left = new_now_left
+
+
+def yield_first_element(iterator):
+    """Given an iterator that returns a tuple, return an iterator that yields only the first element of the tuple."""
+    for elem in iterator:
+        yield elem[0]
+
+
+def merge_sorted(iterator1, iterator2):
+    """Given two sorted iterators, return another sorted iterator being the union of the two."""
+    for item, _ in detect_where_sorted(iterator1, iterator2):
+        # Whereever it is (only left, only right, on both) I return the object.
+        yield item

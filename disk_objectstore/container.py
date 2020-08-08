@@ -18,8 +18,9 @@ from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
 from .utils import (
-    ObjectWriter, PackedObjectReader, StreamDecompresser, CallbackStreamWrapper, chunk_iterator, is_known_hash,
-    nullcontext, safe_flush_to_disk, get_hash, compute_hash_and_size
+    ObjectWriter, PackedObjectReader, StreamDecompresser, CallbackStreamWrapper, Location, chunk_iterator,
+    is_known_hash, nullcontext, safe_flush_to_disk, get_hash, compute_hash_and_size, merge_sorted, detect_where_sorted,
+    yield_first_element
 )
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
@@ -1614,26 +1615,26 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def export(  # pylint: disable=too-many-locals
+    def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches
             self,
             hashkeys,
-            other_container,
+            source_container,
             compress=False,
             target_memory_bytes=104857600,
             callback=None
         ):
-        """Export the specified hashkeys to a new container (must be already initialised).
+        """Imports the objects with the specified hashkeys into the container.
 
         :param hashkeys: an iterable of hash keys.
-        :param new_container: another Container class into which you want to export the specified hash keys of this
-            container.
+        :param source_container: another Container class containing the objects with the given hash keys.
         :param compress: specifies if content should be stored in compressed form.
-        :param target_memory_bytes: how much data to store in RAM before dumping to the new container. Larger values
-            allow to read and write in bulk that is more efficient, but of course require more memory.
+        :param target_memory_bytes: how much data to store in RAM before actually storing in the container.
+            Larger values allow to read and write in bulk that is more efficient, but of course require more memory.
             Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
             only counts the RAM needed for the object content). Default: 100MB.
 
-        :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
+        :return: a mapping from the old hash keys (in the ``source_container``) to the new hash keys
+            (in this container).
         """
         old_obj_hashkeys = []
         new_obj_hashkeys = []
@@ -1642,6 +1643,68 @@ class Container:  # pylint: disable=too-many-public-methods
         # We then flush in 'bulk' to the `other_container`, thus speeding up the process
         content_cache = {}
         cache_size = 0
+
+        if source_container.hash_type == self.hash_type:
+            # In this case, I can use some optimisation, because I can just work on the intersection
+            # of the hash keys, since I can know in advnace which objects are already present.
+            sorted_hashkeys = sorted(set(hashkeys))
+
+            if callback:
+                # If we have a callback, compute the total count of objects in this pack
+                total = len(sorted_hashkeys)
+                callback(action='init', value={'total': total, 'description': 'New objects'})
+                # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+                update_every = max(int(total / 1000), 1)
+                # Counter of how many objects have been since since the last update.
+                # A new callback will be performed when this value is > update_every.
+                since_last_update = 0
+
+            sorted_loose = sorted(self._list_loose())
+            # This is a very efficient way to get a sorted iterator without preloading everything in memory
+            # NOTE: this might be slow in the combination of these two cases:
+            # 1. the pack index (SQLite DB) of this repository is not VACUUMed
+            # AND
+            # 2. the pack index (SQLite DB) is not in the OS disk cache
+            # In this case, also the index on the hash key is scattered on disk and reading will be very slow,
+            # see issue #94.
+            # NOTE: I need to wrap in the `yield_first_element` iterator since it returns a list of lists
+            sorted_packed = yield_first_element(
+                self._get_cached_session().execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+            )
+            sorted_existing = merge_sorted(sorted_loose, sorted_packed)
+
+            # Hashkeys will be replaced with only those that are not yet in this repository (i.e., LEFTONLY)
+            hashkeys = []
+            for item, where in detect_where_sorted(sorted_hashkeys, sorted_existing):
+                if callback and where in [Location.BOTH, Location.LEFTONLY]:
+                    # It is in the sorted hash keys. Since this is the one for which I know the length efficiently,
+                    # I use it for the progress bar. This will be relatively accurate for large lists of hash keys,
+                    # but will not show a continuous bar if the list of hash keys to import is much shorter than
+                    # the list of hash keys in this (destination) container. This is probably OK, though.
+                    since_last_update += 1
+                    if since_last_update >= update_every:
+                        callback(action='update', value=since_last_update)
+                        since_last_update = 0
+
+                if where == Location.LEFTONLY:
+                    hashkeys.append(item)
+
+            if callback:
+                # Final call to complete the bar
+                if since_last_update:
+                    callback(action='update', value=since_last_update)
+                # Perform any wrap-up, if needed
+                callback(action='close', value=None)
+
+            # I just insert the new objects without first checking that I am not leaving holes in the pack files,
+            # as I already checked here.
+            no_holes = False
+            no_holes_read_twice = False
+        else:
+            # hash types are different: I have to add all objects that were provided as I have no way to check
+            # if they already exist
+            no_holes = True
+            no_holes_read_twice = True
 
         if callback:
             # If we have a callback, compute the total count of objects in this pack
@@ -1653,7 +1716,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # A new callback will be performed when this value is > update_every.
             since_last_update = 0
 
-        with self.get_objects_stream_and_meta(hashkeys) as triplets:
+        with source_container.get_objects_stream_and_meta(hashkeys) as triplets:
             for old_obj_hashkey, stream, meta in triplets:
                 if meta['size'] > target_memory_bytes:
                     # If the object itself is too big, just write it directly
@@ -1665,11 +1728,11 @@ class Container:  # pylint: disable=too-many-public-methods
                     # but I avoid to write a huge object to disk when it's not needed because already available
                     # on the destination
                     new_obj_hashkeys.append(
-                        other_container.add_streamed_object_to_pack(
+                        self.add_streamed_object_to_pack(
                             stream,
                             compress=compress,
-                            no_holes=True,
-                            no_holes_read_twice=True,
+                            no_holes=no_holes,
+                            no_holes_read_twice=no_holes_read_twice,
                         )
                     )
                 elif cache_size + meta['size'] > target_memory_bytes:
@@ -1684,8 +1747,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
                         # I put all of them in bulk
                         # I accept the performance hit of reading twice (especially since it's already on memory)
-                        temp_new_hashkeys = other_container.add_objects_to_pack(
-                            data, compress=compress, no_holes=True, no_holes_read_twice=True
+                        temp_new_hashkeys = self.add_objects_to_pack(
+                            data, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice
                         )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
@@ -1731,8 +1794,8 @@ class Container:  # pylint: disable=too-many-public-methods
             # I create a list of hash keys and the corresponding content
             temp_old_hashkeys, data = zip(*content_cache.items())
             # I put all of them in bulk
-            temp_new_hashkeys = other_container.add_objects_to_pack(
-                data, compress=compress, no_holes=True, no_holes_read_twice=True, callback=callback
+            temp_new_hashkeys = self.add_objects_to_pack(
+                data, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, callback=callback
             )
 
             # I update the list of known old (this container) and new (other_container) hash keys
@@ -1743,6 +1806,30 @@ class Container:  # pylint: disable=too-many-public-methods
         old_new_obj_hashkey_mapping = dict(zip(old_obj_hashkeys, new_obj_hashkeys))
 
         return old_new_obj_hashkey_mapping
+
+    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
+        """Export the specified hashkeys to a new container (must be already initialised).
+
+        .. note:: This is a wrapper of the ``import_objects`` function of the ``other_container``.
+
+        :param hashkeys: an iterable of hash keys.
+        :param other_container: another Container class into which you want to export the specified hash keys of this
+            container.
+        :param compress: specifies if content should be stored in compressed form.
+        :param target_memory_bytes: how much data to store in RAM before dumping to the new container. Larger values
+            allow to read and write in bulk that is more efficient, but of course require more memory.
+            Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
+            only counts the RAM needed for the object content). Default: 100MB.
+
+        :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
+        """
+        return other_container.import_objects(
+            hashkeys=hashkeys,
+            source_container=self,
+            compress=compress,
+            target_memory_bytes=target_memory_bytes,
+            callback=callback
+        )
 
     # Let us also compute the hash
     def _validate_hashkeys_pack(self, pack_id, callback=None):  # pylint: disable=too-many-locals

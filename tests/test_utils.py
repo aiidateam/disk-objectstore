@@ -1211,3 +1211,147 @@ def test_compute_hash_and_size(hash_type):
         hashkey, size = utils.compute_hash_and_size(stream, hash_type=hash_type)
         assert hashkey == expected_hash
         assert size == expected_size
+
+
+LEFT_RIGHT_PAIRS = [
+    # Both empty
+    [[], []],
+    # Left empty
+    [
+        [],
+        [1, 2, 3],
+    ],
+    # Right empty
+    [
+        [1, 2, 4],
+        [],
+    ],
+    # Some lists with some overlap, right exhausted first
+    [
+        [1, 3, 5, 7, 9, 10, 11, 20],
+        [0, 2, 4, 5, 8, 10, 12],
+    ],
+    # Some lists with some overlap, left exhausted first
+    [
+        [0, 2, 4, 5, 8, 10, 12],
+        [1, 3, 5, 7, 9, 10, 11, 20],
+    ],
+    # Start with both, continue left
+    [
+        [0, 1, 2],
+        [0, 3, 5, 7],
+    ],
+    # Start with both, continue right
+    [
+        [0, 3, 5, 7],
+        [0, 1, 2],
+    ],
+    # End with both, coming from left
+    [
+        [0, 3, 5, 6, 8],
+        [1, 2, 8],
+    ],
+    # End with both, coming from right
+    [
+        [1, 2, 8],
+        [0, 3, 5, 6, 8],
+    ],
+]
+
+
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS)
+def test_detect_where(left, right):
+    """Test the detect_where_sorted function."""
+    # Compute the expected result
+    merged = sorted(set(left + right))
+    idx = -1  # Needed when detect_where_sorted is an empty iterator
+    for idx, (item, where) in enumerate(utils.detect_where_sorted(left, right)):
+        assert item == merged[idx]
+        if merged[idx] in left:
+            if merged[idx] in right:
+                expected_where = utils.Location.BOTH
+            else:
+                expected_where = utils.Location.LEFTONLY
+        else:
+            expected_where = utils.Location.RIGHTONLY
+        assert where == expected_where
+    assert idx + 1 == len(merged)
+
+
+LEFT_RIGHT_PAIRS_UNSORTED = [
+    # Unsorted at end, left
+    [
+        [1, 4, 5, 1],
+        [1, 2, 3],
+    ],
+    # Unsorted at end, right
+    [
+        [1, 4, 5],
+        [1, 2, 3, 1],
+    ],
+    # Unsorted at beginning, left
+    [
+        [1, 0, 4, 5],
+        [1, 2, 3],
+    ],
+    # Unsorted at beginning, right
+    [
+        [1, 4, 5],
+        [1, 0, 2, 3],
+    ],
+    # not unique at end, left
+    [
+        [1, 4, 5, 5],
+        [1, 2, 3],
+    ],
+    # Not unique at end, right
+    [
+        [1, 4, 5],
+        [1, 2, 3, 3],
+    ],
+    # Not unique at beginning, left
+    [
+        [1, 1, 4, 5],
+        [1, 2, 3],
+    ],
+    # Not unique at beginning, right
+    [
+        [1, 4, 5],
+        [1, 1, 2, 3],
+    ]
+]
+
+
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS_UNSORTED)
+def test_detect_where_unsorted(left, right):
+    """Test the detect_where_sorted function when the lists are not sorted."""
+    with pytest.raises(ValueError) as excinfo:
+        list(utils.detect_where_sorted(left, right))
+    assert 'does not return sorted', str(excinfo.value)
+
+
+def test_yield_first():
+    """Test the yield_first_element function."""
+
+    first = [1, 3, 5, 7, 9]
+    second = [0, 2, 4, 6, 8]
+
+    # [(1, 0), (3, 2), ...]
+    inner_iter = zip(first, second)
+
+    result = list(utils.yield_first_element(inner_iter))
+
+    assert result == first
+
+
+def test_merge_sorted():
+    """Test the merge_sorted function."""
+    # I also put some repetitions
+    first = sorted([1, 3, 5, 7, 9, 10, 11, 20])
+    second = sorted([0, 2, 4, 5, 8, 10, 12])
+
+    result1 = list(utils.merge_sorted(first, second))
+    result2 = list(utils.merge_sorted(second, first))
+
+    assert result1 == sorted(set(first + second))
+    assert result2 == sorted(set(first + second))
