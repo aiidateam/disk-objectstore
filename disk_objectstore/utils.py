@@ -899,18 +899,33 @@ def compute_hash_and_size(stream, hash_type):
     return hasher.hexdigest(), size
 
 
-def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-many-branches, too-many-statements
+def detect_where_sorted(left_iterator, right_iterator, left_key=None):  # pylint: disable=too-many-branches, too-many-statements
     """Generator that loops in alternation (but only once each) the two iterators and yields an element, specifying if
     it's only on the left, only on the right, or in both.
 
     .. note:: IMPORTANT! The two iterators MUST return unique and sorted results.
 
+    .. note:: if it's on both, the one on the left is returned.
+
     This function will check and raise a ValueError if it detects non-unique or non-sorted elements.
     HOWEVER, this exception is raised only at the first occurrence of the issue, that can be very late in the execution,
     so if you process results in a streamed way, please ensure that you pass sorted iterators.
+
+    :param left_iterator: a left iterator
+    :param right_iterator: a right iterator
+    :param left_key: if specified, it's a lambda that determines how to process each element
+        of the left iterator when comparing with the right iterator. For instance, the left
+        iterator might be a tuple, whose first element is a hash key, while the right iterator
+        just a list of hash keys. In this case, left_key could be defined as a lambda returning
+        the first element of the tuple.
+        Note that when the element is in both iterators, the left one is returned (i.e. the
+        full tuple, in this example).
     """
     left_exhausted = False
     right_exhausted = False
+
+    if left_key is None:
+        left_key = lambda x: x
 
     # Convert first in iterators (in case they are, e.g., lists)
     left_iterator = iter(left_iterator)
@@ -931,7 +946,7 @@ def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-m
         return
 
     now_left = True
-    if left_exhausted or (not right_exhausted and last_left > last_right):
+    if left_exhausted or (not right_exhausted and left_key(last_left) > last_right):
         now_left = False  # I want the 'current' (now) to be behind or at the same position of the other at any time
 
     while not (left_exhausted and right_exhausted):
@@ -940,12 +955,12 @@ def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-m
             if right_exhausted:
                 yield last_left, Location.LEFTONLY
             else:
-                if last_left == last_right:
+                if left_key(last_left) == last_right:
                     # They are equal: add to intersection and continue
                     yield last_left, Location.BOTH
                     # I need to consume and advance on both iterators at the next iteration
                     advance_both = True
-                elif last_left < last_right:
+                elif left_key(last_left) < last_right:
                     # the new entry (last_left) is still smaller: it's on the left only
                     yield last_left, Location.LEFTONLY
                 else:
@@ -957,12 +972,12 @@ def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-m
             if left_exhausted:
                 yield last_right, Location.RIGHTONLY
             else:
-                if last_left == last_right:
+                if left_key(last_left) == last_right:
                     # They are equal: add to intersection and continue
-                    yield last_right, Location.BOTH
+                    yield last_left, Location.BOTH
                     # I need to consume and advance on both iterators at the next iteration
                     advance_both = True
-                elif last_left > last_right:
+                elif left_key(last_left) > last_right:
                     # the new entry (last_right) is still smaller: it's on the right only
                     yield last_right, Location.RIGHTONLY
                 else:
@@ -981,10 +996,10 @@ def detect_where_sorted(left_iterator, right_iterator):  # pylint: disable=too-m
         if now_left or advance_both:
             try:
                 new = next(left_iterator)
-                if new <= last_left:
+                if left_key(new) <= left_key(last_left):
                     raise ValueError(
                         "The left iterator does not return sorted unique entries, I got '{}' after '{}'".format(
-                            new, last_left
+                            left_key(new), left_key(last_left)
                         )
                     )
                 last_left = new

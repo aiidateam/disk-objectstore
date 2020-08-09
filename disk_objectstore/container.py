@@ -72,6 +72,12 @@ class Container:  # pylint: disable=too-many-public-methods
     # See also e.g. this comment https://bugzilla.redhat.com/show_bug.cgi?id=1798134
     _IN_SQL_MAX_LENGTH = 950
 
+    # If the length of required elements is larger than this, instead of iterating an IN statement over chunks of size
+    # _IN_SQL_MAX_LENGTH, it just quickly lists all elements (ordered by hashkey, requires a VACUUMed DB for
+    # performance) and returns only the intersection.
+    # TODO: benchmark this value and set an an appropriate value.
+    _MAX_CHUNK_ITERATE_LENGTH = 9500
+
     def __init__(self, folder):
         """Create the class that represents the container.
 
@@ -480,14 +486,26 @@ class Container:  # pylint: disable=too-many-public-methods
         # to order in python instead
         session = self._get_cached_session()
 
-        # Operate in chunks, due to the SQLite limits
-        # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
-        for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
-            query = session.query(Obj).filter(
-                Obj.hashkey.in_(chunk)
-            ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
-            for res in query:
-                packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+        if len(hashkeys_set) <= self._MAX_CHUNK_ITERATE_LENGTH:
+            # Operate in chunks, due to the SQLite limits
+            # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
+            for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
+                query = session.query(Obj).filter(
+                    Obj.hashkey.in_(chunk)
+                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                for res in query:
+                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+        else:
+            sorted_hashkeys = sorted(hashkeys_set)
+            pack_iterator = session.execute(
+                'SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey'
+            )
+            # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
+            # with the right iterator)
+            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]):
+                if where == Location.BOTH:
+                    # If it's in both, it returns the left one, i.e. the full data from the DB
+                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
         for pack_int_id, pack_metadata in packs.items():
             pack_metadata.sort(key=lambda metadata: metadata.offset)
@@ -583,12 +601,24 @@ class Container:  # pylint: disable=too-many-public-methods
 
             packs = defaultdict(list)
             session = self._get_cached_session()
-            for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
-                query = session.query(Obj).filter(
-                    Obj.hashkey.in_(chunk)
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
-                for res in query:
-                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+            if len(loose_not_found) <= self._MAX_CHUNK_ITERATE_LENGTH:
+                for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
+                    query = session.query(Obj).filter(
+                        Obj.hashkey.in_(chunk)
+                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                    for res in query:
+                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+            else:
+                sorted_hashkeys = sorted(loose_not_found)
+                pack_iterator = session.execute(
+                    'SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey'
+                )
+                # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
+                # with the right iterator)
+                for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]):
+                    if where == Location.BOTH:
+                        # If it's in both, it returns the left one, i.e. the full data from the DB
+                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
 
             # I will construct here the really missing objects.
             # I make a copy of the set.
@@ -1101,10 +1131,20 @@ class Container:  # pylint: disable=too-many-public-methods
 
         existing_packed_hashkeys = []
 
-        for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
-            # I check the hash keys that are already in the pack
-            for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
-                existing_packed_hashkeys.append(res[0])
+        if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
+            for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
+                # I check the hash keys that are already in the pack
+                for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                    existing_packed_hashkeys.append(res[0])
+        else:
+            sorted_hashkeys = sorted(loose_objects)
+            pack_iterator = session.execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+
+            # The query returns a tuple of length 1, so I still need a left_key
+            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]):
+                if where == Location.BOTH:
+                    existing_packed_hashkeys.append(res[0])
+
         # I remove them from the loose_objects list
         loose_objects.difference_update(existing_packed_hashkeys)
         # Now, I should be left only with objects with hash keys that are not yet known.
@@ -1618,10 +1658,19 @@ class Container:  # pylint: disable=too-many-public-methods
         session = self._get_cached_session()
         # I search now for all loose hash keys that exist also in the packs
         existing_packed_hashkeys = []
-        for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
-            # I check the hash keys that are already in the pack
-            for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
-                existing_packed_hashkeys.append(res[0])
+        if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
+            for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
+                # I check the hash keys that are already in the pack
+                for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                    existing_packed_hashkeys.append(res[0])
+        else:
+            sorted_hashkeys = sorted(loose_objects)
+            pack_iterator = session.execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+
+            # The query returns a tuple of length 1, so I still need a left_key
+            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]):
+                if where == Location.BOTH:
+                    existing_packed_hashkeys.append(res[0])
 
         # I now clean up loose objects that are already in the packs.
         # Here, we assume that if it's already packed, it's safe to assume it's uncorrupted.
@@ -1671,7 +1720,7 @@ class Container:  # pylint: disable=too-many-public-methods
             if callback:
                 # If we have a callback, compute the total count of objects in this pack
                 total = len(sorted_hashkeys)
-                callback(action='init', value={'total': total, 'description': 'New objects'})
+                callback(action='init', value={'total': total, 'description': 'Listing objects'})
                 # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
                 update_every = max(int(total / 1000), 1)
                 # Counter of how many objects have been since since the last update.
@@ -1728,7 +1777,7 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             # If we have a callback, compute the total count of objects in this pack
             total = len(hashkeys)
-            callback(action='init', value={'total': total, 'description': 'Objects'})
+            callback(action='init', value={'total': total, 'description': 'Copy objects'})
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 1000), 1)
             # Counter of how many objects have been since since the last update.
@@ -1813,6 +1862,8 @@ class Container:  # pylint: disable=too-many-public-methods
             # I create a list of hash keys and the corresponding content
             temp_old_hashkeys, data = zip(*content_cache.items())
             # I put all of them in bulk
+
+            # TODO: make a callback wrapper that renames the bar to, e.g., 'final flush'
             temp_new_hashkeys = self.add_objects_to_pack(
                 data, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, callback=callback
             )
