@@ -33,8 +33,8 @@ setup(
     ],
     extras_require={
         'dev': [
-            'profilehooks', 'psutil', 'click', 'pre-commit', 'yapf', 'prospector', 'pylint', 'pytest', 'pytest-cov',
-            'memory-profiler', 'pywin32; platform_system == "Windows"'
+            'click', 'coverage', 'memory-profiler', 'pre-commit', 'profilehooks', 'prospector', 'psutil', 'pylint',
+            'pytest', 'pytest-cov', 'pytest-benchmark', 'pywin32; platform_system == "Windows"', 'yapf'
         ],
     },
     packages=find_packages(),
