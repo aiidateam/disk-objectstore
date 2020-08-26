@@ -524,6 +524,28 @@ class CallbackStreamWrapper:
             self._callback(action='close', value=None)
 
 
+def rename_callback(callback, new_description):
+    """Given a callback, return a new one where the description will be changed to `new_name`.
+
+    Works even if `callback` is None (in this case, it returns None).
+    :param callback: a callback function.
+    :param new_description: a string with a modified description for the callback.
+        This will be replaced during the `init` call to the callback.
+    """
+    if callback is None:
+        return None
+
+    def wrapper_callback(action, value):
+        """A wrapper callback with changed description."""
+        if action == 'init':
+            new_value = value.copy()
+            new_value['description'] = new_description
+            return callback(action, new_value)
+        return callback(action, value)
+
+    return wrapper_callback
+
+
 class StreamDecompresser:
     """A class that gets a stream of compressed zlib bytes, and returns the corresponding
     uncompressed bytes when being read via the .read() method.

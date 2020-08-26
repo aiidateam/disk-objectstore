@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import warnings
 import zlib
 
 from collections import defaultdict, namedtuple
@@ -19,8 +20,8 @@ from sqlalchemy.orm import sessionmaker
 from .models import Base, Obj
 from .utils import (
     ObjectWriter, PackedObjectReader, StreamDecompresser, CallbackStreamWrapper, Location, chunk_iterator,
-    is_known_hash, nullcontext, safe_flush_to_disk, get_hash, compute_hash_and_size, merge_sorted, detect_where_sorted,
-    yield_first_element
+    is_known_hash, nullcontext, rename_callback, safe_flush_to_disk, get_hash, compute_hash_and_size, merge_sorted,
+    detect_where_sorted, yield_first_element
 )
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
@@ -75,7 +76,8 @@ class Container:  # pylint: disable=too-many-public-methods
     # If the length of required elements is larger than this, instead of iterating an IN statement over chunks of size
     # _IN_SQL_MAX_LENGTH, it just quickly lists all elements (ordered by hashkey, requires a VACUUMed DB for
     # performance) and returns only the intersection.
-    # TODO: benchmark this value and set an an appropriate value.
+    # This length might need some benchmarking, but seems OK on very large DBs of 6M nodes
+    # (after VACUUMing, as mentioned above).
     _MAX_CHUNK_ITERATE_LENGTH = 9500
 
     def __init__(self, folder):
@@ -1111,12 +1113,18 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return (count_read_bytes, hasher.hexdigest() if hash_type else None)
 
-    def pack_all_loose(self, compress=False, validate_objects=True):
+    def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
+            self, compress=False, validate_objects=True, do_fsync=True
+        ):
         """Pack all loose objects.
 
         This is a maintenance operation, needs to be done only by one process.
         :param compress: if True, compress objects before storing them.
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
+        :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
+            Needed to guarantee that data will be there even in the case of a power loss.
+            Set to False if you don't need such a guarantee (anyway the loose version will be kept,
+            so often this guarantee is not strictly needed).
         """
         hash_type = self.hash_type if validate_objects else None
 
@@ -1229,7 +1237,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I don't commit here; I commit after making sure the file is flushed and closed
 
                 # flush and sync to disk before closing
-                safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
+                if do_fsync:
+                    safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
@@ -1254,16 +1263,18 @@ class Container:  # pylint: disable=too-many-public-methods
             no_holes=False,
             no_holes_read_twice=True,
             callback=None,
-            callback_size_hint=0
+            callback_size_hint=0,
+            do_fsync=True,
+            do_commit=True
         ):
         """Add a single object in streamed form to a pack.
 
         For the description of the parameters, see the docstring of ``add_streamed_objects_to_pack``.
 
         The only difference is that here the callback will provide feedback on the progress of this specific object.
-        :param callback_size_hint: the expected size of the stream - if not provided, it is used send back the total
+        :param callback_size_hint: the expected size of the stream - if provided, it is used send back the total
             length in the callbacks
-        :return: a single objec hash key
+        :return: a single object hash key
         """
         streams = [CallbackStreamWrapper(stream, callback=callback, total_length=callback_size_hint)]
 
@@ -1274,7 +1285,9 @@ class Container:  # pylint: disable=too-many-public-methods
             open_streams=open_streams,
             no_holes=no_holes,
             no_holes_read_twice=no_holes_read_twice,
-            callback=None
+            callback=None,
+            do_fsync=do_fsync,
+            do_commit=do_commit,
         )
 
         # Close the callback so the bar doesn't remaing open
@@ -1285,7 +1298,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def add_streamed_objects_to_pack(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements, too-many-arguments
             self, stream_list, compress=False, open_streams=False, no_holes=False, no_holes_read_twice=True,
-            callback=None):
+            callback=None, do_fsync=True, do_commit=True):
         """Add objects directly to a pack, reading from a list of streams.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1308,6 +1321,15 @@ class Container:  # pylint: disable=too-many-public-methods
             This of course gives a performance hit as data has to be read twice, and rehashed twice; but avoids
             risking to damage the hard drive if e.g. re-importing the exact same data).
             This variable is ignored if `no_holes` is False.
+        :param do_fsync: if True (default), call an fsync for every pack file, to ensure flushing to
+            disk. Important to guarantee that data is not lost even in the case of a power loss.
+            For performance (especially if you don't need such a guarantee, e.g. if you are creating
+            from scratch a new repository with copy of objects), set it to False.
+        :param do_commit: if True (default), commit data to the DB after every pack is written.
+            In this way, even if there is an issue, partial objects end up in the repository.
+            Set to False for efficiency if you need to call this function multiple times. In this case,
+            however, remember to call a `commit()` call on the `session` manually at the end of the
+            operations! (See e.g. the `import_files()` method).
         :return: a list of object hash keys
         """
         yield_per_size = 1000
@@ -1511,15 +1533,18 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dicts = []
                 # I don't commit here; I commit after making sure the file is flushed and closed
 
-                # flush and sync to disk before closing
-                safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
+                if do_fsync:
+                    safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
             # packed object. Note: committing as soon as we are done with one pack,
             # so if there's a problem with one pack we don't start operating on the next one
             # Note: because of the logic above, in theory this should not raise an IntegrityError!
-            session.commit()
+            # For efficiency, you might want to set do_commit = False in the call, and then
+            # call a `session.commit()` in the caller, as it is done for instance in `import_files()`.
+            if do_commit:
+                session.commit()
 
         if callback:
             # Final call to complete the bar
@@ -1530,11 +1555,10 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return hashkeys
 
-    # yapf: disable
-    def add_objects_to_pack(
-            self, content_list, compress=False, no_holes=False, no_holes_read_twice=True, callback=None
+    def add_objects_to_pack(  # pylint: disable=too-many-arguments
+            self, content_list, compress=False, no_holes=False, no_holes_read_twice=True,
+            callback=None, do_fsync=True, do_commit=True
         ):
-        # yapf: enable
         """Add objects directly to a pack, reading from a list of content byte arrays.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1552,6 +1576,12 @@ class Container:  # pylint: disable=too-many-public-methods
             to write on disk and then overwrite with another object).
             See comments in the docstring of ``add_streamed_objects_to_pack``.
             This variable is ignored if `no_holes` is False.
+        :param callback: a callback to monitor the progress, see docstring of `_validate_hashkeys_pack()`
+        :param do_fsync: if True (default), call an fsync for every pack file, to ensure flushing to
+            disk. See docstring of `add_streamed_objects_to_pack()` for further comments on the use of this flag.
+        :param do_commit: if True (default), commit data to the DB after every pack is written.
+            See docstring of `add_streamed_objects_to_pack()` for further comments on the use of this flag.
+
         :return: a list of object hash keys
         """
         stream_list = [io.BytesIO(content) for content in content_list]
@@ -1560,7 +1590,9 @@ class Container:  # pylint: disable=too-many-public-methods
             compress=compress,
             no_holes=no_holes,
             no_holes_read_twice=no_holes_read_twice,
-            callback=callback
+            callback=callback,
+            do_fsync=do_fsync,
+            do_commit=do_commit
         )
 
     def _vacuum(self):
@@ -1683,13 +1715,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I just ignore, I will remove it in a future call of this method.
                 pass
 
-    def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches
+    def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-arguments
             self,
             hashkeys,
             source_container,
             compress=False,
             target_memory_bytes=104857600,
-            callback=None
+            callback=None,
+            do_fsync=True
         ):
         """Imports the objects with the specified hashkeys into the container.
 
@@ -1700,6 +1733,10 @@ class Container:  # pylint: disable=too-many-public-methods
             Larger values allow to read and write in bulk that is more efficient, but of course require more memory.
             Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
             only counts the RAM needed for the object content). Default: 100MB.
+        :param callback: a callback to monitor the importing process. See docstring of `_validate_hashkeys_pack()`.
+        :param do_fsync: whether to do a fsync on every pack object when it's written. True by default; set it
+            to False for efficiency if this guarantee is not needed, e.g. if you are creating a new
+            Container from scratch as a part of a larger import/export operation.
 
         :return: a mapping from the old hash keys (in the ``source_container``) to the new hash keys
             (in this container).
@@ -1801,6 +1838,8 @@ class Container:  # pylint: disable=too-many-public-methods
                             compress=compress,
                             no_holes=no_holes,
                             no_holes_read_twice=no_holes_read_twice,
+                            do_fsync=do_fsync,
+                            do_commit=False  # I will do a final commit
                         )
                     )
                 elif cache_size + meta['size'] > target_memory_bytes:
@@ -1814,9 +1853,15 @@ class Container:  # pylint: disable=too-many-public-methods
                         temp_old_hashkeys, data = zip(*content_cache.items())
 
                         # I put all of them in bulk
-                        # I accept the performance hit of reading twice (especially since it's already on memory)
+                        # I accept the performance hit of reading twice if the hash type is different
+                        # (especially since it's already on memory)
                         temp_new_hashkeys = self.add_objects_to_pack(
-                            data, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice
+                            data,
+                            compress=compress,
+                            no_holes=no_holes,
+                            no_holes_read_twice=no_holes_read_twice,
+                            do_fsync=do_fsync,
+                            do_commit=False
                         )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
@@ -1863,9 +1908,15 @@ class Container:  # pylint: disable=too-many-public-methods
             temp_old_hashkeys, data = zip(*content_cache.items())
             # I put all of them in bulk
 
-            # TODO: make a callback wrapper that renames the bar to, e.g., 'final flush'
             temp_new_hashkeys = self.add_objects_to_pack(
-                data, compress=compress, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, callback=callback
+                data,
+                compress=compress,
+                no_holes=no_holes,
+                no_holes_read_twice=no_holes_read_twice,
+                callback=rename_callback(callback, new_description='Final flush'),
+                do_fsync=do_fsync,
+                # I will commit at the end
+                do_commit=False
             )
 
             # I update the list of known old (this container) and new (other_container) hash keys
@@ -1875,12 +1926,17 @@ class Container:  # pylint: disable=too-many-public-methods
         # Create a mapping from the old to the new hash keys: old_new_obj_hashkey_mapping[old_hashkey] = new_hashkey
         old_new_obj_hashkey_mapping = dict(zip(old_obj_hashkeys, new_obj_hashkeys))
 
+        # Since I called the `add_objects_to_pack` without committing (gives a boost for performance),
+        # I need now to commit to save what I've been doing.
+        self._get_cached_session().commit()
+
         return old_new_obj_hashkey_mapping
 
     def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
         """Export the specified hashkeys to a new container (must be already initialised).
 
-        .. note:: This is a wrapper of the ``import_objects`` function of the ``other_container``.
+        ..deprecated:: 0.6
+            Deprecated: use the ``import_objects`` method of ``other_container`` instead.
 
         :param hashkeys: an iterable of hash keys.
         :param other_container: another Container class into which you want to export the specified hash keys of this
@@ -1893,6 +1949,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
         """
+        warnings.warn('function is deprecated, use `import_objects` instead', DeprecationWarning)
         return other_container.import_objects(
             hashkeys=hashkeys,
             source_container=self,
