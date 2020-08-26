@@ -2045,37 +2045,10 @@ def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invali
     assert not any(errors.values())
 
 
-def test_validate_callback(temp_container):
+def test_validate_callback(temp_container, callback_instance):
     """Test the correctness of the callbacks.
 
     Stores the calls to check at the end that everything was called correctly."""
-
-    class CallbackClass:
-        """Class that manages the callback."""
-
-        def __init__(self):
-            """Initialise the class."""
-            self.current_action = None
-            self.performed_actions = []
-
-        def callback(self, action, value):
-            """Check how the callback is called."""
-
-            if action == 'init':
-                assert self.current_action is None, "Starting a new action '{}' without closing the old one {}".format(
-                    action, self.current_action
-                )
-                self.current_action = {'start_value': value, 'value': 0}
-            elif action == 'update':
-                # Track the current position
-                self.current_action['value'] += value
-            elif action == 'close':
-                # Add to list of performed actions
-                self.performed_actions.append(self.current_action)
-                self.current_action = None
-            else:
-                raise AssertionError("Unknown action '{}'".format(action))
-
     # Add packed objects (2001, 10 chars each), *not* a multiple of 400 (that is the internal value
     # of how many events should be triggered as a maximum)
     len_packed = 2001
@@ -2088,7 +2061,6 @@ def test_validate_callback(temp_container):
     for content in data:
         temp_container.add_object(content)
 
-    callback_instance = CallbackClass()
     temp_container.validate(callback=callback_instance.callback)
 
     assert callback_instance.current_action is None, (
@@ -2116,6 +2088,39 @@ def test_validate_callback(temp_container):
             'value': len_packed
         }
     }
+
+
+@pytest.mark.parametrize('use_size_hint', [True, False])
+def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
+        temp_container, use_size_hint, callback_instance
+    ):
+    """Test the correctness of the callback of add_streamed_object_to_pack."""
+    # Add packed objects (2001, 10 chars each), *not* a multiple of 400 (that is the internal value
+    # of how many events should be triggered as a maximum)
+    length = 1000000
+    content = b'0' * length
+    stream = io.BytesIO(content)
+
+    if use_size_hint:
+        hashkey = temp_container.add_streamed_object_to_pack(
+            stream, callback_size_hint=length, callback=callback_instance.callback
+        )
+    else:
+        hashkey = temp_container.add_streamed_object_to_pack(stream, callback=callback_instance.callback)
+
+    assert temp_container.get_object_content(hashkey) == content
+
+    assert callback_instance.current_action is None, (
+        "The 'validate' call did not perform a final callback with a 'close' event"
+    )
+
+    assert callback_instance.performed_actions == [{
+        'start_value': {
+            'total': length if use_size_hint else 0,
+            'description': 'Streamed object'
+        },
+        'value': length
+    }]
 
 
 @pytest.mark.parametrize('ask_deleting_unknown', [True, False])

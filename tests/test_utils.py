@@ -1355,3 +1355,134 @@ def test_merge_sorted():
 
     assert result1 == sorted(set(first + second))
     assert result2 == sorted(set(first + second))
+
+
+def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
+    """Test the callback stream wrapper with no actual callback."""
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
+        fhandle.write(b'abc')
+        fhandle.seek(0)
+
+        wrapped = utils.CallbackStreamWrapper(fhandle, callback=None)
+
+        assert wrapped.mode == 'rb+'
+        assert wrapped.seekable
+        # Seek forward; read from byte 1
+        wrapped.seek(1)
+        assert wrapped.tell() == 1
+        assert wrapped.read() == b'bc'
+        assert wrapped.tell() == 3
+        # Seek backwards; read from byte 0
+        wrapped.seek(0)
+        assert wrapped.read() == b'abc'
+
+        wrapped.close_callback()
+
+
+@pytest.mark.parametrize('with_total_length', [True, False])
+def test_callback_stream_wrapper(callback_instance, with_total_length):
+    """Test the callback stream wrapper."""
+    description = 'SOME CALLBACK DESCRIPTION'
+    # Long string so we trigger the update_every logic
+    content = b'abc' * 4000
+
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
+        fhandle.write(content)
+        fhandle.seek(0)
+
+        if with_total_length:
+            wrapped = utils.CallbackStreamWrapper(
+                fhandle, callback=callback_instance.callback, total_length=len(content), description=description
+            )
+        else:
+            wrapped = utils.CallbackStreamWrapper(fhandle, callback=callback_instance.callback, description=description)
+
+        assert wrapped.mode == 'rb+'
+        assert wrapped.seekable
+        # Seek forward; read from byte 10
+        wrapped.seek(10)
+        assert wrapped.tell() == 10
+        assert wrapped.read() == content[10:]
+        assert wrapped.tell() == len(content)
+        # Seek backwards; read from byte 0, all
+        wrapped.seek(0)
+        assert wrapped.read() == content
+
+        # Seek backwards; read from byte 0, only 2 bytes
+        wrapped.seek(0)
+        assert wrapped.read(2) == content[0:2]
+        # Close the callback. It should be long enough so that
+        # the close_callback has to "flush" the internal buffer
+        # (when we provide the total_length)
+        wrapped.close_callback()
+
+    assert callback_instance.performed_actions == [{
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': description
+        },
+        'value': len(content)
+    }, {
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': '{} [rewind]'.format(description)
+        },
+        'value': len(content)
+    }, {
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': '{} [rewind]'.format(description)
+        },
+        'value': 2
+    }]
+
+
+def test_rename_callback(callback_instance):
+    """Check the rename_callback function."""
+    old_description = 'original description'
+    new_description = 'SOME NEW DESC'
+    content = b'some content'
+
+    assert utils.rename_callback(None, new_description=new_description) is None
+
+    # First call with the original one
+    wrapped = utils.CallbackStreamWrapper(
+        io.BytesIO(content),
+        callback=callback_instance.callback,
+        total_length=len(content),
+        description=old_description
+    )
+    # Call read so the callback is called
+    wrapped.read()
+    # We need to close the callback before reusing it
+    wrapped.close_callback()
+
+    # Now call with the modified one
+    wrapped = utils.CallbackStreamWrapper(
+        io.BytesIO(content),
+        callback=utils.rename_callback(callback_instance.callback, new_description=new_description),
+        total_length=len(content),
+        description=old_description
+    )
+    # Call read so the callback is called
+    wrapped.read()
+    # Close the callback to flush out
+    wrapped.close_callback()
+
+    assert callback_instance.performed_actions == [
+        {
+            'start_value': {
+                'total': len(content),
+                'description': old_description
+            },
+            'value': len(content)
+        },
+        {
+            'start_value': {
+                'total': len(content),
+                # Here there should be the new description
+                'description': new_description
+            },
+            'value': len(content)
+        }
+    ]
