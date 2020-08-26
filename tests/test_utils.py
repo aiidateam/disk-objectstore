@@ -1140,7 +1140,8 @@ def test_zero_stream_multi_read():
 # Set as the second parameter the hash of the 'content' string written below
 # inside the test function
 @pytest.mark.parametrize(
-    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b']]
+    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'],
+                                ['sha1', '2a0439b5b34b74808b6cc7a2bf04dd02604c20b0']]
 )
 def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
     """Test some functionality of the HashWriterWrapper class."""
@@ -1193,11 +1194,13 @@ def test_is_known_hash():
     """Check the functionality of the is_known_hash function."""
     # At least sha256 should be supported
     assert utils.is_known_hash('sha256')
+    # sha1 should also be supported
+    assert utils.is_known_hash('sha1')
     # A weird string should not be a valid known hash
     assert not utils.is_known_hash('SOME_UNKNOWN_HASH_TYPE')
 
 
-@pytest.mark.parametrize('hash_type', ['sha256'])
+@pytest.mark.parametrize('hash_type', ['sha256', 'sha1'])
 def test_compute_hash_and_size(hash_type):
     """Check the funtion to compute the hash and size."""
 

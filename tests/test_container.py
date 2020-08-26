@@ -628,7 +628,7 @@ def test_initialisation(temp_dir):
     assert 'already some file or folder' in str(excinfo.value)
 
 
-@pytest.mark.parametrize('hash_type', ['sha256'])
+@pytest.mark.parametrize('hash_type', ['sha256', 'sha1'])
 @pytest.mark.parametrize('compress', [True, False])
 def test_check_hash_computation(temp_container, hash_type, compress):
     """Check that the hashes are correctly computed, when storing loose,
@@ -636,6 +636,8 @@ def test_check_hash_computation(temp_container, hash_type, compress):
 
     Check both compressed and uncompressed packed objects.
     """
+    # Re-init the container with the correct hash type
+    temp_container.init_container(hash_type=hash_type, clear=True)
     content1 = b'1'
     content2 = b'222'
     content3 = b'n2fwd'
@@ -1504,8 +1506,9 @@ def test_simulate_concurrent_packing(temp_container, compress):  # pylint: disab
     assert not os.path.exists(fname)
 
 
+@pytest.mark.parametrize('do_vacuum', [True, False])
 @pytest.mark.parametrize('compress', [True, False])
-def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pylint: disable=invalid-name
+def test_simulate_concurrent_packing_multiple(temp_container, compress, do_vacuum):  # pylint: disable=invalid-name
     """Simulate race conditions while reading and packing."""
     content1 = b'abc'
     content2 = b'def'
@@ -1527,13 +1530,13 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
                     assert stream.read(1) == b'a'
                     temp_container.pack_all_loose(compress=compress)
                     # Remove loose files
-                    temp_container.clean_storage()
+                    temp_container.clean_storage(vacuum=do_vacuum)
                     assert stream.read() == b'bc'
                 elif obj_hashkey == hashkey2:
                     assert stream.read(1) == b'd'
                     temp_container.pack_all_loose(compress=compress)
                     # Remove loose files
-                    temp_container.clean_storage()
+                    temp_container.clean_storage(vacuum=do_vacuum)
                     assert stream.read() == b'ef'
                 else:
                     # Should not happen!
@@ -1555,8 +1558,43 @@ def test_simulate_concurrent_packing_multiple(temp_container, compress):  # pyli
     assert data == temp_container.get_objects_content([hashkey1, hashkey2])
 
     # After a second cleaning of the storage, the loose file *must* have been removed
-    temp_container.clean_storage()
+    temp_container.clean_storage(vacuum=do_vacuum)
     assert not os.path.exists(fname)
+
+
+def test_simulate_concurrent_packing_multiple_many(temp_container):  # pylint: disable=invalid-name
+    """Simulate race conditions while reading and packing, with more than objects _MAX_CHUNK_ITERATE_LENGTH changing."""
+    expected = {}
+
+    # I put at least one object already packed
+    preliminary_content = b'AAA'
+    preliminary_hashkey = temp_container.add_object(preliminary_content)
+    temp_container.pack_all_loose()
+    temp_container.clean_storage()
+    expected[preliminary_hashkey] = preliminary_content
+
+    for idx in range(temp_container._MAX_CHUNK_ITERATE_LENGTH + 10):  # pylint: disable=protected-access
+        content = '{}'.format(idx).encode('ascii')
+        expected[temp_container.add_object(content)] = content
+
+    retrieved = {}
+    first = True
+    with temp_container.get_objects_stream_and_meta(expected.keys()) as triplets:
+        for obj_hashkey, stream, meta in triplets:
+            retrieved[obj_hashkey] = stream.read()
+            if first:
+                # I should have found only one packed object (preliminary_content).
+                assert obj_hashkey == preliminary_hashkey
+                assert meta['type'] == ObjectType.PACKED
+                # I will not look for the loose until I exhaust the packed objects.
+                # In the meantime, therefore, I pack all the rest, and I clean the storage:
+                # this will trigger the fallback logic to check again if there are
+                # objects that have been packed in the meantime.
+                temp_container.pack_all_loose()
+                temp_container.clean_storage()
+                first = False
+
+    assert expected == retrieved
 
 
 @pytest.mark.parametrize('compress', [True, False])
@@ -1841,8 +1879,10 @@ def test_list_all_objects_extraneous(temp_dir, loose_prefix_len):  # pylint: dis
 @pytest.mark.parametrize('target_memory_bytes', [1, 9, 100 * 1024 * 1024])
 @pytest.mark.parametrize('compress_dest', [True, False])
 @pytest.mark.parametrize('compress_source', [True, False])
-def test_export_to_pack(temp_container, compress_source, compress_dest, target_memory_bytes):
-    """Test the functionality to export to a new container."""
+# Test both the same hash and another one
+@pytest.mark.parametrize('other_container_hash_type', ['sha256', 'sha1'])
+def test_import_to_pack(temp_container, compress_source, compress_dest, target_memory_bytes, other_container_hash_type):
+    """Test the functionality to import from another container."""
     obj1 = b'111111'
     obj2 = b'222222'
     obj3 = b'333332'
@@ -1850,7 +1890,7 @@ def test_export_to_pack(temp_container, compress_source, compress_dest, target_m
     with tempfile.TemporaryDirectory() as tmpdir:
         other_container = Container(tmpdir)
         # Use the same hash type
-        other_container.init_container(clear=True, hash_type=temp_container.hash_type)
+        other_container.init_container(clear=True, hash_type=other_container_hash_type)
 
         hashkey1 = temp_container.add_object(obj1)
         hashkey2, hashkey3 = temp_container.add_objects_to_pack([obj2, obj3], compress=compress_source)
@@ -1862,10 +1902,10 @@ def test_export_to_pack(temp_container, compress_source, compress_dest, target_m
         assert other_container.count_objects()['packed'] == 0
 
         # Put only two objects
-        old_new_mapping = temp_container.export([hashkey1, hashkey2],
-                                                other_container,
-                                                compress=compress_dest,
-                                                target_memory_bytes=target_memory_bytes)
+        old_new_mapping = other_container.import_objects([hashkey1, hashkey2],
+                                                         temp_container,
+                                                         compress=compress_dest,
+                                                         target_memory_bytes=target_memory_bytes)
         # Two objects should appear
         assert other_container.count_objects()['loose'] == 0
         assert other_container.count_objects()['packed'] == 2
@@ -1877,10 +1917,10 @@ def test_export_to_pack(temp_container, compress_source, compress_dest, target_m
 
         # Add two more, one of which is already in the destination
         old_new_mapping.update(
-            temp_container.export([hashkey2, hashkey3],
-                                  other_container,
-                                  compress=compress_dest,
-                                  target_memory_bytes=target_memory_bytes)
+            other_container.import_objects([hashkey2, hashkey3],
+                                           temp_container,
+                                           compress=compress_dest,
+                                           target_memory_bytes=target_memory_bytes)
         )
         # All three objects should be there, no duplicates
         assert other_container.count_objects()['loose'] == 0
@@ -1893,10 +1933,32 @@ def test_export_to_pack(temp_container, compress_source, compress_dest, target_m
         assert other_container.get_object_content(old_new_mapping[hashkey3]) == obj3
 
         old_hashkeys, new_hashkeys = zip(*old_new_mapping.items())
-        # Since we are using the same hash algorithm, the hashes should be the same!
-        assert old_hashkeys == new_hashkeys
+        if other_container_hash_type == temp_container.hash_type:
+            # Since we are using the same hash algorithm, the hashes ashould be the same!
+            assert old_hashkeys == new_hashkeys
 
         # close before exiting the context manager, so files are closed.
+        other_container.close()
+
+
+def test_export_deprecated(temp_container):
+    """Test that the export_function exists but is deprecated."""
+    obj1 = b'111111'
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        other_container = Container(tmpdir)
+        # Use the same hash type
+        other_container.init_container(clear=True, hash_type=temp_container.hash_type)
+
+        hashkey1 = temp_container.add_object(obj1)
+
+        # Put only two objects
+        with pytest.warns(DeprecationWarning):
+            temp_container.export([hashkey1], other_container)
+
+        assert other_container.get_object_content(hashkey1) == obj1
+
+        # Close before going out, or the test will fail on Windows not being able to delete the folder
         other_container.close()
 
 
@@ -2095,8 +2157,6 @@ def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
         temp_container, use_size_hint, callback_instance
     ):
     """Test the correctness of the callback of add_streamed_object_to_pack."""
-    # Add packed objects (2001, 10 chars each), *not* a multiple of 400 (that is the internal value
-    # of how many events should be triggered as a maximum)
     length = 1000000
     content = b'0' * length
     stream = io.BytesIO(content)
@@ -2121,6 +2181,95 @@ def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
         },
         'value': length
     }]
+
+
+@pytest.mark.parametrize('no_holes,no_holes_read_twice', [[True, True], [True, False], [False, False]])
+def test_add_streamed_objects_to_pack_callback(  # pylint: disable=invalid-name
+        temp_container, callback_instance, no_holes, no_holes_read_twice
+    ):
+    """Test the correctness of the callback of add_streamed_objects_to_pack."""
+    # Add packed objects (2001, 10 chars each)
+    len_packed = 2001
+    stream_list = [io.BytesIO('p{:09d}'.format(i).encode('ascii')) for i in range(len_packed)]
+
+    temp_container.add_streamed_objects_to_pack(
+        stream_list, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, callback=callback_instance.callback
+    )
+
+    # Add another 4001 packed objects with 2001 already-existing objects
+    len_packed2 = 4001
+    stream_list = [io.BytesIO('2p{:09d}'.format(i).encode('ascii')) for i in range(len_packed2)]
+
+    temp_container.add_streamed_objects_to_pack(
+        stream_list, no_holes=no_holes, no_holes_read_twice=no_holes_read_twice, callback=callback_instance.callback
+    )
+
+    assert callback_instance.current_action is None, (
+        "The 'add_streamed_objects_to_pack' call did not perform a final callback with a 'close' event"
+    )
+
+    expected_actions = []
+    # First call
+    expected_actions.append({'start_value': {'total': len_packed, 'description': 'Bulk storing'}, 'value': len_packed})
+    # Second call
+    if no_holes:
+        # If no_holes is True, i.e. we do not want holes, we compute an initial list of the existing ones
+        expected_actions.append({
+            'start_value': {
+                'total': len_packed,
+                'description': 'List existing'
+            },
+            'value': len_packed
+        })
+    expected_actions.append({
+        'start_value': {
+            'total': len_packed2,
+            'description': 'Bulk storing'
+        },
+        'value': len_packed2
+    })
+
+    assert callback_instance.performed_actions == expected_actions
+
+
+# Check both with the same hash type and with a different one
+@pytest.mark.parametrize('other_container_hash_type', ['sha256', 'sha1'])
+def test_import_objects_callback(temp_container, callback_instance, other_container_hash_type):
+    """Test the correctness of the callback of import_objects."""
+    # Add packed objects (2001, 10 chars each)
+    len_packed = 2001
+    stream_list = [io.BytesIO('p{:09d}'.format(i).encode('ascii')) for i in range(len_packed)]
+    hashkeys = temp_container.add_streamed_objects_to_pack(stream_list)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        other_container = Container(tmpdir)
+        # Use the same hash type
+        other_container.init_container(clear=True, hash_type=other_container_hash_type)
+
+        # Import objects
+        other_container.import_objects(hashkeys, temp_container, callback=callback_instance.callback)
+
+        assert other_container.count_objects()['loose'] == temp_container.count_objects()['loose']
+        assert other_container.count_objects()['packed'] == temp_container.count_objects()['packed']
+
+        # close before exiting the context manager, so files are closed.
+        other_container.close()
+
+    expected_actions = []
+    if other_container_hash_type == temp_container.hash_type:
+        expected_actions.append({
+            'start_value': {
+                'description': 'Listing objects',
+                'total': len_packed
+            },
+            'value': len_packed
+        })
+    expected_actions.append({'start_value': {'description': 'Copy objects', 'total': len_packed}, 'value': len_packed})
+    # len_packed is small (and the objects are small)
+    # so they all end up in the final flush
+    expected_actions.append({'start_value': {'description': 'Final flush', 'total': len_packed}, 'value': len_packed})
+
+    assert callback_instance.performed_actions == expected_actions
 
 
 @pytest.mark.parametrize('ask_deleting_unknown', [True, False])
@@ -2864,3 +3013,23 @@ def test_not_implemented_repacks(temp_container):
             continue
         with pytest.raises(NotImplementedError):
             temp_container.repack(compress_mode=compress_mode)
+
+
+def test_pack_all_loose_many(temp_container):
+    """Check the pack_all_loose when there are many objects to pack, more than _MAX_CHUNK_ITERATE_LENGTH."""
+    expected = {}
+    for idx in range(temp_container._MAX_CHUNK_ITERATE_LENGTH + 10):  # pylint: disable=protected-access
+        content = '{}'.format(idx).encode('utf8')
+        expected[temp_container.add_object(content)] = content
+
+    # Pack all loose objects
+    temp_container.pack_all_loose()
+
+    retrieved = temp_container.get_objects_content(expected.keys())
+    assert retrieved == expected
+
+    # Pack again, nothing should happen, but it should trigger the logic in pack_all_loose at the beginning,
+    # with `if where == Location.BOTH`
+    temp_container.pack_all_loose()
+    retrieved = temp_container.get_objects_content(expected.keys())
+    assert retrieved == expected

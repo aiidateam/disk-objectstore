@@ -723,9 +723,7 @@ def is_known_hash(hash_type):
 
 def get_hash(hash_type):
     """Return a hash class with an update method and a hexdigest method."""
-    known_hashes = {
-        'sha256': hashlib.sha256,
-    }
+    known_hashes = {'sha1': hashlib.sha1, 'sha256': hashlib.sha256}
 
     try:
         return known_hashes[hash_type]

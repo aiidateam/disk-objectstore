@@ -1049,11 +1049,9 @@ class Container:  # pylint: disable=too-many-public-methods
                 loose_objects.difference_update((hashkey,))
                 yield hashkey
 
-            if results_chunk:
-                last_pk = results_chunk[-1][0]
-            else:
-                # No more packed objects
+            if not results_chunk:
                 break
+            last_pk = results_chunk[-1][0]
 
         # What is left are the loose objects that are not in the packs
         for hashkey in loose_objects:
