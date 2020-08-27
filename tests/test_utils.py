@@ -5,7 +5,6 @@ import hashlib
 import io
 import os
 import tempfile
-import zlib
 
 import psutil
 import pytest
@@ -22,6 +21,9 @@ utils._actual_compute_hash_for_filename = utils._compute_hash_for_filename  # py
 # This is used by the mockreplace function to store files that are
 # reopened as locked, to be closed before the test finishes
 LOCKED_FILES_FD = []
+
+# NOTE: test_compressers must be adapted by hand when adding new algorithms
+COMPRESSION_ALGORITHMS_TO_TEST = ['zlib+1', 'zlib+9']
 
 
 def test_lazy_opener_read():
@@ -980,8 +982,11 @@ def test_packed_object_reader_mode():
         assert reader.mode == handle.mode
 
 
-def test_stream_decompresser():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser(compression_algorithm):
     """Test the stream decompresser."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
+
     # A short binary string (1025 bytes, an odd number to avoid possible alignments with the chunk size)
     original_data_short = b'0123456789abcdef' * 64 + b'E'
     # A longish binary string (2097153 bytes ~ 2MB
@@ -993,27 +998,42 @@ def test_stream_decompresser():
 
     original_data = [original_data_short, original_data_long, original_data_long_random]
 
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in one chunk
         assert original == decompresser.read(), 'Uncompressed data is wrong (single read)'
 
     # Redo the same, but do a read of zero bytes first, checking that
     # it returns a zero-length bytes, and that it does not move the offset
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in one chunk
         tmp = decompresser.read(size=0)
         assert not tmp
         assert original == decompresser.read(), 'Uncompressed data is wrong (single read)'
 
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     chunk_size = 1024
     for original, compressed_stream in zip(original_data, compressed_streams):
         data_chunks = []
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in multiple chunk
         while True:
             chunk = decompresser.read(size=chunk_size)
@@ -1025,13 +1045,18 @@ def test_stream_decompresser():
         assert original == data, 'Uncompressed data is wrong (chunked read)'
 
 
-def test_stream_decompresser_seek():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser_seek(compression_algorithm):
     """Test the seek (and tell) functionality of the StreamDecompresser."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
     original_data = b'0123456789abcdefABCDEF'
     length = len(original_data)
 
-    compressed_stream = io.BytesIO(zlib.compress(original_data))
-    decompresser = utils.StreamDecompresser(compressed_stream)
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed = compresser.compress(original_data)
+    compressed += compresser.flush()
+    compressed_stream = io.BytesIO(compressed)
+    decompresser = StreamDecompresser(compressed_stream)
 
     # Check the functionality is disabled
     assert decompresser.seekable
@@ -1090,22 +1115,26 @@ def test_stream_decompresser_seek():
         assert decompresser.tell() == length
 
 
-def test_decompresser_corrupt():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_decompresser_corrupt(compression_algorithm):
     """Test that the stream decompresser raises on a corrupt input."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
 
     # Check that we get an error for an invalid stream of bytes
-    decompresser = utils.StreamDecompresser(io.BytesIO(b'1234543'))
+    decompresser = StreamDecompresser(io.BytesIO(b'1234543'))
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert 'Error while uncompressing data' in str(excinfo.value)
 
     # Check that we get an error for a truncated stream of bytes
     original_data = b'someDATAotherTHINGS'
-    compressed_data = zlib.compress(original_data)
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed_data = compresser.compress(original_data)
+    compressed_data += compresser.flush()
     # I remove the last byte, so it's corrupted
     corrupted_stream = io.BytesIO(compressed_data[:-1])
 
-    decompresser = utils.StreamDecompresser(corrupted_stream)
+    decompresser = StreamDecompresser(corrupted_stream)
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert 'problem in the incoming buffer' in str(excinfo.value)
@@ -1489,3 +1518,34 @@ def test_rename_callback(callback_instance):
             'value': len(content)
         }
     ]
+
+
+@pytest.mark.parametrize(
+    'compression_algorithm,compressed_expected', [['zlib+1', b'x\x013426153\xb7\xb040Df\x01\xf9\x00G\xb2\x05R'],
+                                                  ['zlib+9', b'x\xda3426153\xb7\xb040Df\x01I\x00G\xb2\x05R']]
+)
+def test_compressers(compression_algorithm, compressed_expected):
+    """Check that the data is compressed as expected."""
+    uncompressed = b'12345678901234567890123890'
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed = compresser.compress(uncompressed)
+    compressed += compresser.flush()
+
+    assert compressed == compressed_expected
+
+
+def test_unknown_compressers():
+    """Check that unknown or invalid compressers give a ValueError."""
+    invalid_methods = [
+        'gzip',  # unknown
+        'zlib',  # no variant
+        'zlib+a',
+        'zlib+-1',
+        'zlib+10'  # Invalid variant
+        'unknown-method'
+    ]
+    for invalid in invalid_methods:
+        with pytest.raises(ValueError):
+            utils.get_compressobj_instance(invalid)
+        with pytest.raises(ValueError):
+            utils.get_stream_decompresser(invalid)

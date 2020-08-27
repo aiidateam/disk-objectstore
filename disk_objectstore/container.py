@@ -8,7 +8,6 @@ import os
 import shutil
 import uuid
 import warnings
-import zlib
 
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
@@ -20,9 +19,9 @@ from sqlalchemy.orm import sessionmaker
 
 from .models import Base, Obj
 from .utils import (
-    ObjectWriter, PackedObjectReader, StreamDecompresser, CallbackStreamWrapper, Location, chunk_iterator,
-    is_known_hash, nullcontext, rename_callback, safe_flush_to_disk, get_hash, compute_hash_and_size, merge_sorted,
-    detect_where_sorted, yield_first_element
+    ObjectWriter, PackedObjectReader, CallbackStreamWrapper, Location, chunk_iterator, is_known_hash, nullcontext,
+    rename_callback, safe_flush_to_disk, get_hash, get_compressobj_instance, get_stream_decompresser,
+    compute_hash_and_size, merge_sorted, detect_where_sorted, yield_first_element
 )
 from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
@@ -51,9 +50,6 @@ class Container:  # pylint: disable=too-many-public-methods
     """A class representing a container of objects (which is stored on a disk folder)"""
 
     _PACK_INDEX_SUFFIX = '.idx'
-    # Default compression level (when compression is requested)
-    # This is the lowest one, to get some reasonable compression without too much CPU time required
-    _COMPRESSLEVEL = 1
     # Size in bytes of each of the chunks used when (internally) reading or writing in chunks, e.g.
     # when packing.
     _CHUNKSIZE = 65536
@@ -289,7 +285,8 @@ class Container:  # pylint: disable=too-many-public-methods
         return True
 
     def init_container(  # pylint: disable=bad-continuation
-        self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2, hash_type='sha256'
+        self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2, hash_type='sha256',
+        compression_algorithm='zlib+1'
     ):
         """Initialise the container folder, if not already done.
 
@@ -304,6 +301,7 @@ class Container:  # pylint: disable=too-many-public-methods
           The longer the length, the more folders will be used to store loose
           objects. Suggested values: 0 (for not using subfolders) or 2.
         :param hash_type: a string defining the hash type to use.
+        :param compression_algorithm: a string defining the compression algorithm to use for compressed objects.
         """
         if loose_prefix_len < 0:
             raise ValueError('The loose prefix length can only be zero or a positive integer')
@@ -345,6 +343,11 @@ class Container:  # pylint: disable=too-many-public-methods
                 'There is already some file or folder in the Container folder, I cannot initialise it!'
             )
 
+        # validate the compression algorithm: check if I'm able to load the classes to compress and decompress
+        # with the given specified string
+        get_compressobj_instance(compression_algorithm)
+        get_stream_decompresser(compression_algorithm)
+
         # Create config file
         with open(self._get_config_file(), 'w') as fhandle:
             json.dump(
@@ -353,7 +356,8 @@ class Container:  # pylint: disable=too-many-public-methods
                     'loose_prefix_len': loose_prefix_len,
                     'pack_size_target': pack_size_target,
                     'hash_type': hash_type,
-                    'container_id': container_id
+                    'container_id': container_id,
+                    'compression_algorithm': compression_algorithm
                 },
                 fhandle
             )
@@ -412,6 +416,23 @@ class Container:  # pylint: disable=too-many-public-methods
         Clones of the container should have a different ID even if they have the same content.
         """
         return self._get_repository_config()['container_id']
+
+    @property
+    def compression_algorithm(self):
+        """Return the compression algorithm defined for this container.
+
+        This is read from the repository configuration."""
+        return self._get_repository_config()['compression_algorithm']
+
+    def _get_compressobj_instance(self):
+        """Return the correct `compressobj` class for the compression algorithm defined for this container."""
+        return get_compressobj_instance(self.compression_algorithm)
+
+    def _get_stream_decompresser(self):
+        """Return a new instance of the correct StreamDecompresser class for the compression algorithm
+        defined for this container.
+        """
+        return get_stream_decompresser(self.compression_algorithm)
 
     def get_object_content(self, hashkey):
         """Get the content of an object with a given hash key.
@@ -553,7 +574,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             fhandle=last_open_file, offset=metadata.offset, length=metadata.length
                         )
                         if metadata.compressed:
-                            obj_reader = StreamDecompresser(obj_reader)
+                            obj_reader = self._get_stream_decompresser()(obj_reader)
                         yield metadata.hashkey, obj_reader, meta
                     else:
                         yield metadata.hashkey, meta
@@ -671,7 +692,7 @@ class Container:  # pylint: disable=too-many-public-methods
                                 fhandle=last_open_file, offset=metadata.offset, length=metadata.length
                             )
                             if metadata.compressed:
-                                obj_reader = StreamDecompresser(obj_reader)
+                                obj_reader = self._get_stream_decompresser()(obj_reader)
                             yield metadata.hashkey, obj_reader, meta
                         else:
                             yield metadata.hashkey, meta
@@ -1107,7 +1128,7 @@ class Container:  # pylint: disable=too-many-public-methods
             hasher = get_hash(hash_type=hash_type)()
 
         if compress:
-            compressobj = zlib.compressobj(level=self._COMPRESSLEVEL)
+            compressobj = self._get_compressobj_instance()
 
         count_read_bytes = 0
         while True:
@@ -2057,7 +2078,7 @@ class Container:  # pylint: disable=too-many-public-methods
             for hashkey, size, offset, length, compressed in query:
                 obj_reader = PackedObjectReader(fhandle=pack_handle, offset=offset, length=length)
                 if compressed:
-                    obj_reader = StreamDecompresser(obj_reader)
+                    obj_reader = self._get_stream_decompresser()(obj_reader)
 
                 computed_hash, computed_size = compute_hash_and_size(obj_reader, self.hash_type)
 
