@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import uuid
 import warnings
 import zlib
 
@@ -87,11 +88,11 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         self._folder = os.path.realpath(folder)
         self._session = None  # Will be populated by the _get_session function
+
         # These act as caches and will be populated by the corresponding properties
-        self._loose_prefix_len = None
-        self._pack_size_target = None
+        # IMPORANT! IF YOU ADD MORE, REMEMBER TO CLEAR THEM IN `init_container()`!
         self._current_pack_id = None
-        self._hash_type = None
+        self._config = None
 
     def get_folder(self):
         """Return the path to the folder that will host the object-store container."""
@@ -315,11 +316,23 @@ class Container:  # pylint: disable=too-many-public-methods
             if os.path.exists(self._folder):
                 shutil.rmtree(self._folder)
 
+            # Reinitialize the configuration cache, since this will change
+            # (at least the container_id, possibly the rest), and the other caches
+            self._config = None
+            self._current_pack_id = None
+
         if self.is_initialised:
             raise FileExistsError(
                 'The container already exists, so you cannot initialise it - '
                 'use the clear option if you want to overwrite with a clean one'
             )
+
+        # If we are here, either the folder is empty, or just cleared.
+        # It could also be that one of the folders does not exist. This is considered an invalid situation.
+        # But this will be catched later, where I check that the folder is empty before overwriting the
+        # configuration file.
+        # In this case, I have to generate a new UUID to be used as the container_id
+        container_id = uuid.uuid4().hex
 
         try:
             os.makedirs(self._folder)
@@ -339,7 +352,8 @@ class Container:  # pylint: disable=too-many-public-methods
                     'container_version': 1,  # For future compatibility, this is the version of the format
                     'loose_prefix_len': loose_prefix_len,
                     'pack_size_target': pack_size_target,
-                    'hash_type': hash_type
+                    'hash_type': hash_type,
+                    'container_id': container_id
                 },
                 fhandle
             )
@@ -358,39 +372,46 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the repository config."""
         if not self.is_initialised:
             raise NotInitialised('The container is not initialised yet - use .init_container() first')
-        with open(self._get_config_file()) as fhandle:
-            config = json.load(fhandle)
-        return config
+        if self._config is None:
+            with open(self._get_config_file()) as fhandle:
+                self._config = json.load(fhandle)
+        return self._config
 
     @property
     def loose_prefix_len(self):
         """Return the length of the prefix of loose objects, when sharding.
 
-        This is read from the repository configuration.
+        This is read from the (cached) repository configuration.
         """
-        if self._loose_prefix_len is None:
-            self._loose_prefix_len = self._get_repository_config()['loose_prefix_len']
-        return self._loose_prefix_len
+        return self._get_repository_config()['loose_prefix_len']
 
     @property
     def pack_size_target(self):
         """Return the length of the pack name, when sharding.
 
-        This is read from the repository configuration.
+        This is read from the (cached) repository configuration.
         """
-        if self._pack_size_target is None:
-            self._pack_size_target = self._get_repository_config()['pack_size_target']
-        return self._pack_size_target
+        return self._get_repository_config()['pack_size_target']
 
     @property
     def hash_type(self):
         """Return the length of the prefix of loose objects, when sharding.
 
-        This is read from the repository configuration.
+        This is read from the (cached) repository configuration.
         """
-        if self._hash_type is None:
-            self._hash_type = self._get_repository_config()['hash_type']
-        return self._hash_type
+        return self._get_repository_config()['hash_type']
+
+    @property
+    def container_id(self):
+        """Return the repository unique ID.
+
+        This is read from the (cached) repository configuration, and is a UUID uniquely identifying
+        this specific container. This is generated at the container initialization (call `init_container`) and will
+        never change for this container.
+
+        Clones of the container should have a different ID even if they have the same content.
+        """
+        return self._get_repository_config()['container_id']
 
     def get_object_content(self, hashkey):
         """Get the content of an object with a given hash key.
