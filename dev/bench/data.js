@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1601613267248,
+  "lastUpdate": 1601660812655,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -2493,6 +2493,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.0535229775015154e-7",
             "extra": "mean: 293.31507334705645 nsec\nrounds: 144928"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1b84d6b00ad68bf8e58861c712c3cb9b6394abfd",
+          "message": "🐛 Fix performance regression (#102)\n\n`Container.is_initialised` is a costly operation, loading the config JSON every time.\r\nIn 1d7c389, the config is now called on every call to `loose_prefix_len`, leading to a large performance degradation.\r\nThis PR makes sure the `is_initialised` test is called only if the config has not already been loaded into memory.",
+          "timestamp": "2020-10-02T18:45:30+01:00",
+          "tree_id": "3e63fef3df945593819e81391c96d674c2e19225",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/1b84d6b00ad68bf8e58861c712c3cb9b6394abfd"
+        },
+        "date": 1601660812154,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 4.059525628070446,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007460296870933156",
+            "extra": "mean: 246.33420050000154 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.347174144813956,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07205359971335867",
+            "extra": "mean: 742.2945309999989 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 8.52659984282599,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008656394539269618",
+            "extra": "mean: 117.28004344444149 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 26.840867648268052,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0032305308410799476",
+            "extra": "mean: 37.256619759999694 msec\nrounds: 25"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.464339294329306,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013012328530117674",
+            "extra": "mean: 223.99731159999874 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2089279.6845127218,
+            "unit": "iter/sec",
+            "range": "stddev: 9.162402949782724e-7",
+            "extra": "mean: 478.63385999142946 nsec\nrounds: 185186"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3249136.2856222414,
+            "unit": "iter/sec",
+            "range": "stddev: 9.708092982684938e-8",
+            "extra": "mean: 307.7741012049862 nsec\nrounds: 142858"
           }
         ]
       }
