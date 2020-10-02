@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1601613161669,
+  "lastUpdate": 1601613267248,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -7264,6 +7264,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.422503370532878e-7",
             "extra": "mean: 280.01452142413143 nsec\nrounds: 158731"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "gio.piz@gmail.com",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1d7c389c353185c1923c9addb1b107c283d5f561",
+          "message": "✨ Add the concept of a (unique) container ID (#97)\n\nAllows for the association of a container with an existing DB, or to uniquely refer to it.\r\n\r\n🐛 This also fixes a bug, whereby config values were cached, but the cache was not cleared when re-initialising the container.\r\nTo reduce the risk of such a problem, now only the whole configuration dictionary is cached, rather than each single config value.",
+          "timestamp": "2020-10-02T05:26:39+01:00",
+          "tree_id": "cf46e923be5370049e00e368fe2b9cf6f18ef6d3",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/1d7c389c353185c1923c9addb1b107c283d5f561"
+        },
+        "date": 1601613265915,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.15813210478322423,
+            "unit": "iter/sec",
+            "range": "stddev: 0.05826465848362362",
+            "extra": "mean: 6.3238265333333326 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.142047397608578,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00874524408979022",
+            "extra": "mean: 7.0399037000000035 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 8.08036406888356,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00888086926231448",
+            "extra": "mean: 123.75679999999889 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 1.0896656674723078,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00566485253973726",
+            "extra": "mean: 917.7126799999996 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 0.12159347519684624,
+            "unit": "iter/sec",
+            "range": "stddev: 0.08396803952273874",
+            "extra": "mean: 8.224125499999994 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3365052.5485358736,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000011797341456384678",
+            "extra": "mean: 297.17217950586013 nsec\nrounds: 175439"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2656425.02047959,
+            "unit": "iter/sec",
+            "range": "stddev: 9.754785788472534e-7",
+            "extra": "mean: 376.44578419889314 nsec\nrounds: 59881"
           }
         ]
       }
