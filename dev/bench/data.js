@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1598478088808,
+  "lastUpdate": 1601611428508,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -2347,6 +2347,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.6573915241994156e-7",
             "extra": "mean: 293.6682060753844 nsec\nrounds: 153847"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "64326c7e9778b6af1cc142a1f48a526a5bf7ee2e",
+          "message": "🔀👌 Efficiency improvements  (#96)\n\nThis merge collects a number of important efficiency improvements, and a few features that were tightly bound to these efficiency changes, so they are shipped together.\r\n\r\nIn particular:\r\n\r\n- objects are now sorted and returned in the order in which they are on disk, with an important performance benefit. Fixes #92 \r\n- When there are many objects to list (currently set to 9500 objects, 10x the ones we could fit in a single IN SQL statement), performing many queries is slow, so we just resort to listing all objects and doing an efficient intersection (if the hash keys are sorted, both iterators can be looped over only once - fixes #93)\r\n- Since VACUUMing the DB is very important for efficiency, when the DB does not fit fully in the disk cache, `clean_storage` now provides an option to VACUUM the DB. VACUUM is also called after repacking. Fixes #94 \r\n- We implement now a function to perform a full repack of the repository (fixes #12). This is important and needed to reclaim space after deleting an object\r\n- For efficiency, we have moved the logic from an `export` function (still existing but deprecated) to a `import_objects` function\r\n- Still for efficiency, now functions like `pack_all_loose` and `import_objects` provide an option to perform a fsync to disk or not (see also #54 - there are still however calls that always use - or don't use - fsync and full_fsync on Mac). Also, `add_objects_to_pack` allows now to choose if you want to commit the changes to the SQLite DB, or not (delegating the responsibility to the caller, but this is important e.g. in `import_objects`: calling `commit` only once at the very end gives a factor of 2 speedup for very big repos).\r\n- A number of functions, including (but not exclusively) `import_objects` provide a callback to e.g. show a progress bar.\r\n- a `CallbackStreamWrapper` has been implemented, allowing to provide a callback (e.g. for a progress bar) when streaming a big file.\r\n- a new hash algorithm is now supported (`sha1`) in addition to the default `sha256` (fixes #82). This is faster even if a bit less robust. This was also needed to test completely some feature in `import_objects`, where the logic is optimised if both containers use the same algorithm. By default is still better to use everywhere sha256, also because then all export files that will be generated will use this algorithm and importing will be more efficient.\r\n- tests have been added for all new functionality, achieving again 100% coverage\r\n\r\nAs a reference, with these changes, exporting the full large SDB database (6.8M nodes) takes ~ 50 minutes:\r\n```\r\n6714808it [00:24, 274813.02it/s]\r\nAll hashkeys listed in 24.444787740707397s.\r\nListing objects: 100%|████████| 6714808/6714808 [00:06<00:00, 978896.65it/s]\r\nCopy objects: 100%|███████████| 6714808/6714808 [48:15<00:00, 2319.08it/s]\r\nFinal flush: 100%|████████████| 63236/63236 [00:07<00:00, 8582.35it/s]\r\nEverything re-exported in 2960.980943918228s.\r\n```\r\n\r\nThis can be compared to:\r\n\r\n- ~10 minutes to copy the whole 90GB, or ~15 minutes to read all and validate the packs. We will never be able to be faster than just copying the pack files, and we are only 3x slower.\r\n- ~2 days to just list all files in the old legacy AiiDA repo (or all objects if they are loose), and this does not take into account the time to rewrite everything, probably comparable. So we are almost 2 orders of magnitude faster than before.",
+          "timestamp": "2020-10-02T05:02:23+01:00",
+          "tree_id": "a1e5eacb37c751b57ede7818ed3ea30ccd868aa0",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/64326c7e9778b6af1cc142a1f48a526a5bf7ee2e"
+        },
+        "date": 1601611428032,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.822519717634209,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010710444634960353",
+            "extra": "mean: 261.60754524999777 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.8076198267327124,
+            "unit": "iter/sec",
+            "range": "stddev: 0.09458099688489016",
+            "extra": "mean: 1.2382063526666702 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 8.140907568004227,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007533513574043765",
+            "extra": "mean: 122.83642722222352 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 25.92046508176401,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003677563848886081",
+            "extra": "mean: 38.57955468181535 msec\nrounds: 22"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.588693807199888,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013275166948977731",
+            "extra": "mean: 217.92693999999528 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1967759.1996517286,
+            "unit": "iter/sec",
+            "range": "stddev: 4.337440371164589e-7",
+            "extra": "mean: 508.1922626391424 nsec\nrounds: 181819"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3105001.1831013225,
+            "unit": "iter/sec",
+            "range": "stddev: 1.1040241489828784e-7",
+            "extra": "mean: 322.0610689110473 nsec\nrounds: 138889"
           }
         ]
       }
