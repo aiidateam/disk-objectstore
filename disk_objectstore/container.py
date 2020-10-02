@@ -374,9 +374,9 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def _get_repository_config(self):
         """Return the repository config."""
-        if not self.is_initialised:
-            raise NotInitialised('The container is not initialised yet - use .init_container() first')
         if self._config is None:
+            if not self.is_initialised:
+                raise NotInitialised('The container is not initialised yet - use .init_container() first')
             with open(self._get_config_file()) as fhandle:
                 self._config = json.load(fhandle)
         return self._config
