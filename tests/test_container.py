@@ -3033,3 +3033,14 @@ def test_pack_all_loose_many(temp_container):
     temp_container.pack_all_loose()
     retrieved = temp_container.get_objects_content(expected.keys())
     assert retrieved == expected
+
+
+def test_container_id(temp_container):
+    """Check the creation of unique container IDs."""
+    old_container_id = temp_container.container_id
+    assert old_container_id is not None
+    assert isinstance(old_container_id, str)
+
+    # Re-initialize: it should get a new container_id
+    temp_container.init_container(clear=True)
+    assert old_container_id != temp_container.container_id
