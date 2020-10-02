@@ -58,6 +58,9 @@ jobs:
     - name: Create xml coverage
       run: coverage xml
     - name: Upload coverage to Codecov
+      # we pick th windows coverage to upload,
+      # since there are a number of tests run only on this platform
+      if: matrix.python-version == 3.7 && matrix.os == 'windows-latest'
       uses: codecov/codecov-action@v1
       with:
         file: ./coverage.xml
