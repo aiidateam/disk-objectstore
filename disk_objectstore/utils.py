@@ -4,6 +4,7 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 #  pylint: disable= too-many-lines
+import abc
 import hashlib
 import itertools
 import os
@@ -546,12 +547,31 @@ def rename_callback(callback, new_description):
     return wrapper_callback
 
 
-class StreamDecompresser:
-    """A class that gets a stream of compressed zlib bytes, and returns the corresponding
+class ZlibLikeBaseStreamDecompresser(abc.ABC):
+    """A class that gets a stream of compressed bytes, and returns the corresponding
     uncompressed bytes when being read via the .read() method.
+
+    This is the base class. Define the `decompressobj_class` and `decompress_error` properties to implement concrete
+    decompresser classes using specific algorithms that follow the zlib API.
     """
 
     _CHUNKSIZE = 524288
+
+    @property
+    @abc.abstractmethod
+    def decompressobj_class(self):
+        """Return here the `decompressobj` class of the given compression type.
+
+        Needs to be implemented by subclasses.
+        """
+
+    @property
+    @abc.abstractmethod
+    def decompress_error(self):
+        """Return here the Exception (or tuple of exceptions) that need to be caught if there is a compression error.
+
+        Needs to be implemented by subclasses.
+        """
 
     def __init__(self, compressed_stream):
         """Create the class from a given compressed bytestream.
@@ -560,7 +580,7 @@ class StreamDecompresser:
           returning a valid compressed stream.
         """
         self._compressed_stream = compressed_stream
-        self._decompressor = zlib.decompressobj()
+        self._decompressor = self.decompressobj_class()
         self._internal_buffer = b''
         self._pos = 0
 
@@ -602,7 +622,7 @@ class StreamDecompresser:
             # .unconsumed_tail and reused a the next loop
             try:
                 decompressed_chunk = self._decompressor.decompress(compressed_chunk, size)
-            except zlib.error as exc:
+            except self.decompress_error as exc:
                 raise ValueError('Error while uncompressing data: {}'.format(exc))
             self._internal_buffer += decompressed_chunk
 
@@ -653,7 +673,7 @@ class StreamDecompresser:
         if target == 0:
             # Going back to zero it's efficient. I need to reset all internal variables, as in the init.
             self._compressed_stream.seek(0)
-            self._decompressor = zlib.decompressobj()
+            self._decompressor = self.decompressobj_class()
             self._internal_buffer = b''
             self._pos = 0
             return 0
@@ -671,6 +691,67 @@ class StreamDecompresser:
                 break
         # Differently than files, I return here the actual position
         return self._pos
+
+
+class ZlibStreamDecompresser(ZlibLikeBaseStreamDecompresser):
+    """A class that gets a stream of compressed bytes using ZLIB, and returns the corresponding
+    uncompressed bytes when being read via the .read() method."""
+
+    @property
+    def decompressobj_class(self):
+        """Return the `decompressobj` class of zlib."""
+        return zlib.decompressobj
+
+    @property
+    def decompress_error(self):
+        """Return the zlib error raised when there is an error."""
+        return zlib.error
+
+
+def _get_compression_algorithm_info(algorithm):
+    """Return a compresser and a decompresser for the given algorithm."""
+    known_algorithms = {
+        'zlib': {
+            'compressobj': zlib.compressobj,
+            'variant_name': 'level',
+            'variant_mapper': {str(i): i for i in range(1, 10)},  # from 1 to 9
+            'decompresser': ZlibStreamDecompresser
+        }
+    }
+
+    algorithm_name, _, variant = algorithm.partition('+')
+    try:
+        algorithm_info = known_algorithms[algorithm_name]
+    except KeyError:
+        raise ValueError("Unknown or unsupported compression algorithm '{}'".format(algorithm_name))
+    try:
+        kwargs = {algorithm_info['variant_name']: algorithm_info['variant_mapper'][variant]}
+        compresser = algorithm_info['compressobj'](**kwargs)
+    except KeyError:
+        raise ValueError("Invalid variant '{}' for compression algorithm '{}'".format(variant, algorithm_name))
+
+    decompresser = algorithm_info['decompresser']
+
+    return compresser, decompresser
+
+
+def get_compressobj_instance(algorithm):
+    """Return a compressobj class with a given algorithm.
+
+    :param algorithm: A string defining the algorithm and its variant.
+        The algorithm is split by a + sign from the variant.
+        E.g. 'zlib+1' means using a level 1, while 'zlib+9' indicates a zlib compression with level 9
+        (slower but compressing more).
+    """
+    return _get_compression_algorithm_info(algorithm)[0]
+
+
+def get_stream_decompresser(algorithm):
+    """Return a StreamDecompresser class with a given algorithm.
+
+    :param algorithm: a compression algorithm (see `get_compressionobj_instance` for a description).
+    """
+    return _get_compression_algorithm_info(algorithm)[1]
 
 
 class ZeroStream:

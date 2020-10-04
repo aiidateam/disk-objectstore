@@ -8,7 +8,6 @@ import random
 import shutil
 import stat
 import tempfile
-import zlib
 import pathlib
 
 import psutil
@@ -17,6 +16,8 @@ import pytest
 from disk_objectstore import Container, ObjectType, CompressMode
 from disk_objectstore import utils, models
 import disk_objectstore.exceptions as exc
+
+COMPRESSION_ALGORITHMS_TO_TEST = ['zlib+1', 'zlib+9']
 
 
 class UnopenableBytesIO(io.BytesIO):
@@ -951,9 +952,13 @@ def test_locked_object_while_packing(  # pylint: disable=invalid-name
     assert temp_container.get_object_content(hashkey2) == content2
 
 
+# Note that until when we want to support py3.5, we cannot specify the
+# level as a keyword argument, as this was added only in python 3.6
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 @pytest.mark.parametrize('compress_packs', [True, False])
-def test_sizes(temp_container, generate_random_data, compress_packs):
+def test_sizes(temp_container, generate_random_data, compress_packs, compression_algorithm):
     """Check that the information on size is reliable."""
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     size_info = temp_container.get_total_size()
     assert size_info['total_size_packed'] == 0
     assert size_info['total_size_packed_on_disk'] == 0
@@ -988,15 +993,12 @@ def test_sizes(temp_container, generate_random_data, compress_packs):
     ) == total_object_size
 
     if compress_packs:
-        # Compress data manually to get compressed size
-        # In the current version, compression level is hardcoded.
-        # If this becomes a parameter, we need to change this test
-        # Note that until when we want to support py3.5, we cannot specify the
-        # level as a keyword argument, as this was added only in python 3.6
-        compressed_data = {
-            key: zlib.compress(val, temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
-            for key, val in data.items()
-        }
+        compressed_data = {}
+        for key, val in data.items():
+            compresser = utils.get_compressobj_instance(compression_algorithm)
+            compressed = compresser.compress(val)
+            compressed += compresser.flush()
+            compressed_data[key] = compressed
         total_compressed_size = sum(len(value) for value in compressed_data.values())
 
         size_info = temp_container.get_total_size()
@@ -1190,10 +1192,16 @@ def test_get_objects_meta_doesnt_open(temp_container, generate_random_data):  # 
     assert len(current_process.open_files()) == start_open_files
 
 
+# Note that until when we want to support py3.5, we cannot specify the
+# level as a keyword argument, as this was added only in python 3.6
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 @pytest.mark.parametrize('compress', [True, False])
 @pytest.mark.parametrize('skip_if_missing', [True, False])
-def test_stream_meta(temp_container, compress, skip_if_missing):
+def test_stream_meta(  # pylint: disable=too-many-locals
+        temp_container, compress, skip_if_missing, compression_algorithm
+    ):
     """Validate the meta dictionary returned by the get_objects_stream_and_meta and get_objects_meta."""
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     # This is the list of all known meta keys.
     # I do also an explicit check that all and only these are present
     # This is implicit since I will later also compare the exact dictionaries and not only their keys,
@@ -1206,10 +1214,10 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
     hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
     hashkey_loose = temp_container.add_object(content_loose)
     hashkey_missing = 'unknown'
-    # Assuming only zlib compression for now. Needs to be adapted when changing the possible compression libraries
-    object_pack_length = len(content_packed) if not compress else len(
-        zlib.compress(content_packed, temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
-    )
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    content_packed_compressed = compresser.compress(content_packed)
+    content_packed_compressed += compresser.flush()
+    object_pack_length = len(content_packed) if not compress else len(content_packed_compressed)
 
     expected_skip_missing_true = {
         hashkey_packed: {
@@ -1280,11 +1288,15 @@ def test_stream_meta(temp_container, compress, skip_if_missing):
         assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_false.items()}
 
 
+# Note that until when we want to support py3.5, we cannot specify the
+# level as a keyword argument, as this was added only in python 3.6
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 @pytest.mark.parametrize('compress', [True, False])
-def test_stream_meta_single(temp_container, compress):
+def test_stream_meta_single(temp_container, compress, compression_algorithm):
     """Validate the meta dictionary returned by the single-object methods.
 
     (i.e., get_object_stream_and_meta and get_object_meta)."""
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     # This is the list of all known meta keys.
     # I do also an explicit check that all and only these are present
     # This is implicit since I will later also compare the exact dictionaries and not only their keys,
@@ -1297,10 +1309,10 @@ def test_stream_meta_single(temp_container, compress):
     hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
     hashkey_loose = temp_container.add_object(content_loose)
     hashkey_missing = 'unknown'
-    # Assuming only zlib compression for now. Needs to be adapted when changing the possible compression libraries
-    object_pack_length = len(content_packed) if not compress else len(
-        zlib.compress(content_packed, temp_container._COMPRESSLEVEL)  # pylint: disable=protected-access
-    )
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    content_packed_compressed = compresser.compress(content_packed)
+    content_packed_compressed += compresser.flush()
+    object_pack_length = len(content_packed) if not compress else len(content_packed_compressed)
 
     expected_skip_missing_true = {
         hashkey_packed: {
@@ -3044,3 +3056,20 @@ def test_container_id(temp_container):
     # Re-initialize: it should get a new container_id
     temp_container.init_container(clear=True)
     assert old_container_id != temp_container.container_id
+
+
+@pytest.mark.parametrize(
+    'compression_algorithm',
+    [
+        'gzip',  # unknown
+        'zlib',  # no variant
+        'zlib+a',
+        'zlib+-1',
+        'zlib+10'  # Invalid variant
+        'unknown-method'
+    ]
+)
+def test_unknown_compressers(temp_container, compression_algorithm):
+    """Check that unknown or invalid compressers give a ValueError."""
+    with pytest.raises(ValueError):
+        temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
