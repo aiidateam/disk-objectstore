@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1601807578474,
+  "lastUpdate": 1601807856942,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -7702,6 +7702,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000011011192682512924",
             "extra": "mean: 483.9039714320837 nsec\nrounds: 178572"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "gio.piz@gmail.com",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d786296bc67219512f4058265ffbd8c9e6f06b0a",
+          "message": "✨ Generalize compression algorithm (#99)\n\nThe container configuration now accepts a variable for the compression algorithm to use.\r\nCurrently, the supported values are zlib, with levels from 1 to 9, but this can be expanded in the future.",
+          "timestamp": "2020-10-04T11:31:10+01:00",
+          "tree_id": "302c95715972bb03a6d7e329dad5995741db8395",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/d786296bc67219512f4058265ffbd8c9e6f06b0a"
+        },
+        "date": 1601807855565,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.1520147162967918,
+            "unit": "iter/sec",
+            "range": "stddev: 0.019804200525730033",
+            "extra": "mean: 868.0444666666668 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.10547294172542625,
+            "unit": "iter/sec",
+            "range": "stddev: 0.12138301980616126",
+            "extra": "mean: 9.481104666666665 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.897518735877944,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011034289827127427",
+            "extra": "mean: 144.97967142857146 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 9.860361261450842,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004797606336180165",
+            "extra": "mean: 101.41616249999963 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.8229005896961874,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003117950070682194",
+            "extra": "mean: 548.5762666666668 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3094997.280936908,
+            "unit": "iter/sec",
+            "range": "stddev: 1.9494930098499138e-7",
+            "extra": "mean: 323.10206091580307 nsec\nrounds: 149254"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 1911951.429243788,
+            "unit": "iter/sec",
+            "range": "stddev: 7.36897536691017e-7",
+            "extra": "mean: 523.0258387868768 nsec\nrounds: 68966"
           }
         ]
       }
