@@ -1,3 +1,13 @@
+# v0.5.0 (November 2020)
+- Various general (but very important) speed improvements
+- Add callbacks to a number of functions (e.g. export, add_objects_to_pack, ... to allow showing progress bars or similar indicators
+- Implement repacking (at least when not changing hashing or compression)
+- Remove `export` function, implement `import_objects` function instead, to be called on the other side (it's more efficient)
+- Add support for VACUUMing operations on the SQLite database (very important for efficiency)
+- Add support for multiple hashing algorithms
+- Add concept of (unique) `container_id`
+- Generalize the compression algorithm implementation, and multiple algorithms are supported now
+
 # v0.4.0 (20 July 2020)
 - Major robustness improvements and new functionality (possibility to pack while using the repository, tested on all platforms)
 - Not deleting loose files when packing; now there is a `clean_storage()` function to do it afterwards, as a maintenance operation
