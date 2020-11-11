@@ -26,6 +26,39 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture(scope='function')
+def callback_instance():
+    """Return the CallbackClass for the tests."""
+
+    class CallbackClass:
+        """Class that manages the callback and checks that it is correctly called."""
+
+        def __init__(self):
+            """Initialise the class."""
+            self.current_action = None
+            self.performed_actions = []
+
+        def callback(self, action, value):
+            """Check how the callback is called."""
+
+            if action == 'init':
+                assert self.current_action is None, "Starting a new action '{}' without closing the old one {}".format(
+                    action, self.current_action
+                )
+                self.current_action = {'start_value': value, 'value': 0}
+            elif action == 'update':
+                # Track the current position
+                self.current_action['value'] += value
+            elif action == 'close':
+                # Add to list of performed actions
+                self.performed_actions.append(self.current_action)
+                self.current_action = None
+            else:
+                raise AssertionError("Unknown action '{}'".format(action))
+
+    yield CallbackClass()
+
+
+@pytest.fixture(scope='function')
 def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     """Return an object-store container in a given temporary directory.
 

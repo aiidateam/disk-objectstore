@@ -5,7 +5,6 @@ import hashlib
 import io
 import os
 import tempfile
-import zlib
 
 import psutil
 import pytest
@@ -22,6 +21,9 @@ utils._actual_compute_hash_for_filename = utils._compute_hash_for_filename  # py
 # This is used by the mockreplace function to store files that are
 # reopened as locked, to be closed before the test finishes
 LOCKED_FILES_FD = []
+
+# NOTE: test_compressers must be adapted by hand when adding new algorithms
+COMPRESSION_ALGORITHMS_TO_TEST = ['zlib+1', 'zlib+9']
 
 
 def test_lazy_opener_read():
@@ -980,8 +982,11 @@ def test_packed_object_reader_mode():
         assert reader.mode == handle.mode
 
 
-def test_stream_decompresser():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser(compression_algorithm):
     """Test the stream decompresser."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
+
     # A short binary string (1025 bytes, an odd number to avoid possible alignments with the chunk size)
     original_data_short = b'0123456789abcdef' * 64 + b'E'
     # A longish binary string (2097153 bytes ~ 2MB
@@ -993,27 +998,42 @@ def test_stream_decompresser():
 
     original_data = [original_data_short, original_data_long, original_data_long_random]
 
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in one chunk
         assert original == decompresser.read(), 'Uncompressed data is wrong (single read)'
 
     # Redo the same, but do a read of zero bytes first, checking that
     # it returns a zero-length bytes, and that it does not move the offset
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in one chunk
         tmp = decompresser.read(size=0)
         assert not tmp
         assert original == decompresser.read(), 'Uncompressed data is wrong (single read)'
 
-    compressed_streams = [io.BytesIO(zlib.compress(data)) for data in original_data]
+    compressed_streams = []
+    for data in original_data:
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(data)
+        compressed += compresser.flush()
+        compressed_streams.append(io.BytesIO(compressed))
     chunk_size = 1024
     for original, compressed_stream in zip(original_data, compressed_streams):
         data_chunks = []
-        decompresser = utils.StreamDecompresser(compressed_stream)
+        decompresser = StreamDecompresser(compressed_stream)
         # Read in multiple chunk
         while True:
             chunk = decompresser.read(size=chunk_size)
@@ -1025,13 +1045,18 @@ def test_stream_decompresser():
         assert original == data, 'Uncompressed data is wrong (chunked read)'
 
 
-def test_stream_decompresser_seek():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser_seek(compression_algorithm):
     """Test the seek (and tell) functionality of the StreamDecompresser."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
     original_data = b'0123456789abcdefABCDEF'
     length = len(original_data)
 
-    compressed_stream = io.BytesIO(zlib.compress(original_data))
-    decompresser = utils.StreamDecompresser(compressed_stream)
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed = compresser.compress(original_data)
+    compressed += compresser.flush()
+    compressed_stream = io.BytesIO(compressed)
+    decompresser = StreamDecompresser(compressed_stream)
 
     # Check the functionality is disabled
     assert decompresser.seekable
@@ -1090,22 +1115,26 @@ def test_stream_decompresser_seek():
         assert decompresser.tell() == length
 
 
-def test_decompresser_corrupt():
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_decompresser_corrupt(compression_algorithm):
     """Test that the stream decompresser raises on a corrupt input."""
+    StreamDecompresser = utils.get_stream_decompresser(compression_algorithm)  # pylint: disable=invalid-name
 
     # Check that we get an error for an invalid stream of bytes
-    decompresser = utils.StreamDecompresser(io.BytesIO(b'1234543'))
+    decompresser = StreamDecompresser(io.BytesIO(b'1234543'))
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert 'Error while uncompressing data' in str(excinfo.value)
 
     # Check that we get an error for a truncated stream of bytes
     original_data = b'someDATAotherTHINGS'
-    compressed_data = zlib.compress(original_data)
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed_data = compresser.compress(original_data)
+    compressed_data += compresser.flush()
     # I remove the last byte, so it's corrupted
     corrupted_stream = io.BytesIO(compressed_data[:-1])
 
-    decompresser = utils.StreamDecompresser(corrupted_stream)
+    decompresser = StreamDecompresser(corrupted_stream)
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert 'problem in the incoming buffer' in str(excinfo.value)
@@ -1140,7 +1169,8 @@ def test_zero_stream_multi_read():
 # Set as the second parameter the hash of the 'content' string written below
 # inside the test function
 @pytest.mark.parametrize(
-    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b']]
+    'hash_type,expected_hash', [['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'],
+                                ['sha1', '2a0439b5b34b74808b6cc7a2bf04dd02604c20b0']]
 )
 def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
     """Test some functionality of the HashWriterWrapper class."""
@@ -1193,11 +1223,13 @@ def test_is_known_hash():
     """Check the functionality of the is_known_hash function."""
     # At least sha256 should be supported
     assert utils.is_known_hash('sha256')
+    # sha1 should also be supported
+    assert utils.is_known_hash('sha1')
     # A weird string should not be a valid known hash
     assert not utils.is_known_hash('SOME_UNKNOWN_HASH_TYPE')
 
 
-@pytest.mark.parametrize('hash_type', ['sha256'])
+@pytest.mark.parametrize('hash_type', ['sha256', 'sha1'])
 def test_compute_hash_and_size(hash_type):
     """Check the funtion to compute the hash and size."""
 
@@ -1211,3 +1243,309 @@ def test_compute_hash_and_size(hash_type):
         hashkey, size = utils.compute_hash_and_size(stream, hash_type=hash_type)
         assert hashkey == expected_hash
         assert size == expected_size
+
+
+LEFT_RIGHT_PAIRS = [
+    # Both empty
+    [[], []],
+    # Left empty
+    [
+        [],
+        [1, 2, 3],
+    ],
+    # Right empty
+    [
+        [1, 2, 4],
+        [],
+    ],
+    # Some lists with some overlap, right exhausted first
+    [
+        [1, 3, 5, 7, 9, 10, 11, 20],
+        [0, 2, 4, 5, 8, 10, 12],
+    ],
+    # Some lists with some overlap, left exhausted first
+    [
+        [0, 2, 4, 5, 8, 10, 12],
+        [1, 3, 5, 7, 9, 10, 11, 20],
+    ],
+    # Start with both, continue left
+    [
+        [0, 1, 2],
+        [0, 3, 5, 7],
+    ],
+    # Start with both, continue right
+    [
+        [0, 3, 5, 7],
+        [0, 1, 2],
+    ],
+    # End with both, coming from left
+    [
+        [0, 3, 5, 6, 8],
+        [1, 2, 8],
+    ],
+    # End with both, coming from right
+    [
+        [1, 2, 8],
+        [0, 3, 5, 6, 8],
+    ],
+]
+
+
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS)
+def test_detect_where(left, right):
+    """Test the detect_where_sorted function."""
+    # Compute the expected result
+    merged = sorted(set(left + right))
+    idx = -1  # Needed when detect_where_sorted is an empty iterator
+    for idx, (item, where) in enumerate(utils.detect_where_sorted(left, right)):
+        assert item == merged[idx]
+        if merged[idx] in left:
+            if merged[idx] in right:
+                expected_where = utils.Location.BOTH
+            else:
+                expected_where = utils.Location.LEFTONLY
+        else:
+            expected_where = utils.Location.RIGHTONLY
+        assert where == expected_where
+    assert idx + 1 == len(merged)
+
+
+LEFT_RIGHT_PAIRS_UNSORTED = [
+    # Unsorted at end, left
+    [
+        [1, 4, 5, 1],
+        [1, 2, 3],
+    ],
+    # Unsorted at end, right
+    [
+        [1, 4, 5],
+        [1, 2, 3, 1],
+    ],
+    # Unsorted at beginning, left
+    [
+        [1, 0, 4, 5],
+        [1, 2, 3],
+    ],
+    # Unsorted at beginning, right
+    [
+        [1, 4, 5],
+        [1, 0, 2, 3],
+    ],
+    # not unique at end, left
+    [
+        [1, 4, 5, 5],
+        [1, 2, 3],
+    ],
+    # Not unique at end, right
+    [
+        [1, 4, 5],
+        [1, 2, 3, 3],
+    ],
+    # Not unique at beginning, left
+    [
+        [1, 1, 4, 5],
+        [1, 2, 3],
+    ],
+    # Not unique at beginning, right
+    [
+        [1, 4, 5],
+        [1, 1, 2, 3],
+    ]
+]
+
+
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS_UNSORTED)
+def test_detect_where_unsorted(left, right):
+    """Test the detect_where_sorted function when the lists are not sorted."""
+    with pytest.raises(ValueError) as excinfo:
+        list(utils.detect_where_sorted(left, right))
+    assert 'does not return sorted', str(excinfo.value)
+
+
+def test_yield_first():
+    """Test the yield_first_element function."""
+
+    first = [1, 3, 5, 7, 9]
+    second = [0, 2, 4, 6, 8]
+
+    # [(1, 0), (3, 2), ...]
+    inner_iter = zip(first, second)
+
+    result = list(utils.yield_first_element(inner_iter))
+
+    assert result == first
+
+
+def test_merge_sorted():
+    """Test the merge_sorted function."""
+    # I also put some repetitions
+    first = sorted([1, 3, 5, 7, 9, 10, 11, 20])
+    second = sorted([0, 2, 4, 5, 8, 10, 12])
+
+    result1 = list(utils.merge_sorted(first, second))
+    result2 = list(utils.merge_sorted(second, first))
+
+    assert result1 == sorted(set(first + second))
+    assert result2 == sorted(set(first + second))
+
+
+def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
+    """Test the callback stream wrapper with no actual callback."""
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
+        fhandle.write(b'abc')
+        fhandle.seek(0)
+
+        wrapped = utils.CallbackStreamWrapper(fhandle, callback=None)
+
+        assert wrapped.mode == 'rb+'
+        assert wrapped.seekable
+        # Seek forward; read from byte 1
+        wrapped.seek(1)
+        assert wrapped.tell() == 1
+        assert wrapped.read() == b'bc'
+        assert wrapped.tell() == 3
+        # Seek backwards; read from byte 0
+        wrapped.seek(0)
+        assert wrapped.read() == b'abc'
+
+        wrapped.close_callback()
+
+
+@pytest.mark.parametrize('with_total_length', [True, False])
+def test_callback_stream_wrapper(callback_instance, with_total_length):
+    """Test the callback stream wrapper."""
+    description = 'SOME CALLBACK DESCRIPTION'
+    # Long string so we trigger the update_every logic
+    content = b'abc' * 4000
+
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
+        fhandle.write(content)
+        fhandle.seek(0)
+
+        if with_total_length:
+            wrapped = utils.CallbackStreamWrapper(
+                fhandle, callback=callback_instance.callback, total_length=len(content), description=description
+            )
+        else:
+            wrapped = utils.CallbackStreamWrapper(fhandle, callback=callback_instance.callback, description=description)
+
+        assert wrapped.mode == 'rb+'
+        assert wrapped.seekable
+        # Seek forward; read from byte 10
+        wrapped.seek(10)
+        assert wrapped.tell() == 10
+        assert wrapped.read() == content[10:]
+        assert wrapped.tell() == len(content)
+        # Seek backwards; read from byte 0, all
+        wrapped.seek(0)
+        assert wrapped.read() == content
+
+        # Seek backwards; read from byte 0, only 2 bytes
+        wrapped.seek(0)
+        assert wrapped.read(2) == content[0:2]
+        # Close the callback. It should be long enough so that
+        # the close_callback has to "flush" the internal buffer
+        # (when we provide the total_length)
+        wrapped.close_callback()
+
+    assert callback_instance.performed_actions == [{
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': description
+        },
+        'value': len(content)
+    }, {
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': '{} [rewind]'.format(description)
+        },
+        'value': len(content)
+    }, {
+        'start_value': {
+            'total': len(content) if with_total_length else 0,
+            'description': '{} [rewind]'.format(description)
+        },
+        'value': 2
+    }]
+
+
+def test_rename_callback(callback_instance):
+    """Check the rename_callback function."""
+    old_description = 'original description'
+    new_description = 'SOME NEW DESC'
+    content = b'some content'
+
+    assert utils.rename_callback(None, new_description=new_description) is None
+
+    # First call with the original one
+    wrapped = utils.CallbackStreamWrapper(
+        io.BytesIO(content),
+        callback=callback_instance.callback,
+        total_length=len(content),
+        description=old_description
+    )
+    # Call read so the callback is called
+    wrapped.read()
+    # We need to close the callback before reusing it
+    wrapped.close_callback()
+
+    # Now call with the modified one
+    wrapped = utils.CallbackStreamWrapper(
+        io.BytesIO(content),
+        callback=utils.rename_callback(callback_instance.callback, new_description=new_description),
+        total_length=len(content),
+        description=old_description
+    )
+    # Call read so the callback is called
+    wrapped.read()
+    # Close the callback to flush out
+    wrapped.close_callback()
+
+    assert callback_instance.performed_actions == [
+        {
+            'start_value': {
+                'total': len(content),
+                'description': old_description
+            },
+            'value': len(content)
+        },
+        {
+            'start_value': {
+                'total': len(content),
+                # Here there should be the new description
+                'description': new_description
+            },
+            'value': len(content)
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    'compression_algorithm,compressed_expected', [['zlib+1', b'x\x013426153\xb7\xb040Df\x01\xf9\x00G\xb2\x05R'],
+                                                  ['zlib+9', b'x\xda3426153\xb7\xb040Df\x01I\x00G\xb2\x05R']]
+)
+def test_compressers(compression_algorithm, compressed_expected):
+    """Check that the data is compressed as expected."""
+    uncompressed = b'12345678901234567890123890'
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed = compresser.compress(uncompressed)
+    compressed += compresser.flush()
+
+    assert compressed == compressed_expected
+
+
+def test_unknown_compressers():
+    """Check that unknown or invalid compressers give a ValueError."""
+    invalid_methods = [
+        'gzip',  # unknown
+        'zlib',  # no variant
+        'zlib+a',
+        'zlib+-1',
+        'zlib+10'  # Invalid variant
+        'unknown-method'
+    ]
+    for invalid in invalid_methods:
+        with pytest.raises(ValueError):
+            utils.get_compressobj_instance(invalid)
+        with pytest.raises(ValueError):
+            utils.get_stream_decompresser(invalid)

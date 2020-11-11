@@ -2,8 +2,8 @@
 
 It does not require a server running.
 """
-from .container import Container, ObjectType
+from .container import Container, ObjectType, CompressMode
 
-__all__ = ('Container', 'ObjectType')
+__all__ = ('Container', 'ObjectType', 'CompressMode')
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'
