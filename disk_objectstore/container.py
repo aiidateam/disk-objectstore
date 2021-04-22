@@ -13,11 +13,6 @@ from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.sql import func
-from sqlalchemy.orm import sessionmaker
-
-from .models import Base, Obj
 from .utils import (
     ObjectWriter, PackedObjectReader, CallbackStreamWrapper, Location, chunk_iterator, is_known_hash, nullcontext,
     rename_callback, safe_flush_to_disk, get_hash, get_compressobj_instance, get_stream_decompresser,
@@ -142,6 +137,11 @@ class Container:  # pylint: disable=too-many-public-methods
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
            is missing, either raise an exception (FileNotFoundError) if this flag is True, or return None
         """
+        from sqlalchemy import create_engine, event
+        from sqlalchemy.orm import sessionmaker
+
+        from .models import Base
+
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
                 raise FileNotFoundError('Pack index does not exist')
@@ -512,6 +512,7 @@ class Container:  # pylint: disable=too-many-public-methods
             If False, yield pairs (hashkey, meta) and avoid to open any file.
         """
         # pylint: disable=too-many-nested-blocks
+        from .models import Obj
 
         # During the run, this variable is updated with the currently open file.
         # This file is closed before opening a new one - so we ensure only one is
@@ -914,6 +915,8 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return a dictionary with the count of objects, keys are 'loose' and 'packed'.
 
         Also return a number of packs under 'pack_files'."""
+        from .models import Obj
+
         retval = {}
 
         number_packed = self._get_cached_session().query(Obj).count()
@@ -974,6 +977,9 @@ class Container:  # pylint: disable=too-many-public-methods
         - total_size_packindexes_on_disk: size of the pack indexes on disk.
         - total_size_loose: size of the loose objects in the packs (always uncompressed).
         """
+        from sqlalchemy.sql import func
+        from .models import Obj
+
         retval = {}
 
         session = self._get_cached_session()
@@ -1066,6 +1072,7 @@ class Container:  # pylint: disable=too-many-public-methods
         This function might be slow if there are many loose objects!
         Use only if needed.
         """
+        from .models import Obj
         yield_per_size = 1000
 
         # We get all objects that are loose, create a set
@@ -1166,6 +1173,8 @@ class Container:  # pylint: disable=too-many-public-methods
             Set to False if you don't need such a guarantee (anyway the loose version will be kept,
             so often this guarantee is not strictly needed).
         """
+        from .models import Obj
+
         hash_type = self.hash_type if validate_objects else None
 
         loose_objects = set(self._list_loose())
@@ -1372,6 +1381,8 @@ class Container:  # pylint: disable=too-many-public-methods
             operations! (See e.g. the `import_files()` method).
         :return: a list of object hash keys
         """
+        from .models import Obj
+
         yield_per_size = 1000
         hashkeys = []
 
@@ -1648,7 +1659,7 @@ class Container:  # pylint: disable=too-many-public-methods
         engine = self._get_cached_session().get_bind()
         engine.execute('VACUUM')
 
-    def clean_storage(self, vacuum=False):  # pylint: disable=too-many-branches
+    def clean_storage(self, vacuum=False):  # pylint: disable=too-many-branches,too-many-locals
         """Perform some maintenance clean-up of the container.
 
         .. note:: this is a maintenance operation, must be performed when nobody is using the container!
@@ -1659,6 +1670,8 @@ class Container:  # pylint: disable=too-many-public-methods
         - it removes duplicates if any, with some validation
         - it cleans up loose objects that are already in packs
         """
+        from .models import Obj
+
         # I start by VACUUMing the DB - this is something useful to do
         if vacuum:
             self._vacuum()
@@ -2052,6 +2065,8 @@ class Container:  # pylint: disable=too-many-public-methods
             callback_tqdm = CallbackTqdm()
             container.validate(callback=callback_tqdm.callback)
         """
+        from .models import Obj
+
         # Will contain hashkeys of invalid objects
         invalid_hashes = []
         invalid_sizes = []
@@ -2114,6 +2129,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def validate(self, callback=None):
         """Perform a number of validations on the container content, to make sure it is not corrupt."""
+        from .models import Obj
+
         all_errors = defaultdict(list)
 
         all_loose = set(self._list_loose())
@@ -2178,6 +2195,8 @@ class Container:  # pylint: disable=too-many-public-methods
         :param hashkeys: hashkeys to be deleted
         :return: a list of hashkeys that were actually deleted (might be shorted if non-existing hashkeys were asked)
         """
+        from .models import Obj
+
         deleted_loose = set()
         deleted_packed = set()
 
@@ -2248,6 +2267,8 @@ class Container:  # pylint: disable=too-many-public-methods
             as it can simply transfer the bytes without decompressing everything first,
             and recompressing it back again).
         """
+        from .models import Obj
+
         if compress_mode != CompressMode.KEEP:
             raise NotImplementedError('Only keep method currently implemented')
 
