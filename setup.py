@@ -16,7 +16,7 @@ FNAME = os.path.join(FOLDER, MODULENAME, '__init__.py')
 with open(FNAME) as init:
     # Get lines that match, remove comment part
     # (assuming it's not in the string...)
-    VERSIONLINES = [l.partition('#')[0] for l in init.readlines() if l.startswith('__version__')]
+    VERSIONLINES = [line.partition('#')[0] for line in init.readlines() if line.startswith('__version__')]
 assert len(VERSIONLINES) == 1, 'Unable to detect the version lines'
 VERSIONLINE = VERSIONLINES[0]
 VERSION = VERSIONLINE.partition('=')[2].replace('"', '').replace("'", '').strip()
@@ -29,7 +29,7 @@ setup(
     author='Giovanni Pizzi',
     version=VERSION,
     install_requires=[
-        'sqlalchemy',
+        'sqlalchemy<1.4',
     ],
     extras_require={
         'dev': [
