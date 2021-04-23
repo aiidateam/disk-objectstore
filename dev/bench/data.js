@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619184878626,
+  "lastUpdate": 1619185013660,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -5426,6 +5426,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.135277363738962e-8",
             "extra": "mean: 239.33151194430138 nsec\nrounds: 195199"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7a894a4f8befb5de0fe95979183b1cbb03f4ef13",
+          "message": "Merge pull request #106 from aiidateam/fix/update-python-support\n\nPython support: remove 3.5 and add 3.9 support",
+          "timestamp": "2021-04-23T15:33:19+02:00",
+          "tree_id": "f577efcb13f4ee1f11313641f80fbf03890b9d37",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/7a894a4f8befb5de0fe95979183b1cbb03f4ef13"
+        },
+        "date": 1619185012673,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4087671146420866,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07496746486130741",
+            "extra": "mean: 709.8405333333334 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.19087595264863766,
+            "unit": "iter/sec",
+            "range": "stddev: 2.205762170911617",
+            "extra": "mean: 5.239004631666666 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 5.608891355172454,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007474632918793218",
+            "extra": "mean: 178.28835266666587 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.00156939070453,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0026151869990055114",
+            "extra": "mean: 99.9843085555554 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.188666605581953,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010835003278742433",
+            "extra": "mean: 456.89919033333365 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2271625.7689415426,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000011547104356649543",
+            "extra": "mean: 440.213354537683 nsec\nrounds: 151424"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3874823.9785803133,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000003633259470869228",
+            "extra": "mean: 258.0762392118884 nsec\nrounds: 199522"
           }
         ]
       }
