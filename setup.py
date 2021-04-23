@@ -29,7 +29,7 @@ setup(
     author='Giovanni Pizzi',
     version=VERSION,
     install_requires=[
-        'sqlalchemy<1.4',
+        'sqlalchemy<2',
     ],
     extras_require={
         'dev': [
