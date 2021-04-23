@@ -6,4 +6,4 @@ from .container import Container, ObjectType, CompressMode
 
 __all__ = ('Container', 'ObjectType', 'CompressMode')
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'

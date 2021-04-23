@@ -1975,8 +1975,8 @@ class Container:  # pylint: disable=too-many-public-methods
     def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
         """Export the specified hashkeys to a new container (must be already initialised).
 
-        ..deprecated:: 0.6
-            Deprecated: use the ``import_objects`` method of ``other_container`` instead.
+        ..deprecated:: 0.5
+            Deprecated: use the ``import_objects`` method of ``other_container`` instead. Will be removed in 0.6.
 
         :param hashkeys: an iterable of hash keys.
         :param other_container: another Container class into which you want to export the specified hash keys of this
