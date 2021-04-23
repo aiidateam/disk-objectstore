@@ -47,11 +47,11 @@ setup(
     ],
     long_description=io.open(os.path.join(FOLDER, 'README.md'), encoding='utf-8').read(),
     long_description_content_type='text/markdown',
-    python_requires='>=3.5',
+    python_requires='>=3.6',
     classifiers=[
-        'Programming Language :: Python :: 3', 'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6', 'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8', 'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3', 'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7', 'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9', 'License :: OSI Approved :: MIT License',
         'Operating System :: MacOS :: MacOS X', 'Operating System :: Microsoft :: Windows',
         'Operating System :: POSIX :: Linux', 'Topic :: Software Development :: Libraries :: Python Modules'
     ],
