@@ -14,8 +14,9 @@ from contextlib import contextmanager
 from enum import Enum
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import func
+from sqlalchemy.sql.expression import select, delete
 
 from .models import Base, Obj
 from .utils import (
@@ -190,7 +191,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # We set autoflush = False to avoid to lock the DB if just doing queries/reads
         DBSession = sessionmaker(  # pylint: disable=invalid-name
-            bind=engine, autoflush=False, autocommit=False
+            bind=engine, autoflush=False, autocommit=False, future=True
         )
         session = DBSession()
 
@@ -2205,14 +2206,16 @@ class Container:  # pylint: disable=too-many-public-methods
         # Operate in chunks, due to the SQLite limits
         # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
         for chunk in chunk_iterator(hashkeys, size=self._IN_SQL_MAX_LENGTH):
-            query = session.query(Obj.hashkey).filter(Obj.hashkey.in_(chunk))
-            deleted_this_chunk = [res[0] for res in query]
+            stmt = select(Obj.hashkey).where(Obj.hashkey.in_(chunk))
+            results = session.execute(stmt)
+            deleted_this_chunk = [res[0] for res in results]
             # I need to specify either `False` or `'fetch'`
             # otherwise one gets 'sqlalchemy.exc.InvalidRequestError: Could not evaluate current criteria in Python'
             # `'fetch'` will run the query twice so it's less efficient
             # False is beter but one needs to either `expire_all` at the end, or commit.
             # I will commit at the end.
-            query.delete(synchronize_session=False)
+            stmt = delete(Obj).where(Obj.hashkey.in_(chunk)).execution_options(synchronize_session=False)
+            session.execute(stmt)
             deleted_packed.update(deleted_this_chunk)
 
         session.commit()
