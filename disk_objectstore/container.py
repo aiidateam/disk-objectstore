@@ -8,31 +8,46 @@ import os
 import shutil
 import uuid
 import warnings
-
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.sql import func
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import func
 
+from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .models import Base, Obj
 from .utils import (
-    ObjectWriter, PackedObjectReader, CallbackStreamWrapper, Location, chunk_iterator, is_known_hash, nullcontext,
-    rename_callback, safe_flush_to_disk, get_hash, get_compressobj_instance, get_stream_decompresser,
-    compute_hash_and_size, merge_sorted, detect_where_sorted, yield_first_element
+    CallbackStreamWrapper,
+    Location,
+    ObjectWriter,
+    PackedObjectReader,
+    chunk_iterator,
+    compute_hash_and_size,
+    detect_where_sorted,
+    get_compressobj_instance,
+    get_hash,
+    get_stream_decompresser,
+    is_known_hash,
+    merge_sorted,
+    nullcontext,
+    rename_callback,
+    safe_flush_to_disk,
+    yield_first_element,
 )
-from .exceptions import NotExistent, NotInitialised, InconsistentContent
 
-ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
+ObjQueryResults = namedtuple(
+    "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
+)
 
 
 class ObjectType(Enum):
     """Enum that describes the various types of an objec (as returned in ``meta['type']``)."""
-    LOOSE = 'loose'
-    PACKED = 'packed'
-    MISSING = 'missing'
+
+    LOOSE = "loose"
+    PACKED = "packed"
+    MISSING = "missing"
 
 
 class CompressMode(Enum):
@@ -41,15 +56,16 @@ class CompressMode(Enum):
     For now used only in the `repack` function, should probably be applied to all functions
     that have a `compress` kwarg.
     """
-    NO = 'no'  # pylint: disable=invalid-name
-    YES = 'yes'
-    KEEP = 'keep'  # Keep the current compression when repacking.
+
+    NO = "no"  # pylint: disable=invalid-name
+    YES = "yes"
+    KEEP = "keep"  # Keep the current compression when repacking.
 
 
 class Container:  # pylint: disable=too-many-public-methods
     """A class representing a container of objects (which is stored on a disk folder)"""
 
-    _PACK_INDEX_SUFFIX = '.idx'
+    _PACK_INDEX_SUFFIX = ".idx"
     # Size in bytes of each of the chunks used when (internally) reading or writing in chunks, e.g.
     # when packing.
     _CHUNKSIZE = 65536
@@ -105,21 +121,21 @@ class Container:  # pylint: disable=too-many-public-methods
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, 'sandbox')
+        return os.path.join(self._folder, "sandbox")
 
     def _get_loose_folder(self):
         """Return the path to the folder that will host the loose objects.
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, 'loose')
+        return os.path.join(self._folder, "loose")
 
     def _get_pack_folder(self):
         """Return the path to the folder that will host the packed objects.
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, 'packs')
+        return os.path.join(self._folder, "packs")
 
     def _get_duplicates_folder(self):
         """Return the path to the folder that will host the duplicate loose objects that couldn't be written.
@@ -129,11 +145,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, 'duplicates')
+        return os.path.join(self._folder, "duplicates")
 
     def _get_config_file(self):
         """Return the path to the container config file."""
-        return os.path.join(self._folder, 'config.json')
+        return os.path.join(self._folder, "config.json")
 
     def _get_session(self, create=False, raise_if_missing=False):
         """Return a new session to connect to the pack-index SQLite DB.
@@ -144,15 +160,17 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         if not create and not os.path.exists(self._get_pack_index_path()):
             if raise_if_missing:
-                raise FileNotFoundError('Pack index does not exist')
+                raise FileNotFoundError("Pack index does not exist")
             return None
 
-        engine = create_engine('sqlite:///{}'.format(self._get_pack_index_path()))
+        engine = create_engine(f"sqlite:///{self._get_pack_index_path()}")
 
         # For the next two bindings, see background on
         # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, 'connect')
-        def do_connect(dbapi_connection, connection_record):  # pylint: disable=unused-argument,unused-variable
+        @event.listens_for(engine, "connect")
+        def do_connect(
+            dbapi_connection, connection_record
+        ):  # pylint: disable=unused-argument,unused-variable
             """Hook function that is called upon connection.
 
             It modifies the default behavior of SQLite to use WAL and to
@@ -169,15 +187,15 @@ class Container:  # pylint: disable=too-many-public-methods
             # so you need to close and reload the session to see the newly written data.
             # Docs on WAL: https://www.sqlite.org/wal.html
             cursor = dbapi_connection.cursor()
-            cursor.execute('PRAGMA journal_mode=wal;')
+            cursor.execute("PRAGMA journal_mode=wal;")
             cursor.close()
 
         # For this binding, see background on
         # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, 'begin')
+        @event.listens_for(engine, "begin")
         def do_begin(conn):  # pylint: disable=unused-variable
             # emit our own BEGIN
-            conn.execute('BEGIN')
+            conn.execute("BEGIN")
 
         if create:
             # Create all tables in the engine. This is equivalent to "Create Table"
@@ -214,8 +232,8 @@ class Container:  # pylint: disable=too-many-public-methods
         if self.loose_prefix_len:
             return os.path.join(
                 self._get_loose_folder(),
-                hashkey[:self.loose_prefix_len],
-                hashkey[self.loose_prefix_len:],
+                hashkey[: self.loose_prefix_len],
+                hashkey[self.loose_prefix_len :],
             )
         # if loose_prefix_len is zero, there is no subfolder
         return os.path.join(self._get_loose_folder(), hashkey)
@@ -227,14 +245,14 @@ class Container:  # pylint: disable=too-many-public-methods
         :param pack_id: Whether to allow the repack pack id
         """
         pack_id = str(pack_id)
-        assert self._is_valid_pack_id(pack_id,
-                                      allow_repack_pack=allow_repack_pack), 'Invalid pack ID {}'.format(pack_id)
+        assert self._is_valid_pack_id(
+            pack_id, allow_repack_pack=allow_repack_pack
+        ), f"Invalid pack ID {pack_id}"
         return os.path.join(self._get_pack_folder(), pack_id)
 
     def _get_pack_index_path(self):
-        """Return the path to the SQLite file containing the index of packed objects.
-        """
-        return os.path.join(self._folder, 'packs{}'.format(self._PACK_INDEX_SUFFIX))
+        """Return the path to the SQLite file containing the index of packed objects."""
+        return os.path.join(self._folder, f"packs{self._PACK_INDEX_SUFFIX}")
 
     def _get_pack_id_to_write_to(self):
         """Return the pack ID to write the next object.
@@ -270,23 +288,27 @@ class Container:  # pylint: disable=too-many-public-methods
         try:
             with open(self._get_config_file()) as fhandle:
                 json.load(fhandle)
-        except (ValueError, OSError, IOError):
+        except (ValueError, OSError):
             return False
         # I also check that the four sub-folders exist
         subfolders = [
             self._get_pack_folder(),
             self._get_loose_folder(),
             self._get_duplicates_folder(),
-            self._get_sandbox_folder()
+            self._get_sandbox_folder(),
         ]
         for folder in subfolders:
             if not os.path.exists(folder):
                 return False
         return True
 
-    def init_container(  # pylint: disable=bad-continuation
-        self, clear=False, pack_size_target=4 * 1024 * 1024 * 1024, loose_prefix_len=2, hash_type='sha256',
-        compression_algorithm='zlib+1'
+    def init_container(
+        self,
+        clear=False,
+        pack_size_target=4 * 1024 * 1024 * 1024,
+        loose_prefix_len=2,
+        hash_type="sha256",
+        compression_algorithm="zlib+1",
     ):
         """Initialise the container folder, if not already done.
 
@@ -304,11 +326,15 @@ class Container:  # pylint: disable=too-many-public-methods
         :param compression_algorithm: a string defining the compression algorithm to use for compressed objects.
         """
         if loose_prefix_len < 0:
-            raise ValueError('The loose prefix length can only be zero or a positive integer')
+            raise ValueError(
+                "The loose prefix length can only be zero or a positive integer"
+            )
         if pack_size_target <= 0:
-            raise ValueError('The pack size target can only be a non-zero positive integer')
+            raise ValueError(
+                "The pack size target can only be a non-zero positive integer"
+            )
         if not is_known_hash(hash_type):
-            raise ValueError('Unknown hash type "{}"'.format(hash_type))
+            raise ValueError(f'Unknown hash type "{hash_type}"')
 
         if clear:
             if os.path.exists(self._folder):
@@ -321,8 +347,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if self.is_initialised:
             raise FileExistsError(
-                'The container already exists, so you cannot initialise it - '
-                'use the clear option if you want to overwrite with a clean one'
+                "The container already exists, so you cannot initialise it - "
+                "use the clear option if you want to overwrite with a clean one"
             )
 
         # If we are here, either the folder is empty, or just cleared.
@@ -340,7 +366,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if os.listdir(self._folder):
             raise FileExistsError(
-                'There is already some file or folder in the Container folder, I cannot initialise it!'
+                "There is already some file or folder in the Container folder, I cannot initialise it!"
             )
 
         # validate the compression algorithm: check if I'm able to load the classes to compress and decompress
@@ -349,24 +375,24 @@ class Container:  # pylint: disable=too-many-public-methods
         get_stream_decompresser(compression_algorithm)
 
         # Create config file
-        with open(self._get_config_file(), 'w') as fhandle:
+        with open(self._get_config_file(), "w") as fhandle:
             json.dump(
                 {
-                    'container_version': 1,  # For future compatibility, this is the version of the format
-                    'loose_prefix_len': loose_prefix_len,
-                    'pack_size_target': pack_size_target,
-                    'hash_type': hash_type,
-                    'container_id': container_id,
-                    'compression_algorithm': compression_algorithm
+                    "container_version": 1,  # For future compatibility, this is the version of the format
+                    "loose_prefix_len": loose_prefix_len,
+                    "pack_size_target": pack_size_target,
+                    "hash_type": hash_type,
+                    "container_id": container_id,
+                    "compression_algorithm": compression_algorithm,
                 },
-                fhandle
+                fhandle,
             )
 
         for folder in [
             self._get_pack_folder(),
             self._get_loose_folder(),
             self._get_duplicates_folder(),
-            self._get_sandbox_folder()
+            self._get_sandbox_folder(),
         ]:
             os.makedirs(folder)
 
@@ -376,7 +402,9 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the repository config."""
         if self._config is None:
             if not self.is_initialised:
-                raise NotInitialised('The container is not initialised yet - use .init_container() first')
+                raise NotInitialised(
+                    "The container is not initialised yet - use .init_container() first"
+                )
             with open(self._get_config_file()) as fhandle:
                 self._config = json.load(fhandle)
         return self._config
@@ -387,7 +415,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         This is read from the (cached) repository configuration.
         """
-        return self._get_repository_config()['loose_prefix_len']
+        return self._get_repository_config()["loose_prefix_len"]
 
     @property
     def pack_size_target(self):
@@ -395,7 +423,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         This is read from the (cached) repository configuration.
         """
-        return self._get_repository_config()['pack_size_target']
+        return self._get_repository_config()["pack_size_target"]
 
     @property
     def hash_type(self):
@@ -403,7 +431,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         This is read from the (cached) repository configuration.
         """
-        return self._get_repository_config()['hash_type']
+        return self._get_repository_config()["hash_type"]
 
     @property
     def container_id(self):
@@ -415,14 +443,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
         Clones of the container should have a different ID even if they have the same content.
         """
-        return self._get_repository_config()['container_id']
+        return self._get_repository_config()["container_id"]
 
     @property
     def compression_algorithm(self):
         """Return the compression algorithm defined for this container.
 
         This is read from the repository configuration."""
-        return self._get_repository_config()['compression_algorithm']
+        return self._get_repository_config()["compression_algorithm"]
 
     def _get_compressobj_instance(self):
         """Return the correct `compressobj` class for the compression algorithm defined for this container."""
@@ -478,21 +506,25 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :param hashkey: the hashkey of the object to stream.
         """
-        with self.get_objects_stream_and_meta(hashkeys=[hashkey], skip_if_missing=False) as triplets:
+        with self.get_objects_stream_and_meta(
+            hashkeys=[hashkey], skip_if_missing=False
+        ) as triplets:
             counter = 0
             for obj_hashkey, stream, meta in triplets:
                 counter += 1
-                assert counter == 1, 'There is more than one item returned by get_objects_stream_and_meta'
+                assert (
+                    counter == 1
+                ), "There is more than one item returned by get_objects_stream_and_meta"
                 assert obj_hashkey == hashkey
 
                 if stream is None:
-                    raise NotExistent('No object with hash key {}'.format(hashkey))
+                    raise NotExistent(f"No object with hash key {hashkey}")
 
                 yield stream, meta
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
-            self, hashkeys, skip_if_missing, with_streams
-        ):
+        self, hashkeys, skip_if_missing, with_streams
+    ):
         """Return a generator yielding triplets of (hashkey, open stream, size).
 
         :note: The stream is already open and at the right position, and can
@@ -534,22 +566,37 @@ class Container:  # pylint: disable=too-many-public-methods
             # Operate in chunks, due to the SQLite limits
             # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
             for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
-                query = session.query(Obj).filter(
-                    Obj.hashkey.in_(chunk)
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                query = (
+                    session.query(Obj)
+                    .filter(Obj.hashkey.in_(chunk))
+                    .with_entities(
+                        Obj.pack_id,
+                        Obj.hashkey,
+                        Obj.offset,
+                        Obj.length,
+                        Obj.compressed,
+                        Obj.size,
+                    )
+                )
                 for res in query:
-                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                    packs[res[0]].append(
+                        ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
+                    )
         else:
             sorted_hashkeys = sorted(hashkeys_set)
             pack_iterator = session.execute(
-                'SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey'
+                "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
             )
             # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
             # with the right iterator)
-            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]):
+            for res, where in detect_where_sorted(
+                pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]
+            ):
                 if where == Location.BOTH:
                     # If it's in both, it returns the left one, i.e. the full data from the DB
-                    packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                    packs[res[0]].append(
+                        ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
+                    )
 
         for pack_int_id, pack_metadata in packs.items():
             pack_metadata.sort(key=lambda metadata: metadata.offset)
@@ -558,20 +605,24 @@ class Container:  # pylint: disable=too-many-public-methods
             try:
                 # Open only once per file (if in `with_streams` mode)
                 if with_streams:
-                    last_open_file = open(pack_path, mode='rb')
+                    last_open_file = open(  # pylint: disable=consider-using-with
+                        pack_path, mode="rb"
+                    )
                 for metadata in pack_metadata:
                     meta = {
-                        'type': ObjectType.PACKED,
-                        'size': metadata.size,
-                        'pack_id': pack_int_id,
-                        'pack_compressed': metadata.compressed,
-                        'pack_offset': metadata.offset,
-                        'pack_length': metadata.length,
+                        "type": ObjectType.PACKED,
+                        "size": metadata.size,
+                        "pack_id": pack_int_id,
+                        "pack_compressed": metadata.compressed,
+                        "pack_offset": metadata.offset,
+                        "pack_length": metadata.length,
                     }
 
                     if with_streams:
                         obj_reader = PackedObjectReader(
-                            fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                            fhandle=last_open_file,
+                            offset=metadata.offset,
+                            length=metadata.length,
                         )
                         if metadata.compressed:
                             obj_reader = self._get_stream_decompresser()(obj_reader)
@@ -591,16 +642,18 @@ class Container:  # pylint: disable=too-many-public-methods
             obj_path = self._get_loose_path_from_hashkey(hashkey=loose_hashkey)
             try:
                 if with_streams:
-                    last_open_file = open(obj_path, mode='rb')
+                    last_open_file = open(  # pylint: disable=consider-using-with
+                        obj_path, mode="rb"
+                    )
                     # I do not use os.path.getsize in case the file has just
                     # been deleted by a concurrent writer
                     meta = {
-                        'type': ObjectType.LOOSE,
-                        'size': os.fstat(last_open_file.fileno()).st_size,
-                        'pack_id': None,
-                        'pack_compressed': None,
-                        'pack_offset': None,
-                        'pack_length': None,
+                        "type": ObjectType.LOOSE,
+                        "size": os.fstat(last_open_file.fileno()).st_size,
+                        "pack_id": None,
+                        "pack_compressed": None,
+                        "pack_offset": None,
+                        "pack_length": None,
                     }
 
                     yield loose_hashkey, last_open_file, meta
@@ -608,12 +661,12 @@ class Container:  # pylint: disable=too-many-public-methods
                     # This will also raise a FileNotFoundError if the file does not exist
                     size = os.path.getsize(obj_path)
                     meta = {
-                        'type': ObjectType.LOOSE,
-                        'size': size,
-                        'pack_id': None,
-                        'pack_compressed': None,
-                        'pack_offset': None,
-                        'pack_length': None,
+                        "type": ObjectType.LOOSE,
+                        "size": size,
+                        "pack_id": None,
+                        "pack_compressed": None,
+                        "pack_offset": None,
+                        "pack_length": None,
                     }
 
                     yield loose_hashkey, meta
@@ -646,23 +699,40 @@ class Container:  # pylint: disable=too-many-public-methods
             packs = defaultdict(list)
             session = self._get_cached_session()
             if len(loose_not_found) <= self._MAX_CHUNK_ITERATE_LENGTH:
-                for chunk in chunk_iterator(loose_not_found, size=self._IN_SQL_MAX_LENGTH):
-                    query = session.query(Obj).filter(
-                        Obj.hashkey.in_(chunk)
-                    ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                for chunk in chunk_iterator(
+                    loose_not_found, size=self._IN_SQL_MAX_LENGTH
+                ):
+                    query = (
+                        session.query(Obj)
+                        .filter(Obj.hashkey.in_(chunk))
+                        .with_entities(
+                            Obj.pack_id,
+                            Obj.hashkey,
+                            Obj.offset,
+                            Obj.length,
+                            Obj.compressed,
+                            Obj.size,
+                        )
+                    )
                     for res in query:
-                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                        packs[res[0]].append(
+                            ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
+                        )
             else:
                 sorted_hashkeys = sorted(loose_not_found)
                 pack_iterator = session.execute(
-                    'SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey'
+                    "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
                 )
                 # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
                 # with the right iterator)
-                for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]):
+                for res, where in detect_where_sorted(
+                    pack_iterator, sorted_hashkeys, left_key=lambda x: x[1]
+                ):
                     if where == Location.BOTH:
                         # If it's in both, it returns the left one, i.e. the full data from the DB
-                        packs[res[0]].append(ObjQueryResults(res[1], res[2], res[3], res[4], res[5]))
+                        packs[res[0]].append(
+                            ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
+                        )
 
             # I will construct here the really missing objects.
             # I make a copy of the set.
@@ -676,20 +746,24 @@ class Container:  # pylint: disable=too-many-public-methods
                 pack_path = self._get_pack_path_from_pack_id(str(pack_int_id))
                 try:
                     if with_streams:
-                        last_open_file = open(pack_path, mode='rb')
+                        last_open_file = open(  # pylint: disable=consider-using-with
+                            pack_path, mode="rb"
+                        )
 
                     for metadata in pack_metadata:
                         meta = {
-                            'type': ObjectType.PACKED,
-                            'size': metadata.size,
-                            'pack_id': pack_int_id,
-                            'pack_compressed': metadata.compressed,
-                            'pack_offset': metadata.offset,
-                            'pack_length': metadata.length,
+                            "type": ObjectType.PACKED,
+                            "size": metadata.size,
+                            "pack_id": pack_int_id,
+                            "pack_compressed": metadata.compressed,
+                            "pack_offset": metadata.offset,
+                            "pack_length": metadata.length,
                         }
                         if with_streams:
                             obj_reader = PackedObjectReader(
-                                fhandle=last_open_file, offset=metadata.offset, length=metadata.length
+                                fhandle=last_open_file,
+                                offset=metadata.offset,
+                                length=metadata.length,
                             )
                             if metadata.compressed:
                                 obj_reader = self._get_stream_decompresser()(obj_reader)
@@ -705,12 +779,12 @@ class Container:  # pylint: disable=too-many-public-methods
             if really_not_found and not skip_if_missing:
                 for missing_hashkey in really_not_found:
                     meta = {
-                        'type': ObjectType.MISSING,
-                        'size': None,
-                        'pack_id': None,
-                        'pack_compressed': None,
-                        'pack_offset': None,
-                        'pack_length': None,
+                        "type": ObjectType.MISSING,
+                        "size": None,
+                        "pack_id": None,
+                        "pack_compressed": None,
+                        "pack_offset": None,
+                        "pack_length": None,
                     }
                     if with_streams:
                         yield missing_hashkey, None, meta
@@ -807,13 +881,17 @@ class Container:  # pylint: disable=too-many-public-methods
         :param hashkey: the hashkey of the object to stream.
         """
         counter = 0
-        for obj_hashkey, meta in self.get_objects_meta(hashkeys=[hashkey], skip_if_missing=False):
+        for obj_hashkey, meta in self.get_objects_meta(
+            hashkeys=[hashkey], skip_if_missing=False
+        ):
             counter += 1
-            assert counter == 1, 'There is more than one item returned by get_objects_stream_and_meta'
+            assert (
+                counter == 1
+            ), "There is more than one item returned by get_objects_stream_and_meta"
             assert obj_hashkey == hashkey
 
-            if meta['type'] == ObjectType.MISSING:
-                raise NotExistent('No object with hash key {}'.format(hashkey))
+            if meta["type"] == ObjectType.MISSING:
+                raise NotExistent(f"No object with hash key {hashkey}")
 
             return meta
 
@@ -827,7 +905,9 @@ class Container:  # pylint: disable=too-many-public-methods
         existing_hashkeys = set()
 
         # Note: This iterates in a 'random' order, different than the `hashkeys` list
-        for obj_hashkey, _ in self.get_objects_meta(hashkeys=hashkeys, skip_if_missing=True):
+        for obj_hashkey, _ in self.get_objects_meta(
+            hashkeys=hashkeys, skip_if_missing=True
+        ):
             # Since I use skip_if_missing=True, I should only iterate on those that exist
             existing_hashkeys.add(obj_hashkey)
 
@@ -854,7 +934,9 @@ class Container:  # pylint: disable=too-many-public-methods
             are the object contents.
         """
         retrieved = {}
-        with self.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=skip_if_missing) as triplets:
+        with self.get_objects_stream_and_meta(
+            hashkeys=hashkeys, skip_if_missing=skip_if_missing
+        ) as triplets:
             for obj_hashkey, stream, _ in triplets:
                 if stream is None:
                     # This should happen only if skip_if_missing is False
@@ -878,7 +960,7 @@ class Container:  # pylint: disable=too-many-public-methods
             loose_folder=self._get_loose_folder(),
             loose_prefix_len=self.loose_prefix_len,
             duplicates_folder=self._get_duplicates_folder(),
-            hash_type=self.hash_type
+            hash_type=self.hash_type,
         )
 
     def add_object(self, content):
@@ -917,13 +999,13 @@ class Container:  # pylint: disable=too-many-public-methods
         retval = {}
 
         number_packed = self._get_cached_session().query(Obj).count()
-        retval['packed'] = number_packed
+        retval["packed"] = number_packed
 
-        retval['loose'] = 0
+        retval["loose"] = 0
         for loose_hashkey in self._list_loose():  # pylint: disable=unused-variable
-            retval['loose'] += 1
+            retval["loose"] += 1
 
-        retval['pack_files'] = len(list(self._list_packs()))
+        retval["pack_files"] = len(list(self._list_packs()))
 
         return retval
 
@@ -936,12 +1018,12 @@ class Container:  # pylint: disable=too-many-public-methods
         if not pack_id:
             # Must be a non-empty string
             return False
-        if pack_id != '0' and pack_id[0] == '0':
+        if pack_id != "0" and pack_id[0] == "0":
             # The ID must be a valid integer: either zero, or it should not start by zero
             return False
         if allow_repack_pack and pack_id == str(cls._REPACK_PACK_ID):
             return True
-        if not all(char in '0123456789' for char in pack_id):
+        if not all(char in "0123456789" for char in pack_id):
             return False
         return True
 
@@ -949,7 +1031,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return True if the name is a valid prefix."""
         if len(prefix) != self.loose_prefix_len:
             return False
-        if not all(char in '0123456789abcdef' for char in prefix):
+        if not all(char in "0123456789abcdef" for char in prefix):
             return False
         return True
 
@@ -960,7 +1042,7 @@ class Container:  # pylint: disable=too-many-public-methods
         Note that it currently does not check the length but only that the key is composed only
         by hexadecimal characters.
         """
-        if not all(char in '0123456789abcdef' for char in hashkey):
+        if not all(char in "0123456789abcdef" for char in hashkey):
             return False
         return True
 
@@ -979,24 +1061,29 @@ class Container:  # pylint: disable=too-many-public-methods
         session = self._get_cached_session()
         # COALESCE is used to return 0 if there are no results, rather than None
         # SQL's COALESCE returns the first non-null result
-        retval['total_size_packed'] = session.query(func.coalesce(func.sum(Obj.size),
-                                                                  0).label('total_size_packed')).all()[0][0]
-        retval['total_size_packed_on_disk'] = session.query(
-            func.coalesce(func.sum(Obj.length), 0).label('total_length_packed')
+        retval["total_size_packed"] = session.query(
+            func.coalesce(func.sum(Obj.size), 0).label("total_size_packed")
+        ).all()[0][0]
+        retval["total_size_packed_on_disk"] = session.query(
+            func.coalesce(func.sum(Obj.length), 0).label("total_length_packed")
         ).all()[0][0]
 
         total_size_packfiles_on_disk = 0
         for pack_id in list(self._list_packs()):
-            total_size_packfiles_on_disk += os.path.getsize(self._get_pack_path_from_pack_id(pack_id))
-        retval['total_size_packfiles_on_disk'] = total_size_packfiles_on_disk
+            total_size_packfiles_on_disk += os.path.getsize(
+                self._get_pack_path_from_pack_id(pack_id)
+            )
+        retval["total_size_packfiles_on_disk"] = total_size_packfiles_on_disk
 
-        retval['total_size_packindexes_on_disk'] = os.path.getsize(self._get_pack_index_path())
+        retval["total_size_packindexes_on_disk"] = os.path.getsize(
+            self._get_pack_index_path()
+        )
 
         total_size_loose = 0
         for loose_hashkey in self._list_loose():
             loose_path = self._get_loose_path_from_hashkey(loose_hashkey)
             total_size_loose += os.path.getsize(loose_path)
-        retval['total_size_loose'] = total_size_loose
+        retval["total_size_loose"] = total_size_loose
 
         return retval
 
@@ -1014,11 +1101,13 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
 
         # Open file in exclusive mode
-        lock_file = os.path.join(self._get_pack_folder(), '{}.lock'.format(pack_id))
-        pack_file = self._get_pack_path_from_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
+        lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
+        pack_file = self._get_pack_path_from_pack_id(
+            pack_id, allow_repack_pack=allow_repack_pack
+        )
         try:
-            with open(lock_file, 'x'):
-                with open(pack_file, 'ab') as pack_handle:
+            with open(lock_file, "x"):
+                with open(pack_file, "ab") as pack_handle:
                     yield pack_handle
         finally:
             # Release resource (I check if it exists in case there was an exception)
@@ -1036,8 +1125,10 @@ class Container:  # pylint: disable=too-many-public-methods
             if self.loose_prefix_len:
                 if not self._is_valid_loose_prefix(first_level):
                     continue
-                for second_level in os.listdir(os.path.join(self._get_loose_folder(), first_level)):
-                    hashkey = '{}{}'.format(first_level, second_level)
+                for second_level in os.listdir(
+                    os.path.join(self._get_loose_folder(), first_level)
+                ):
+                    hashkey = f"{first_level}{second_level}"
                     if not self._is_valid_hashkey(hashkey):
                         continue
                     yield hashkey
@@ -1054,9 +1145,9 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         for fname in os.listdir(self._get_pack_folder()):
             ## I actually check for pack index files
-            #if not fname.endswith(self._PACK_INDEX_SUFFIX):
+            # if not fname.endswith(self._PACK_INDEX_SUFFIX):
             #    continue
-            #pack_id = fname[:-len(self._PACK_INDEX_SUFFIX)]
+            # pack_id = fname[:-len(self._PACK_INDEX_SUFFIX)]
             if self._is_valid_pack_id(fname):
                 yield fname
 
@@ -1082,9 +1173,14 @@ class Container:  # pylint: disable=too-many-public-methods
         # after this call was called. It would be bad instead to miss an object that has always existed
         last_pk = -1
         while True:
-            results_chunk = session.query(Obj).filter(Obj.id > last_pk).order_by(
-                Obj.id
-            ).limit(yield_per_size).with_entities(Obj.id, Obj.hashkey).all()
+            results_chunk = (
+                session.query(Obj)
+                .filter(Obj.id > last_pk)
+                .order_by(Obj.id)
+                .limit(yield_per_size)
+                .with_entities(Obj.id, Obj.hashkey)
+                .all()
+            )
 
             for _, hashkey in results_chunk:
                 # I need to use a comma because I want to create a tuple
@@ -1099,7 +1195,9 @@ class Container:  # pylint: disable=too-many-public-methods
         for hashkey in loose_objects:
             yield hashkey
 
-    def _write_data_to_packfile(self, pack_handle, read_handle, compress, hash_type=None):
+    def _write_data_to_packfile(
+        self, pack_handle, read_handle, compress, hash_type=None
+    ):
         """Append data, read from read_handle until it ends, to the correct packfile.
 
         Return the number of bytes READ (note that this will be different
@@ -1121,8 +1219,8 @@ class Container:  # pylint: disable=too-many-public-methods
             size and ``hash_key`` is ``None`` is ``hash_type`` is ``None``, otherwise it contains the hash
             computed with the given ``hash_type`` algorithm.
         """
-        assert 'b' in pack_handle.mode
-        assert 'a' in pack_handle.mode
+        assert "b" in pack_handle.mode
+        assert "a" in pack_handle.mode
 
         if hash_type:
             hasher = get_hash(hash_type=hash_type)()
@@ -1133,7 +1231,7 @@ class Container:  # pylint: disable=too-many-public-methods
         count_read_bytes = 0
         while True:
             chunk = read_handle.read(self._CHUNKSIZE)
-            if chunk == b'':
+            if chunk == b"":
                 # Returns an empty bytes object on EOF.
                 # Returns None if the underlying raw stream was open in non-blocking
                 # mode and no data is available at the moment.
@@ -1154,8 +1252,8 @@ class Container:  # pylint: disable=too-many-public-methods
         return (count_read_bytes, hasher.hexdigest() if hash_type else None)
 
     def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
-            self, compress=False, validate_objects=True, do_fsync=True
-        ):
+        self, compress=False, validate_objects=True, do_fsync=True
+    ):
         """Pack all loose objects.
 
         This is a maintenance operation, needs to be done only by one process.
@@ -1182,14 +1280,23 @@ class Container:  # pylint: disable=too-many-public-methods
         if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
             for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
                 # I check the hash keys that are already in the pack
-                for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                for res in (
+                    session.query(Obj)
+                    .filter(Obj.hashkey.in_(chunk))
+                    .with_entities(Obj.hashkey)
+                    .all()
+                ):
                     existing_packed_hashkeys.append(res[0])
         else:
             sorted_hashkeys = sorted(loose_objects)
-            pack_iterator = session.execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+            pack_iterator = session.execute(
+                "SELECT hashkey FROM db_object ORDER BY hashkey"
+            )
 
             # The query returns a tuple of length 1, so I still need a left_key
-            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]):
+            for res, where in detect_where_sorted(
+                pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]
+            ):
                 if where == Location.BOTH:
                     existing_packed_hashkeys.append(res[0])
 
@@ -1236,19 +1343,24 @@ class Container:  # pylint: disable=too-many-public-methods
                     loose_hashkey = loose_objects.pop()
 
                     obj_dict = {}
-                    obj_dict['hashkey'] = loose_hashkey
-                    obj_dict['pack_id'] = pack_int_id
-                    obj_dict['compressed'] = compress
-                    obj_dict['offset'] = pack_handle.tell()
+                    obj_dict["hashkey"] = loose_hashkey
+                    obj_dict["pack_id"] = pack_int_id
+                    obj_dict["compressed"] = compress
+                    obj_dict["offset"] = pack_handle.tell()
                     try:
-                        with open(self._get_loose_path_from_hashkey(loose_hashkey), 'rb') as loose_handle:
+                        with open(
+                            self._get_loose_path_from_hashkey(loose_hashkey), "rb"
+                        ) as loose_handle:
                             # The second parameter is `None` since we are not computing the hash
                             # We can instead pass the hash algorithm and assert that it is correct
-                            obj_dict['size'], new_hashkey = self._write_data_to_packfile(
+                            (
+                                obj_dict["size"],
+                                new_hashkey,
+                            ) = self._write_data_to_packfile(
                                 pack_handle=pack_handle,
                                 read_handle=loose_handle,
                                 compress=compress,
-                                hash_type=hash_type
+                                hash_type=hash_type,
                             )
                     except PermissionError:
                         # This might happen if the file is being written and is locked.
@@ -1260,7 +1372,7 @@ class Container:  # pylint: disable=too-many-public-methods
                                 loose_hashkey, new_hashkey
                             )
                         )
-                    obj_dict['length'] = pack_handle.tell() - obj_dict['offset']
+                    obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
 
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
@@ -1269,7 +1381,9 @@ class Container:  # pylint: disable=too-many-public-methods
                 if obj_dicts:
                     # Here I shouldn't need to do `OR IGNORE` as in `add_streamed_objects_to_pack`
                     # Because I'm already checking the hash keys and avoiding to add twice the same
-                    session.execute(Obj.__table__.insert(), obj_dicts)
+                    session.execute(
+                        Obj.__table__.insert(), obj_dicts  # pylint: disable=no-member
+                    )
                     # Clean up the list - this will be cleaned up also later,
                     # but it's better to make sure that we do it here, to avoid trying to rewrite
                     # the same objects again
@@ -1278,7 +1392,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 # flush and sync to disk before closing
                 if do_fsync:
-                    safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
+                    safe_flush_to_disk(
+                        pack_handle,
+                        os.path.realpath(pack_handle.name),
+                        use_fullsync=True,
+                    )
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
@@ -1296,17 +1414,17 @@ class Container:  # pylint: disable=too-many-public-methods
             # and deletion is deferred to a manual clean-up operation.
 
     def add_streamed_object_to_pack(  # pylint: disable=too-many-arguments
-            self,
-            stream,
-            compress=False,
-            open_streams=False,
-            no_holes=False,
-            no_holes_read_twice=True,
-            callback=None,
-            callback_size_hint=0,
-            do_fsync=True,
-            do_commit=True
-        ):
+        self,
+        stream,
+        compress=False,
+        open_streams=False,
+        no_holes=False,
+        no_holes_read_twice=True,
+        callback=None,
+        callback_size_hint=0,
+        do_fsync=True,
+        do_commit=True,
+    ):
         """Add a single object in streamed form to a pack.
 
         For the description of the parameters, see the docstring of ``add_streamed_objects_to_pack``.
@@ -1316,7 +1434,11 @@ class Container:  # pylint: disable=too-many-public-methods
             length in the callbacks
         :return: a single object hash key
         """
-        streams = [CallbackStreamWrapper(stream, callback=callback, total_length=callback_size_hint)]
+        streams = [
+            CallbackStreamWrapper(
+                stream, callback=callback, total_length=callback_size_hint
+            )
+        ]
 
         # I specifically set the callback to None
         retval = self.add_streamed_objects_to_pack(
@@ -1335,10 +1457,17 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return retval[0]
 
-
     def add_streamed_objects_to_pack(  # pylint: disable=too-many-locals, too-many-branches, too-many-statements, too-many-arguments
-            self, stream_list, compress=False, open_streams=False, no_holes=False, no_holes_read_twice=True,
-            callback=None, do_fsync=True, do_commit=True):
+        self,
+        stream_list,
+        compress=False,
+        open_streams=False,
+        no_holes=False,
+        no_holes_read_twice=True,
+        callback=None,
+        do_fsync=True,
+        do_commit=True,
+    ):
         """Add objects directly to a pack, reading from a list of streams.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1386,7 +1515,10 @@ class Container:  # pylint: disable=too-many-public-methods
                 total = session.query(Obj).count()
                 if total:
                     # If we have a callback, compute the total count of objects in this pack
-                    callback(action='init', value={'total': total, 'description': 'List existing'})
+                    callback(
+                        action="init",
+                        value={"total": total, "description": "List existing"},
+                    )
                     # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
                     update_every = max(int(total / 400), 1)
                     # Counter of how many objects have been since since the last update.
@@ -1398,9 +1530,14 @@ class Container:  # pylint: disable=too-many-public-methods
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
             last_pk = -1
             while True:
-                results_chunk = session.query(Obj).filter(Obj.id > last_pk).order_by(
-                    Obj.id
-                ).limit(yield_per_size).with_entities(Obj.id, Obj.hashkey).all()
+                results_chunk = (
+                    session.query(Obj)
+                    .filter(Obj.id > last_pk)
+                    .order_by(Obj.id)
+                    .limit(yield_per_size)
+                    .with_entities(Obj.id, Obj.hashkey)
+                    .all()
+                )
 
                 if not results_chunk:
                     # No more packed objects
@@ -1413,20 +1550,22 @@ class Container:  # pylint: disable=too-many-public-methods
                 if callback:
                     since_last_update += len(results_chunk)
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback(action="update", value=since_last_update)
                         since_last_update = 0
 
             if callback and total:
                 # Final call to complete the bar
                 if since_last_update:
-                    callback(action='update', value=since_last_update)
+                    callback(action="update", value=since_last_update)
                 # Perform any wrap-up, if needed
-                callback(action='close', value=None)
+                callback(action="close", value=None)
 
         if callback:
             total = len(working_stream_list)
             # If we have a callback, compute the total count of objects in this pack
-            callback(action='init', value={'total': total, 'description': 'Bulk storing'})
+            callback(
+                action="init", value={"total": total, "description": "Bulk storing"}
+            )
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 400), 1)
             # Counter of how many objects have been since since the last update.
@@ -1471,7 +1610,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     if callback:
                         since_last_update += 1
                         if since_last_update >= update_every:
-                            callback(action='update', value=since_last_update)
+                            callback(action="update", value=since_last_update)
                             since_last_update = 0
 
                     # Get the position before writing the object - I need it if `no_holes` is True and the object
@@ -1479,31 +1618,38 @@ class Container:  # pylint: disable=too-many-public-methods
                     position_before = pack_handle.tell()
 
                     obj_dict = {}
-                    obj_dict['pack_id'] = pack_int_id
-                    obj_dict['compressed'] = compress
-                    obj_dict['offset'] = pack_handle.tell()
+                    obj_dict["pack_id"] = pack_int_id
+                    obj_dict["compressed"] = compress
+                    obj_dict["offset"] = pack_handle.tell()
                     with stream_context_manager as stream:
                         if no_holes and no_holes_read_twice:
                             # Compute the hash key before writing (I just read once)
-                            obj_dict['hashkey'], obj_dict['size'] = compute_hash_and_size(
-                                stream, hash_type=self.hash_type
-                            )
-                            if obj_dict['hashkey'] in known_packed_hashkeys:
+                            (
+                                obj_dict["hashkey"],
+                                obj_dict["size"],
+                            ) = compute_hash_and_size(stream, hash_type=self.hash_type)
+                            if obj_dict["hashkey"] in known_packed_hashkeys:
                                 # I recomputed the hashkey and this was already there: I don't try to write on disk,
                                 # but I just continue.
                                 # Note, however, that I first need to append the hash key to the list of
                                 # hash keys to return at the end
-                                hashkeys.append(obj_dict['hashkey'])
+                                hashkeys.append(obj_dict["hashkey"])
                                 continue
                             # I didn't continue. Then, I need to store on disk, as it is a new unknown object.
                             # I therefore need to seek back to zero, because the next line will read it again
                             # in _write_data_to_packfile.
                             stream.seek(0)
 
-                        obj_dict['size'], obj_dict['hashkey'] = self._write_data_to_packfile(
-                            pack_handle=pack_handle, read_handle=stream, compress=compress, hash_type=self.hash_type
+                        (
+                            obj_dict["size"],
+                            obj_dict["hashkey"],
+                        ) = self._write_data_to_packfile(
+                            pack_handle=pack_handle,
+                            read_handle=stream,
+                            compress=compress,
+                            hash_type=self.hash_type,
                         )
-                    obj_dict['length'] = pack_handle.tell() - obj_dict['offset']
+                    obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
                     # Here, we have appended the object to the pack file.
                     # And now that we are done, we know the hash key.
                     # However, we have to cope with the fact that an object with the same hash key
@@ -1515,7 +1661,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # In this case, I have in memory a set of hash keys already in packs.
                     # Note that known_packed_hashkeys is defined only if no_holes is True.
-                    if no_holes and obj_dict['hashkey'] in known_packed_hashkeys:
+                    if no_holes and obj_dict["hashkey"] in known_packed_hashkeys:
                         # The object is there!
                         # I seek back; I don't truncate, it's not needed.
                         # I will truncate only at the very end, if needed.
@@ -1534,7 +1680,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
                         # I also add the hash key in the known_packed_hashkeys (if no_holes, when this is defined)
                         if no_holes:
-                            known_packed_hashkeys.add(obj_dict['hashkey'])
+                            known_packed_hashkeys.add(obj_dict["hashkey"])
 
                     # Now, I have two options.
                     # 1. I just leave in the unused bits, and we do a re-packing later.
@@ -1556,7 +1702,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # end out of space. I would try next 3a, in case.
 
                     # Append the new hash key to the list of hash keys to return
-                    hashkeys.append(obj_dict['hashkey'])
+                    hashkeys.append(obj_dict["hashkey"])
 
                 if no_holes:
                     # If I don't want holes, I might be left in a case where at the end of the pack
@@ -1566,7 +1712,12 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 # It's now time to write to the DB, in a single bulk operation (per pack)
                 if obj_dicts:
-                    session.execute(Obj.__table__.insert().prefix_with('OR IGNORE'), obj_dicts)
+                    session.execute(
+                        Obj.__table__.insert().prefix_with(  # pylint: disable=no-member
+                            "OR IGNORE"
+                        ),
+                        obj_dicts,
+                    )
                     # Clean up the list - this will be cleaned up also later,
                     # but it's better to make sure that we do it here, to avoid trying to rewrite
                     # the same objects again
@@ -1574,7 +1725,11 @@ class Container:  # pylint: disable=too-many-public-methods
                 # I don't commit here; I commit after making sure the file is flushed and closed
 
                 if do_fsync:
-                    safe_flush_to_disk(pack_handle, os.path.realpath(pack_handle.name), use_fullsync=True)
+                    safe_flush_to_disk(
+                        pack_handle,
+                        os.path.realpath(pack_handle.name),
+                        use_fullsync=True,
+                    )
 
             # OK, if we are here, file was flushed, synced to disk and closed.
             # Let's commit then the information to the DB, so it's officially a
@@ -1589,16 +1744,22 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             # Final call to complete the bar
             if since_last_update:
-                callback(action='update', value=since_last_update)
+                callback(action="update", value=since_last_update)
             # Perform any wrap-up, if needed
-            callback(action='close', value=None)
+            callback(action="close", value=None)
 
         return hashkeys
 
     def add_objects_to_pack(  # pylint: disable=too-many-arguments
-            self, content_list, compress=False, no_holes=False, no_holes_read_twice=True,
-            callback=None, do_fsync=True, do_commit=True
-        ):
+        self,
+        content_list,
+        compress=False,
+        no_holes=False,
+        no_holes_read_twice=True,
+        callback=None,
+        do_fsync=True,
+        do_commit=True,
+    ):
         """Add objects directly to a pack, reading from a list of content byte arrays.
 
         This is a maintenance operation, available mostly for efficiency reasons
@@ -1632,7 +1793,7 @@ class Container:  # pylint: disable=too-many-public-methods
             no_holes_read_twice=no_holes_read_twice,
             callback=callback,
             do_fsync=do_fsync,
-            do_commit=do_commit
+            do_commit=do_commit,
         )
 
     def _vacuum(self):
@@ -1646,7 +1807,7 @@ class Container:  # pylint: disable=too-many-public-methods
         (See also description in issue #94).
         """
         engine = self._get_cached_session().get_bind()
-        engine.execute('VACUUM')
+        engine.execute("VACUUM")
 
     def clean_storage(self, vacuum=False):  # pylint: disable=too-many-branches
         """Perform some maintenance clean-up of the container.
@@ -1670,8 +1831,8 @@ class Container:  # pylint: disable=too-many-public-methods
             # I check only duplicates, but I don't delete files that start with a dot
             # (these might have been added by some process scanning the folders or something similar, like
             # .DS_Store on macOS)
-            if '.' in duplicate and not duplicate.startswith('.'):
-                reference_obj_hashkey = duplicate.partition('.')[0]
+            if "." in duplicate and not duplicate.startswith("."):
+                reference_obj_hashkey = duplicate.partition(".")[0]
                 duplicates_mapping[reference_obj_hashkey].append(duplicate)
 
         for reference_obj_hashkey in duplicates_mapping:
@@ -1679,6 +1840,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 with self.get_object_stream(reference_obj_hashkey) as stream:
                     computed_hash, _ = compute_hash_and_size(stream, self.hash_type)
             except NotExistent:
+                # pylint: disable=raise-missing-from
                 # The object is not in the repository. It has probably been deleted and for some
                 # reason the duplicates have not been cleaned. I raise: this might have appened for instance
                 # because two processes tried to write, the first locked, the second gave up and created a
@@ -1686,9 +1848,10 @@ class Container:  # pylint: disable=too-many-public-methods
                 # We don't implement it, but what should be done is to pick one of the duplicates, check that
                 # the hash is correct, and put it in the right place as a loose object.
                 raise InconsistentContent(
-                    "There is at least a duplicate for object '{}' that however does not exist anymore. "
+                    f"There is at least a duplicate for object '{reference_obj_hashkey}' "
+                    "that however does not exist anymore. "
                     "If you don't need it, use `delete_objects()` passing this hash key to clean up the repository, "
-                    'or attempt a manual recovery of the duplicate'.format(reference_obj_hashkey)
+                    "or attempt a manual recovery of the duplicate"
                 )
 
             if computed_hash == reference_obj_hashkey:
@@ -1698,8 +1861,12 @@ class Container:  # pylint: disable=too-many-public-methods
             else:
                 good_duplicate = None
                 for duplicate in duplicates_mapping[reference_obj_hashkey]:
-                    with open(os.path.join(self._get_duplicates_folder(), duplicate), 'rb') as fhandle:
-                        computed_hash, _ = compute_hash_and_size(fhandle, self.hash_type)
+                    with open(
+                        os.path.join(self._get_duplicates_folder(), duplicate), "rb"
+                    ) as fhandle:
+                        computed_hash, _ = compute_hash_and_size(
+                            fhandle, self.hash_type
+                        )
                     if computed_hash == reference_obj_hashkey:
                         # We found a duplicate that has the correct hash key: let's put it in place
                         good_duplicate = duplicate
@@ -1707,14 +1874,16 @@ class Container:  # pylint: disable=too-many-public-methods
                 else:
                     # No valid duplicates found! I raise
                     raise InconsistentContent(
-                        "There are duplicates of '{}' but they are all corrupt".format(reference_obj_hashkey)
+                        "There are duplicates of '{}' but they are all corrupt".format(
+                            reference_obj_hashkey
+                        )
                     )
                 # If we are here, we found the "good duplicate"; let's put it in place
                 # It should not be None, I should have raised!
                 assert good_duplicate is not None
                 os.replace(
                     os.path.join(self._get_duplicates_folder(), good_duplicate),
-                    self._get_loose_path_from_hashkey(reference_obj_hashkey)
+                    self._get_loose_path_from_hashkey(reference_obj_hashkey),
                 )
                 # Let's remove all other duplicates
                 for duplicate in duplicates_mapping[reference_obj_hashkey]:
@@ -1733,14 +1902,23 @@ class Container:  # pylint: disable=too-many-public-methods
         if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
             for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
                 # I check the hash keys that are already in the pack
-                for res in session.query(Obj).filter(Obj.hashkey.in_(chunk)).with_entities(Obj.hashkey).all():
+                for res in (
+                    session.query(Obj)
+                    .filter(Obj.hashkey.in_(chunk))
+                    .with_entities(Obj.hashkey)
+                    .all()
+                ):
                     existing_packed_hashkeys.append(res[0])
         else:
             sorted_hashkeys = sorted(loose_objects)
-            pack_iterator = session.execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+            pack_iterator = session.execute(
+                "SELECT hashkey FROM db_object ORDER BY hashkey"
+            )
 
             # The query returns a tuple of length 1, so I still need a left_key
-            for res, where in detect_where_sorted(pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]):
+            for res, where in detect_where_sorted(
+                pack_iterator, sorted_hashkeys, left_key=lambda x: x[0]
+            ):
                 if where == Location.BOTH:
                     existing_packed_hashkeys.append(res[0])
 
@@ -1756,14 +1934,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 pass
 
     def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-arguments
-            self,
-            hashkeys,
-            source_container,
-            compress=False,
-            target_memory_bytes=104857600,
-            callback=None,
-            do_fsync=True
-        ):
+        self,
+        hashkeys,
+        source_container,
+        compress=False,
+        target_memory_bytes=104857600,
+        callback=None,
+        do_fsync=True,
+    ):
         """Imports the objects with the specified hashkeys into the container.
 
         :param hashkeys: an iterable of hash keys.
@@ -1797,7 +1975,10 @@ class Container:  # pylint: disable=too-many-public-methods
             if callback:
                 # If we have a callback, compute the total count of objects in this pack
                 total = len(sorted_hashkeys)
-                callback(action='init', value={'total': total, 'description': 'Listing objects'})
+                callback(
+                    action="init",
+                    value={"total": total, "description": "Listing objects"},
+                )
                 # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
                 update_every = max(int(total / 1000), 1)
                 # Counter of how many objects have been since since the last update.
@@ -1814,7 +1995,9 @@ class Container:  # pylint: disable=too-many-public-methods
             # see issue #94.
             # NOTE: I need to wrap in the `yield_first_element` iterator since it returns a list of lists
             sorted_packed = yield_first_element(
-                self._get_cached_session().execute('SELECT hashkey FROM db_object ORDER BY hashkey')
+                self._get_cached_session().execute(
+                    "SELECT hashkey FROM db_object ORDER BY hashkey"
+                )
             )
             sorted_existing = merge_sorted(sorted_loose, sorted_packed)
 
@@ -1828,7 +2011,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # the list of hash keys in this (destination) container. This is probably OK, though.
                     since_last_update += 1
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback(action="update", value=since_last_update)
                         since_last_update = 0
 
                 if where == Location.LEFTONLY:
@@ -1837,9 +2020,9 @@ class Container:  # pylint: disable=too-many-public-methods
             if callback:
                 # Final call to complete the bar
                 if since_last_update:
-                    callback(action='update', value=since_last_update)
+                    callback(action="update", value=since_last_update)
                 # Perform any wrap-up, if needed
-                callback(action='close', value=None)
+                callback(action="close", value=None)
 
             # I just insert the new objects without first checking that I am not leaving holes in the pack files,
             # as I already checked here.
@@ -1854,7 +2037,9 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             # If we have a callback, compute the total count of objects in this pack
             total = len(hashkeys)
-            callback(action='init', value={'total': total, 'description': 'Copy objects'})
+            callback(
+                action="init", value={"total": total, "description": "Copy objects"}
+            )
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 1000), 1)
             # Counter of how many objects have been since since the last update.
@@ -1863,7 +2048,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         with source_container.get_objects_stream_and_meta(hashkeys) as triplets:
             for old_obj_hashkey, stream, meta in triplets:
-                if meta['size'] > target_memory_bytes:
+                if meta["size"] > target_memory_bytes:
                     # If the object itself is too big, just write it directly
                     # via streams, bypassing completely the cache. I don't touch the cache in this case,
                     # maybe it's still almost empty.
@@ -1879,10 +2064,10 @@ class Container:  # pylint: disable=too-many-public-methods
                             no_holes=no_holes,
                             no_holes_read_twice=no_holes_read_twice,
                             do_fsync=do_fsync,
-                            do_commit=False  # I will do a final commit
+                            do_commit=False,  # I will do a final commit
                         )
                     )
-                elif cache_size + meta['size'] > target_memory_bytes:
+                elif cache_size + meta["size"] > target_memory_bytes:
                     # I were to read the content, I would be filling too much memory - I flush the cache first,
                     # and transfer the data, before acting on this object.
 
@@ -1901,7 +2086,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             no_holes=no_holes,
                             no_holes_read_twice=no_holes_read_twice,
                             do_fsync=do_fsync,
-                            do_commit=False
+                            do_commit=False,
                         )
 
                         # I update the list of known old (this container) and new (other_container) hash keys
@@ -1916,27 +2101,27 @@ class Container:  # pylint: disable=too-many-public-methods
                     # otherwise I would have processed it directly, bypassing the cache).
                     content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
-                    cache_size += meta['size']
+                    cache_size += meta["size"]
                 else:
                     # I can add this object to the memory cache, it is not too big.
                     # I store it as a BytesIO so it still provides the stream methods like `.read`.
                     # Key old hash key (in this repo); value: the stream
                     content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
-                    cache_size += meta['size']
+                    cache_size += meta["size"]
 
                 if callback:
                     since_last_update += 1
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback(action="update", value=since_last_update)
                         since_last_update = 0
 
         if callback:
             # Final call to complete the bar
             if since_last_update:
-                callback(action='update', value=since_last_update)
+                callback(action="update", value=since_last_update)
             # Perform any wrap-up, if needed
-            callback(action='close', value=None)
+            callback(action="close", value=None)
 
         # The for loop is finished. I can also go out of the `with` context manager because whatever is in the
         # cache is in memory. Most probably I still have content in the cache, just flush it,
@@ -1953,10 +2138,10 @@ class Container:  # pylint: disable=too-many-public-methods
                 compress=compress,
                 no_holes=no_holes,
                 no_holes_read_twice=no_holes_read_twice,
-                callback=rename_callback(callback, new_description='Final flush'),
+                callback=rename_callback(callback, new_description="Final flush"),
                 do_fsync=do_fsync,
                 # I will commit at the end
-                do_commit=False
+                do_commit=False,
             )
 
             # I update the list of known old (this container) and new (other_container) hash keys
@@ -1972,7 +2157,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return old_new_obj_hashkey_mapping
 
-    def export(self, hashkeys, other_container, compress=False, target_memory_bytes=104857600, callback=None):
+    def export(
+        self,
+        hashkeys,
+        other_container,
+        compress=False,
+        target_memory_bytes=104857600,
+        callback=None,
+    ):
         """Export the specified hashkeys to a new container (must be already initialised).
 
         ..deprecated:: 0.5
@@ -1989,17 +2181,21 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
         """
-        warnings.warn('function is deprecated, use `import_objects` instead', DeprecationWarning)
+        warnings.warn(
+            "function is deprecated, use `import_objects` instead", DeprecationWarning
+        )
         return other_container.import_objects(
             hashkeys=hashkeys,
             source_container=self,
             compress=compress,
             target_memory_bytes=target_memory_bytes,
-            callback=callback
+            callback=callback,
         )
 
     # Let us also compute the hash
-    def _validate_hashkeys_pack(self, pack_id, callback=None):  # pylint: disable=too-many-locals
+    def _validate_hashkeys_pack(
+        self, pack_id, callback=None
+    ):  # pylint: disable=too-many-locals
         """Validate all hashkeys and returns a dictionary of problematic entries.
 
         The keys are the problem type, the values are a list of hashkeys of problematic objects.
@@ -2062,7 +2258,10 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             # If we have a callback, compute the total count of objects in this pack
             total = session.query(Obj).filter(Obj.pack_id == pack_id).count()
-            callback(action='init', value={'total': total, 'description': 'Pack {}'.format(pack_id)})
+            callback(
+                action="init",
+                value={"total": total, "description": f"Pack {pack_id}"},
+            )
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 400), 1)
             # Counter of how many objects have been since since the last update.
@@ -2072,15 +2271,24 @@ class Container:  # pylint: disable=too-many-public-methods
         # Open the pack only once, read it in order
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         current_pos = 0
-        with open(pack_path, mode='rb') as pack_handle:
-            query = session.query(Obj.hashkey, Obj.size, Obj.offset, Obj.length,
-                                  Obj.compressed).filter(Obj.pack_id == pack_id).order_by(Obj.offset)
+        with open(pack_path, mode="rb") as pack_handle:
+            query = (
+                session.query(
+                    Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed
+                )
+                .filter(Obj.pack_id == pack_id)
+                .order_by(Obj.offset)
+            )
             for hashkey, size, offset, length, compressed in query:
-                obj_reader = PackedObjectReader(fhandle=pack_handle, offset=offset, length=length)
+                obj_reader = PackedObjectReader(
+                    fhandle=pack_handle, offset=offset, length=length
+                )
                 if compressed:
                     obj_reader = self._get_stream_decompresser()(obj_reader)
 
-                computed_hash, computed_size = compute_hash_and_size(obj_reader, self.hash_type)
+                computed_hash, computed_size = compute_hash_and_size(
+                    obj_reader, self.hash_type
+                )
 
                 # Check object correctness
                 if computed_hash != hashkey:
@@ -2096,20 +2304,20 @@ class Container:  # pylint: disable=too-many-public-methods
                 if callback:
                     since_last_update += 1
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback(action="update", value=since_last_update)
                         since_last_update = 0
 
         if callback:
             # Final call to complete the bar
             if since_last_update:
-                callback(action='update', value=since_last_update)
+                callback(action="update", value=since_last_update)
             # Perform any wrap-up, if needed
-            callback(action='close', value=None)
+            callback(action="close", value=None)
 
         return {
-            'invalid_hashes_packed': invalid_hashes,
-            'invalid_sizes_packed': invalid_sizes,
-            'overlapping_packed': overlapping
+            "invalid_hashes_packed": invalid_hashes,
+            "invalid_sizes_packed": invalid_sizes,
+            "overlapping_packed": overlapping,
         }
 
     def validate(self, callback=None):
@@ -2119,25 +2327,32 @@ class Container:  # pylint: disable=too-many-public-methods
         all_loose = set(self._list_loose())
 
         if callback:
-            callback(action='init', value={'total': len(all_loose), 'description': 'Loose objects'})
+            callback(
+                action="init",
+                value={"total": len(all_loose), "description": "Loose objects"},
+            )
 
         for hashkey in all_loose:
-            with open(self._get_loose_path_from_hashkey(hashkey), 'rb') as fhandle:
+            with open(self._get_loose_path_from_hashkey(hashkey), "rb") as fhandle:
                 computed_hash, _ = compute_hash_and_size(fhandle, self.hash_type)
                 if computed_hash != hashkey:
-                    all_errors['invalid_hashes_loose'].append(hashkey)
+                    all_errors["invalid_hashes_loose"].append(hashkey)
                 if callback:
                     # Update for each object
-                    callback(action='update', value=1)
+                    callback(action="update", value=1)
         if callback:
-            callback(action='close', value=None)
+            callback(action="close", value=None)
 
         session = self._get_cached_session()
 
-        all_pack_ids = sorted(set(res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()))
+        all_pack_ids = sorted(
+            {res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()}
+        )
 
         for pack_id in all_pack_ids:
-            pack_errors = self._validate_hashkeys_pack(pack_id=pack_id, callback=callback)
+            pack_errors = self._validate_hashkeys_pack(
+                pack_id=pack_id, callback=callback
+            )
             for error_type, problematic_objects in pack_errors.items():
                 all_errors[error_type] += problematic_objects
 
@@ -2186,8 +2401,9 @@ class Container:  # pylint: disable=too-many-public-methods
         for hashkey in hashkeys:
             # Filter only duplicates of this object and delete them
             duplicates_this_object = [
-                duplicate_fname for duplicate_fname in all_duplicates
-                if duplicate_fname.startswith('{}.'.format(hashkey))
+                duplicate_fname
+                for duplicate_fname in all_duplicates
+                if duplicate_fname.startswith(f"{hashkey}.")
             ]
             for duplicate_fname in duplicates_this_object:
                 # For now I don't put checks - I should be the only one accessing the container, so I should not
@@ -2249,19 +2465,27 @@ class Container:  # pylint: disable=too-many-public-methods
             and recompressing it back again).
         """
         if compress_mode != CompressMode.KEEP:
-            raise NotImplementedError('Only keep method currently implemented')
+            raise NotImplementedError("Only keep method currently implemented")
 
-        assert pack_id != self._REPACK_PACK_ID, (
-            "The specified pack_id '{}' is invalid, it is the one used for repacking".format(pack_id)
+        assert (
+            pack_id != self._REPACK_PACK_ID
+        ), "The specified pack_id '{}' is invalid, it is the one used for repacking".format(
+            pack_id
         )
 
         # Check that it does not exist
         assert not os.path.exists(
-            self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True)
-        ), ("The repack pack '{}' already exists, probably a previous repacking aborted?".format(self._REPACK_PACK_ID))
+            self._get_pack_path_from_pack_id(
+                self._REPACK_PACK_ID, allow_repack_pack=True
+            )
+        ), "The repack pack '{}' already exists, probably a previous repacking aborted?".format(
+            self._REPACK_PACK_ID
+        )
 
         session = self._get_cached_session()
-        one_object_in_pack = session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        one_object_in_pack = (
+            session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        )
         if not one_object_in_pack:
             # No objects. Clean up the pack file, if it exists.
             if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
@@ -2271,10 +2495,22 @@ class Container:  # pylint: disable=too-many-public-methods
         obj_dicts = []
         # At least one object. Let's repack. We have checked before that the
         # REPACK_PACK_ID did not exist.
-        with self.lock_pack(str(self._REPACK_PACK_ID), allow_repack_pack=True) as write_pack_handle:
-            with open(self._get_pack_path_from_pack_id(pack_id), 'rb') as read_pack:
-                query = session.query(Obj.id, Obj.hashkey, Obj.size, Obj.offset, Obj.length,
-                                      Obj.compressed).filter(Obj.pack_id == pack_id).order_by(Obj.offset)
+        with self.lock_pack(
+            str(self._REPACK_PACK_ID), allow_repack_pack=True
+        ) as write_pack_handle:
+            with open(self._get_pack_path_from_pack_id(pack_id), "rb") as read_pack:
+                query = (
+                    session.query(
+                        Obj.id,
+                        Obj.hashkey,
+                        Obj.size,
+                        Obj.offset,
+                        Obj.length,
+                        Obj.compressed,
+                    )
+                    .filter(Obj.pack_id == pack_id)
+                    .order_by(Obj.offset)
+                )
                 for rowid, hashkey, size, offset, length, compressed in query:
                     # Since I am assuming above that the method is `KEEP`, I will just transfer
                     # the bytes. Otherwise I have to properly take into account compression in the
@@ -2282,12 +2518,12 @@ class Container:  # pylint: disable=too-many-public-methods
                     read_handle = PackedObjectReader(read_pack, offset, length)
 
                     obj_dict = {}
-                    obj_dict['id'] = rowid
-                    obj_dict['hashkey'] = hashkey
-                    obj_dict['pack_id'] = self._REPACK_PACK_ID
-                    obj_dict['compressed'] = compressed
-                    obj_dict['size'] = size
-                    obj_dict['offset'] = write_pack_handle.tell()
+                    obj_dict["id"] = rowid
+                    obj_dict["hashkey"] = hashkey
+                    obj_dict["pack_id"] = self._REPACK_PACK_ID
+                    obj_dict["compressed"] = compressed
+                    obj_dict["size"] = size
+                    obj_dict["offset"] = write_pack_handle.tell()
 
                     # Transfer data in chunks.
                     # No need to rehash - it's the same container so the same hash.
@@ -2295,17 +2531,20 @@ class Container:  # pylint: disable=too-many-public-methods
                     # for now that the mode is KEEP.
                     while True:
                         chunk = read_handle.read(self._CHUNKSIZE)
-                        if chunk == b'':
+                        if chunk == b"":
                             # Returns an empty bytes object on EOF.
                             break
                         write_pack_handle.write(chunk)
-                    obj_dict['length'] = write_pack_handle.tell() - obj_dict['offset']
+                    obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
 
                     # Appending for later bulk commit
                     # I will assume that all objects of a single pack fit in memory
                     obj_dicts.append(obj_dict)
             safe_flush_to_disk(
-                write_pack_handle, self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True)
+                write_pack_handle,
+                self._get_pack_path_from_pack_id(
+                    self._REPACK_PACK_ID, allow_repack_pack=True
+                ),
             )
 
         # We are done with data transfer.
@@ -2320,7 +2559,9 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Now we can safely delete the old object. I just check that there is no object still
         # refencing the old pack, to be sure.
-        one_object_in_pack = session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        one_object_in_pack = (
+            session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
+        )
         assert not one_object_in_pack, (
             "I moved the objects of pack '{pack_id}' to pack '{repack_id}' "
             "but there are still references to pack '{pack_id}'!".format(
@@ -2334,19 +2575,27 @@ class Container:  # pylint: disable=too-many-public-methods
         # Since hard links seem to be supported on all three platforms, I do a hard link
         # of -1 back to the correct pack ID.
         os.link(
-            self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True),
-            self._get_pack_path_from_pack_id(pack_id)
+            self._get_pack_path_from_pack_id(
+                self._REPACK_PACK_ID, allow_repack_pack=True
+            ),
+            self._get_pack_path_from_pack_id(pack_id),
         )
 
         # Before deleting the source (pack -1) I need now to update again all
         # entries to point to the correct pack id
-        session.query(Obj).filter(Obj.pack_id == self._REPACK_PACK_ID).update({Obj.pack_id: pack_id})
+        session.query(Obj).filter(Obj.pack_id == self._REPACK_PACK_ID).update(
+            {Obj.pack_id: pack_id}
+        )
         session.commit()
 
         # Technically, to be crash safe, before deleting I should also fsync the folder
         # I am not doing this for now
         # I now can unlink/delete the original source
-        os.unlink(self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True))
+        os.unlink(
+            self._get_pack_path_from_pack_id(
+                self._REPACK_PACK_ID, allow_repack_pack=True
+            )
+        )
 
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.

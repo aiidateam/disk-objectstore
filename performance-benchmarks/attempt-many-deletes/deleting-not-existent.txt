@@ -17,5 +17,3 @@ for uuid_ in uuids:
         pass
 print(time.time() - t)
 # 12.428303003311157
-
-

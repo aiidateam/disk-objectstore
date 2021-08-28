@@ -29,50 +29,72 @@ MAX_RETRIES_NO_PERM = 1000
 
 def timestamp():
     """Return a timestamp string to print for logging."""
-    return datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
+    return datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
 
 @click.command()
-@click.option('-n', '--num-files', default=100, help='Number of files to create.')
-@click.option('-m', '--min-size', default=0, help='Minimum file size (bytes).')
-@click.option('-M', '--max-size', default=1000, help='Maximum file size (bytes).')
+@click.option("-n", "--num-files", default=100, help="Number of files to create.")
+@click.option("-m", "--min-size", default=0, help="Minimum file size (bytes).")
+@click.option("-M", "--max-size", default=1000, help="Maximum file size (bytes).")
 @click.option(
-    '-p',
-    '--path',
-    default='/tmp/test-container',
-    help='The path to a test folder in which the container will be created.'
+    "-p",
+    "--path",
+    default="/tmp/test-container",
+    help="The path to a test folder in which the container will be created.",
 )
-@click.option('-r', '--repetitions', default=3, help='Number of repetitions before stopping.')
-@click.option('-w', '--wait-time', default=0.1, help='Time to wait between iterations.')
 @click.option(
-    '-s',
-    '--shared-folder',
-    default='/tmp/test-container-shared',
-    help=
-    'The path to a test folder in which all locusts will write the checksums for others to read. It must already exist.'
+    "-r", "--repetitions", default=3, help="Number of repetitions before stopping."
 )
-@click.option('-b', '--bulk-read', is_flag=True, help='Whether to use bulk reads, or a loop on each hash key.')
-@click.help_option('-h', '--help')
-def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_folder, bulk_read):
+@click.option("-w", "--wait-time", default=0.1, help="Time to wait between iterations.")
+@click.option(
+    "-s",
+    "--shared-folder",
+    default="/tmp/test-container-shared",
+    help=(
+        "Test folder path, in which all locusts will write the checksums for others to read. "
+        "It must already exist."
+    ),
+)
+@click.option(
+    "-b",
+    "--bulk-read",
+    is_flag=True,
+    help="Whether to use bulk reads, or a loop on each hash key.",
+)
+@click.help_option("-h", "--help")
+def main(
+    num_files,
+    min_size,
+    max_size,
+    path,
+    repetitions,
+    wait_time,
+    shared_folder,
+    bulk_read,
+):
     """Keep writing loose objects, then read all those written by all locusts, and try to read them back."""
     # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
     if not os.path.isdir(shared_folder):
-        raise ValueError("Create the folder '{}' first!".format(shared_folder))
+        raise ValueError(f"Create the folder '{shared_folder}' first!")
     container = Container(path)
     # In the tests we pass it already initialised, so this is never called
     if not container.is_initialised:
-        print('Initialising the container...')
+        print("Initialising the container...")
         container.init_container()
 
     proc_id = psutil.Process().pid
 
     start_counts = container.count_objects()
     print(
-        '[{} {}] Currently known objects: {} packed, {} loose'.format(
-            proc_id, timestamp(), start_counts['packed'], start_counts['loose']
+        "[{} {}] Currently known objects: {} packed, {} loose".format(
+            proc_id, timestamp(), start_counts["packed"], start_counts["loose"]
         )
     )
-    print('[{} {}] Pack objects on disk: {}'.format(proc_id, timestamp(), start_counts['pack_files']))
+    print(
+        "[{} {}] Pack objects on disk: {}".format(
+            proc_id, timestamp(), start_counts["pack_files"]
+        )
+    )
 
     for iteration in range(repetitions):
         if iteration != 0:
@@ -80,7 +102,7 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
 
         contents = []
         print(
-            '[{} {}] Iteration {}/{}, generating {} files in memory...'.format(
+            "[{} {}] Iteration {}/{}, generating {} files in memory...".format(
                 proc_id, timestamp(), iteration + 1, repetitions, num_files
             )
         )
@@ -107,17 +129,19 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             checksums[obj_hashkey] = checksum
 
         ## Dump to file
-        with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', dir=shared_folder, delete=False) as fhandle:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf8", dir=shared_folder, delete=False
+        ) as fhandle:
             fname = fhandle.name
             json.dump(checksums, fhandle)
         # Atomic move in place (so other locusts don't try to read partially written files)
-        os.rename(fname, '{}.sha'.format(fname))
+        os.rename(fname, f"{fname}.sha")
 
         # Re-read everything, also from other processes
         all_checksums = {}
         file_count = 0
         for fname in os.listdir(shared_folder):
-            if not fname.endswith('.sha'):
+            if not fname.endswith(".sha"):
                 continue
             file_count += 1
 
@@ -130,17 +154,24 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
                     break
                 except PermissionError:
                     pass
-                time.sleep(0.01)  # Wait 10 ms and retry to open - probably it is renaming the file
+                time.sleep(
+                    0.01
+                )  # Wait 10 ms and retry to open - probably it is renaming the file
             else:
                 raise PermissionError(
-                    'Retried {} times but I never could get the content...'.format(MAX_RETRIES_NO_PERM)
+                    "Retried {} times but I never could get the content...".format(
+                        MAX_RETRIES_NO_PERM
+                    )
                 )
 
             all_checksums.update(chunk_checksums)
         print(
-            '[{} {}] {} object checksums read from {} files ({}).'.format(
-                proc_id, timestamp(), len(all_checksums), file_count,
-                'with bulk reads' if bulk_read else 'with single-object reads'
+            "[{} {}] {} object checksums read from {} files ({}).".format(
+                proc_id,
+                timestamp(),
+                len(all_checksums),
+                file_count,
+                "with bulk reads" if bulk_read else "with single-object reads",
             )
         )
 
@@ -155,7 +186,9 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             # Permission error could also happen in this branch on Windows (see see issue #37) but
             # it's harder to get the hashkey for which this happened, so I don't put code here but I
             # rely on the fact that it will sometimes also happen in the other branches and I can debug from those.
-            with container.get_objects_stream_and_meta(all_hashkeys, skip_if_missing=False) as triplets:
+            with container.get_objects_stream_and_meta(
+                all_hashkeys, skip_if_missing=False
+            ) as triplets:
                 for obj_hashkey, stream, meta in triplets:
                     if stream is None:
                         retrieved_content[obj_hashkey] = None
@@ -165,56 +198,81 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
         else:
             for obj_hashkey in all_hashkeys:
                 try:
-                    with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                    with container.get_object_stream_and_meta(obj_hashkey) as (
+                        stream,
+                        meta,
+                    ):
                         retrieved_content[obj_hashkey] = stream.read()
                         metas[obj_hashkey] = meta
                 except NotExistent:
                     retrieved_content[obj_hashkey] = None
-                    metas[obj_hashkey] = {'type': ObjectType.MISSING}  # I don't put all the rest for simplicity
+                    metas[obj_hashkey] = {
+                        "type": ObjectType.MISSING
+                    }  # I don't put all the rest for simplicity
                 except (PermissionError, FileExistsError) as exc:
                     # This sometimes happen on Windows (I think during packing), see issue #37
                     # The error message typically shows the error and the path, showing if it's loose
-                    print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
+                    print(
+                        "WARNING/ERROR: I got an exception, message: {}".format(
+                            str(exc)
+                        )
+                    )
 
                     # Before re-raising, I try to get the same object again, to see if this now works and is packed
                     # (or it crashes again!)
-                    with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                    with container.get_object_stream_and_meta(obj_hashkey) as (
+                        stream,
+                        meta,
+                    ):
                         new_content = stream.read()
                         print(
-                            '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                            "  |-> AFTER RE-READING: checksum={}, meta={}".format(
                                 hashlib.sha256(new_content).hexdigest(), meta
                             )
                         )
-                        print('  `-> CONTENT: {}'.format(new_content))
+                        print(f"  `-> CONTENT: {new_content}")
                     raise
 
         retrieved_checksums = {}
         for obj_hashkey, content in retrieved_content.items():
             if content is None:
-                raise ValueError('No content returned for object {}!'.format(obj_hashkey))
+                raise ValueError(f"No content returned for object {obj_hashkey}!")
             retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
             # This is the hash key of an (expected) empty bytes string b''
-            if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
-                print('WARNING!!! {} is {} ({}); {}'.format(obj_hashkey, content, type(content), metas[obj_hashkey]))
+            if (
+                not content
+                and obj_hashkey
+                != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ):
+                print(
+                    "WARNING!!! {} is {} ({}); {}".format(
+                        obj_hashkey, content, type(content), metas[obj_hashkey]
+                    )
+                )
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
                 # been packed in the meantime if it was loose), see see issue #43
-                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                with container.get_object_stream_and_meta(obj_hashkey) as (
+                    stream,
+                    meta,
+                ):
                     new_content = stream.read()
                     print(
-                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
                             hashlib.sha256(new_content).hexdigest(), meta
                         )
                     )
-                    print('  `-> CONTENT: {}'.format(new_content))
+                    print(f"  `-> CONTENT: {new_content}")
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
-        assert not only_right, 'objects only in all_checksums: {}'.format(only_right)
-        assert not only_left, 'objects only in retrieved_checksums: {}'.format(only_left)
-        for key in retrieved_checksums:
-            assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}; meta={}'.format(
-                key, all_checksums[key], retrieved_checksums[key], metas[key]
-            )
+        assert not only_right, f"objects only in all_checksums: {only_right}"
+        assert not only_left, "objects only in retrieved_checksums: {}".format(
+            only_left
+        )
+        for key, value in retrieved_checksums.items():
+            assert (
+                all_checksums[key] == value
+            ), f"Mismatch for {key}: {all_checksums[key]} vs. {value}; meta={metas[key]}"
         del retrieved_content
 
         random.shuffle(all_hashkeys)
@@ -225,53 +283,82 @@ def main(num_files, min_size, max_size, path, repetitions, wait_time, shared_fol
             except (PermissionError, FileExistsError) as exc:
                 # This sometimes happen on Windows (I think during packing), see issue #37
                 # The error message typically shows the error and the path, showing if it's loose
-                print('WARNING/ERROR: I got an exception, message: {}'.format(str(exc)))
+                print(f"WARNING/ERROR: I got an exception, message: {str(exc)}")
 
                 # Before re-raising, I try to get the same object again, to see if this now works and is packed
                 # (or it crashes again!)
-                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                with container.get_object_stream_and_meta(obj_hashkey) as (
+                    stream,
+                    meta,
+                ):
                     new_content = stream.read()
                     print(
-                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
                             hashlib.sha256(new_content).hexdigest(), meta
                         )
                     )
-                    print('  `-> CONTENT: {}'.format(new_content))
+                    print(f"  `-> CONTENT: {new_content}")
                 raise
 
             retrieved_checksums[obj_hashkey] = hashlib.sha256(content).hexdigest()
-            if not content and obj_hashkey != 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855':
-                print('WARNING!!! {} is {} ({})'.format(obj_hashkey, content, type(content)))
+            if (
+                not content
+                and obj_hashkey
+                != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ):
+                print(
+                    "WARNING!!! {} is {} ({})".format(
+                        obj_hashkey, content, type(content)
+                    )
+                )
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
                 # been packed in the meantime if it was loose), see see issue #43
-                with container.get_object_stream_and_meta(obj_hashkey) as (stream, meta):
+                with container.get_object_stream_and_meta(obj_hashkey) as (
+                    stream,
+                    meta,
+                ):
                     new_content = stream.read()
                     print(
-                        '  |-> AFTER RE-READING: checksum={}, meta={}'.format(
+                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
                             hashlib.sha256(new_content).hexdigest(), meta
                         )
                     )
-                    print('  `-> CONTENT: {}'.format(new_content))
+                    print(f"  `-> CONTENT: {new_content}")
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
-        assert not only_right, 'objects only in all_checksums: {}'.format(only_right)
-        assert not only_left, 'objects only in retrieved_checksums: {}'.format(only_left)
-        for key in retrieved_checksums:
+        assert not only_right, f"objects only in all_checksums: {only_right}"
+        assert not only_left, "objects only in retrieved_checksums: {}".format(
+            only_left
+        )
+        for key, value in retrieved_checksums.items():
             try:
-                assert all_checksums[key] == retrieved_checksums[key], 'Mismatch for {}: {} vs. {}'.format(
-                    key, all_checksums[key], retrieved_checksums[key]
-                )
+                assert (
+                    all_checksums[key] == value
+                ), f"Mismatch for {key}: {all_checksums[key]} vs. {value}"
             except AssertionError:
-                loose_path = container._get_loose_path_from_hashkey(key)  # pylint: disable=protected-access
-                print('Exists Loose: {}'.format(os.path.exists(loose_path)))
-                session = container._get_cached_session()  # pylint: disable=protected-access
-                query = session.query(Obj).filter(
-                    Obj.hashkey == key
-                ).with_entities(Obj.pack_id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed, Obj.size)
+                loose_path = container._get_loose_path_from_hashkey(  # pylint: disable=protected-access
+                    key
+                )
+                print(f"Exists Loose: {os.path.exists(loose_path)}")
+                session = (
+                    container._get_cached_session()  # pylint: disable=protected-access
+                )
+                query = (
+                    session.query(Obj)
+                    .filter(Obj.hashkey == key)
+                    .with_entities(
+                        Obj.pack_id,
+                        Obj.hashkey,
+                        Obj.offset,
+                        Obj.length,
+                        Obj.compressed,
+                        Obj.size,
+                    )
+                )
                 print(list(query))
                 raise
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()  # pylint: disable=no-value-for-parameter
