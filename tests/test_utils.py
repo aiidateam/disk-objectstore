@@ -36,7 +36,7 @@ def test_lazy_opener_read():
     try:
         current_process = psutil.Process()
         start_open_files = len(current_process.open_files())
-        lazy = utils.LazyOpener(fhandle.name, mode="rb")
+        lazy = utils.LazyOpener(fhandle.name)
 
         assert lazy.path == fhandle.name
         assert lazy.mode == "rb"
@@ -77,7 +77,7 @@ def test_lazy_opener_not_twice():
         fhandle.write(content)
 
     try:
-        lazy = utils.LazyOpener(fhandle.name, mode="rb")
+        lazy = utils.LazyOpener(fhandle.name)
 
         # The first open should go through
         with lazy as fhandle:
@@ -980,7 +980,7 @@ def test_packed_object_reader_seek(tmp_path):
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
 
         # Check that it is properly marked as seekable
-        assert packed_reader.seekable
+        assert packed_reader.seekable()
 
         # Check that whence==2 is not implemented
         with pytest.raises(NotImplementedError):
@@ -1045,6 +1045,20 @@ def test_packed_object_reader_mode():
         assert reader.mode == handle.mode
 
 
+@pytest.mark.parametrize("open_streams", [True, False])
+def test_packed_object_reader_add(temp_container, open_streams):
+    """Test using `PackedObjectReader` with add_streamed_object_to_pack."""
+    content = b"content"
+    with tempfile.TemporaryFile(mode="rb+") as fhandle:
+        fhandle.write(content)
+        fhandle.seek(0)
+        wrapped = utils.PackedObjectReader(fhandle, 0, len(content))
+        hashkey = temp_container.add_streamed_object_to_pack(
+            wrapped, open_streams=open_streams
+        )
+    assert temp_container.get_object_content(hashkey) == content
+
+
 @pytest.mark.parametrize("compression_algorithm", COMPRESSION_ALGORITHMS_TO_TEST)
 def test_stream_decompresser(compression_algorithm):
     """Test the stream decompresser."""
@@ -1071,10 +1085,11 @@ def test_stream_decompresser(compression_algorithm):
         compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
         decompresser = StreamDecompresser(compressed_stream)
+        assert decompresser.mode == "rb"
         # Read in one chunk
-        assert (
-            original == decompresser.read()
-        ), "Uncompressed data is wrong (single read)"
+        with decompresser as handle:
+            chunk = handle.read()
+        assert original == chunk
 
     # Redo the same, but do a read of zero bytes first, checking that
     # it returns a zero-length bytes, and that it does not move the offset
@@ -1130,7 +1145,7 @@ def test_stream_decompresser_seek(compression_algorithm):
     decompresser = StreamDecompresser(compressed_stream)
 
     # Check the functionality is disabled
-    assert decompresser.seekable
+    assert decompresser.seekable()
 
     # Check that whence==2 is not implemented
     with pytest.raises(NotImplementedError):
@@ -1491,7 +1506,7 @@ def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
         wrapped = utils.CallbackStreamWrapper(fhandle, callback=None)
 
         assert wrapped.mode == "rb+"
-        assert wrapped.seekable
+        assert wrapped.seekable()
         # Seek forward; read from byte 1
         wrapped.seek(1)
         assert wrapped.tell() == 1
@@ -1528,7 +1543,7 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
             )
 
         assert wrapped.mode == "rb+"
-        assert wrapped.seekable
+        assert wrapped.seekable()
         # Seek forward; read from byte 10
         wrapped.seek(10)
         assert wrapped.tell() == 10
@@ -1569,6 +1584,20 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
             "value": 2,
         },
     ]
+
+
+@pytest.mark.parametrize("open_streams", [True, False])
+def test_callback_stream_wrapper_add(temp_container, open_streams):
+    """Test using callback stream wrapper with add_streamed_object_to_pack."""
+    content = b"content"
+    with tempfile.TemporaryFile(mode="rb+") as fhandle:
+        fhandle.write(content)
+        fhandle.seek(0)
+        wrapped = utils.CallbackStreamWrapper(fhandle, None)
+        hashkey = temp_container.add_streamed_object_to_pack(
+            wrapped, open_streams=open_streams
+        )
+    assert temp_container.get_object_content(hashkey) == content
 
 
 def test_rename_callback(callback_instance):

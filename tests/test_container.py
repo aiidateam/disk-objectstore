@@ -413,8 +413,8 @@ def test_directly_to_pack_streamed(
                 file_path = os.path.join(temp_dir2, key)
                 with open(file_path, "bw") as fhandle:
                     fhandle.write(content)
-                streams.append(utils.LazyOpener(file_path, mode="rb"))
-                streams_copy.append(utils.LazyOpener(file_path, mode="rb"))
+                streams.append(utils.LazyOpener(file_path))
+                streams_copy.append(utils.LazyOpener(file_path))
             obj_hashkeys = temp_container.add_streamed_objects_to_pack(
                 streams, compress=use_compression, open_streams=True
             )
@@ -3165,7 +3165,7 @@ def test_packs_read_in_order(temp_dir):
     with temp_container.get_objects_stream_and_meta(
         hashkeys, skip_if_missing=False
     ) as triplets:
-        for _, _, meta in triplets:
+        for _, _, meta in triplets:  # pylint: disable=not-an-iterable
             assert meta["type"] == ObjectType.PACKED
             if last_pack is None:
                 last_pack = meta["pack_id"]
