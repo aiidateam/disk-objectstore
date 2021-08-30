@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1619188039991,
+  "lastUpdate": 1630332555345,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -2858,6 +2858,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000028004990930402033",
             "extra": "mean: 436.5958544286526 nsec\nrounds: 125001"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2cb284157df3cc9bc5a3ae92da6aebbacbda5623",
+          "message": "🔧 MAINTAIN: Improve repo configuration (#112)\n\n- Move config to `setup.cfg` and `pyproject.toml`\r\n- Add `Manifest.in`, `tox.ini`\r\n- Replace `requirements.txt`/`dev-requirements.txt with `requirements.lock`\r\n- Move from yapf to black code formatting\r\n- Add more pre-commit hooks\r\n- Update pylint version and fix new failures\r\n- Drop python 3.6",
+          "timestamp": "2021-08-30T16:07:48+02:00",
+          "tree_id": "3e95e7e154b9b51de8f0ec0458d0ae1a6a26ba51",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/2cb284157df3cc9bc5a3ae92da6aebbacbda5623"
+        },
+        "date": 1630332554747,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.0995900803484076,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0158800006050287",
+            "extra": "mean: 322.6233063333315 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.6945030463542721,
+            "unit": "iter/sec",
+            "range": "stddev: 0.09581238490221491",
+            "extra": "mean: 1.4398784933333342 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.669887097782519,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009612125424282948",
+            "extra": "mean: 149.92757528571386 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 21.226056529175292,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0013007943038136813",
+            "extra": "mean: 47.11190694444333 msec\nrounds: 18"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 3.6128368102115345,
+            "unit": "iter/sec",
+            "range": "stddev: 0.015889706931156062",
+            "extra": "mean: 276.79080250000254 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2536580.0988827352,
+            "unit": "iter/sec",
+            "range": "stddev: 3.650667524048866e-7",
+            "extra": "mean: 394.2315878140897 nsec\nrounds: 138889"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2509328.9372560787,
+            "unit": "iter/sec",
+            "range": "stddev: 3.729874710588882e-7",
+            "extra": "mean: 398.5129191924635 nsec\nrounds: 126583"
           }
         ]
       }
