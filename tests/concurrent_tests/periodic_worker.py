@@ -20,9 +20,10 @@ import time
 
 import click
 import psutil
+from sqlalchemy.sql.expression import select
 
 from disk_objectstore.container import Container, NotExistent, ObjectType
-from disk_objectstore.models import Obj
+from disk_objectstore.database import Obj
 
 MAX_RETRIES_NO_PERM = 1000
 
@@ -348,19 +349,15 @@ def main(
                 session = (
                     container._get_cached_session()  # pylint: disable=protected-access
                 )
-                query = (
-                    session.query(Obj)
-                    .filter(Obj.hashkey == key)
-                    .with_entities(
-                        Obj.pack_id,
-                        Obj.hashkey,
-                        Obj.offset,
-                        Obj.length,
-                        Obj.compressed,
-                        Obj.size,
-                    )
-                )
-                print(list(query))
+                stmt = select(
+                    Obj.pack_id,
+                    Obj.hashkey,
+                    Obj.offset,
+                    Obj.length,
+                    Obj.compressed,
+                    Obj.size,
+                ).where(Obj.hashkey == key)
+                print(list(session.execute(stmt)))
                 raise
 
 

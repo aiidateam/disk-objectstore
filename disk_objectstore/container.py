@@ -31,13 +31,12 @@ except ImportError:
     # Python <3.8 backport
     from typing_extensions import Literal  # type: ignore
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
+from sqlalchemy.sql.expression import delete, select, text, update
 
+from .database import Obj, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
-from .models import Base, Obj
 from .utils import (
     CallbackStreamWrapper,
     LazyOpener,
@@ -177,6 +176,18 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the container config file."""
         return os.path.join(self._folder, "config.json")
 
+    @overload
+    def _get_session(
+        self, create: bool = False, raise_if_missing: Literal[True] = True
+    ) -> Session:
+        ...
+
+    @overload
+    def _get_session(
+        self, create: bool = False, raise_if_missing: Literal[False] = False
+    ) -> Optional[Session]:
+        ...
+
     def _get_session(
         self, create: bool = False, raise_if_missing: bool = False
     ) -> Optional[Session]:
@@ -186,61 +197,11 @@ class Container:  # pylint: disable=too-many-public-methods
         :param raise_if_missing: ignored if create==True. If create==False, and the index file
            is missing, either raise an exception (FileNotFoundError) if this flag is True, or return None
         """
-        if not create and not os.path.exists(self._get_pack_index_path()):
-            if raise_if_missing:
-                raise FileNotFoundError("Pack index does not exist")
-            return None
-
-        engine = create_engine(f"sqlite:///{self._get_pack_index_path()}")
-
-        # For the next two bindings, see background on
-        # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, "connect")
-        def do_connect(
-            dbapi_connection, connection_record
-        ):  # pylint: disable=unused-argument,unused-variable
-            """Hook function that is called upon connection.
-
-            It modifies the default behavior of SQLite to use WAL and to
-            go back to the 'default' isolation level mode.
-            """
-            # disable pysqlite's emitting of the BEGIN statement entirely.
-            # also stops it from emitting COMMIT before any DDL.
-            dbapi_connection.isolation_level = None
-            # Open the file in WAL mode (see e.g. https://stackoverflow.com/questions/9671490)
-            # This allows to have as many readers as one wants, and a concurrent writer (up to one)
-            # Note that this writes on a journal, on a different packs.idx-wal,
-            # and also creates a packs.idx-shm file.
-            # Note also that when the session is created, you will keep reading from the same version,
-            # so you need to close and reload the session to see the newly written data.
-            # Docs on WAL: https://www.sqlite.org/wal.html
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA journal_mode=wal;")
-            cursor.close()
-
-        # For this binding, see background on
-        # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-        @event.listens_for(engine, "begin")
-        def do_begin(conn):  # pylint: disable=unused-variable
-            # emit our own BEGIN
-            conn.execute("BEGIN")
-
-        if create:
-            # Create all tables in the engine. This is equivalent to "Create Table"
-            # statements in raw SQL.
-            Base.metadata.create_all(engine)
-
-        # Bind the engine to the metadata of the Base class so that the
-        # declaratives can be accessed through a DBSession instance
-        Base.metadata.bind = engine
-
-        # We set autoflush = False to avoid to lock the DB if just doing queries/reads
-        DBSession = sessionmaker(  # pylint: disable=invalid-name
-            bind=engine, autoflush=False, autocommit=False
+        return get_session(
+            self._get_pack_index_path(),
+            create=create,
+            raise_if_missing=raise_if_missing,
         )
-        session = DBSession()
-
-        return session
 
     def _get_cached_session(self) -> Session:
         """Return the SQLAlchemy session to access the SQLite file,
@@ -630,26 +591,24 @@ class Container:  # pylint: disable=too-many-public-methods
             # Operate in chunks, due to the SQLite limits
             # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
             for chunk in chunk_iterator(hashkeys_set, size=self._IN_SQL_MAX_LENGTH):
-                query = (
-                    session.query(Obj)
-                    .filter(Obj.hashkey.in_(chunk))
-                    .with_entities(
-                        Obj.pack_id,
-                        Obj.hashkey,
-                        Obj.offset,
-                        Obj.length,
-                        Obj.compressed,
-                        Obj.size,
-                    )
-                )
-                for res in query:
+                stmt = select(
+                    Obj.pack_id,
+                    Obj.hashkey,
+                    Obj.offset,
+                    Obj.length,
+                    Obj.compressed,
+                    Obj.size,
+                ).where(Obj.hashkey.in_(chunk))
+                for res in session.execute(stmt):
                     packs[res[0]].append(
                         ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
                     )
         else:
             sorted_hashkeys = sorted(hashkeys_set)
             pack_iterator = session.execute(
-                "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
+                text(
+                    "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
+                )
             )
             # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
             # with the right iterator)
@@ -767,26 +726,24 @@ class Container:  # pylint: disable=too-many-public-methods
                 for chunk in chunk_iterator(
                     loose_not_found, size=self._IN_SQL_MAX_LENGTH
                 ):
-                    query = (
-                        session.query(Obj)
-                        .filter(Obj.hashkey.in_(chunk))
-                        .with_entities(
-                            Obj.pack_id,
-                            Obj.hashkey,
-                            Obj.offset,
-                            Obj.length,
-                            Obj.compressed,
-                            Obj.size,
-                        )
-                    )
-                    for res in query:
+                    stmt = select(
+                        Obj.pack_id,
+                        Obj.hashkey,
+                        Obj.offset,
+                        Obj.length,
+                        Obj.compressed,
+                        Obj.size,
+                    ).where(Obj.hashkey.in_(chunk))
+                    for res in session.execute(stmt):
                         packs[res[0]].append(
                             ObjQueryResults(res[1], res[2], res[3], res[4], res[5])
                         )
             else:
                 sorted_hashkeys = sorted(loose_not_found)
                 pack_iterator = session.execute(
-                    "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
+                    text(
+                        "SELECT pack_id, hashkey, offset, length, compressed, size FROM db_object ORDER BY hashkey"
+                    )
                 )
                 # The left_key returns the second element of the tuple, i.e. the hashkey (that is the value to compare
                 # with the right iterator)
@@ -1077,7 +1034,9 @@ class Container:  # pylint: disable=too-many-public-methods
         Also return a number of packs under 'pack_files'."""
         retval = {}
 
-        number_packed = self._get_cached_session().query(Obj).count()
+        number_packed = self._get_cached_session().scalar(
+            select(func.count()).select_from(Obj)
+        )
         retval["packed"] = number_packed
 
         retval["loose"] = sum(1 for _ in self._list_loose())
@@ -1137,12 +1096,12 @@ class Container:  # pylint: disable=too-many-public-methods
         session = self._get_cached_session()
         # COALESCE is used to return 0 if there are no results, rather than None
         # SQL's COALESCE returns the first non-null result
-        retval["total_size_packed"] = session.query(
-            func.coalesce(func.sum(Obj.size), 0).label("total_size_packed")
-        ).all()[0][0]
-        retval["total_size_packed_on_disk"] = session.query(
-            func.coalesce(func.sum(Obj.length), 0).label("total_length_packed")
-        ).all()[0][0]
+        retval["total_size_packed"] = session.scalar(
+            select(func.coalesce(func.sum(Obj.size), 0).label("total_size_packed"))
+        )
+        retval["total_size_packed_on_disk"] = session.scalar(
+            select(func.coalesce(func.sum(Obj.length), 0).label("total_length_packed"))
+        )
 
         total_size_packfiles_on_disk = 0
         for pack_id in list(self._list_packs()):
@@ -1251,14 +1210,14 @@ class Container:  # pylint: disable=too-many-public-methods
         # after this call was called. It would be bad instead to miss an object that has always existed
         last_pk = -1
         while True:
-            results_chunk = (
-                session.query(Obj)
-                .filter(Obj.id > last_pk)
+
+            stmt = (
+                select(Obj.id, Obj.hashkey)
+                .where(Obj.id > last_pk)
                 .order_by(Obj.id)
                 .limit(yield_per_size)
-                .with_entities(Obj.id, Obj.hashkey)
-                .all()
             )
+            results_chunk = session.execute(stmt).all()
 
             for _, hashkey in results_chunk:
                 # I need to use a comma because I want to create a tuple
@@ -1365,17 +1324,13 @@ class Container:  # pylint: disable=too-many-public-methods
         if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
             for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
                 # I check the hash keys that are already in the pack
-                for res in (
-                    session.query(Obj)
-                    .filter(Obj.hashkey.in_(chunk))
-                    .with_entities(Obj.hashkey)
-                    .all()
-                ):
+                stmt = select(Obj.hashkey).where(Obj.hashkey.in_(chunk))
+                for res in session.execute(stmt):
                     existing_packed_hashkeys.append(res[0])
         else:
             sorted_hashkeys = sorted(loose_objects)
             pack_iterator = session.execute(
-                "SELECT hashkey FROM db_object ORDER BY hashkey"
+                text("SELECT hashkey FROM db_object ORDER BY hashkey")
             )
 
             # The query returns a tuple of length 1, so I still need a left_key
@@ -1597,7 +1552,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if no_holes:
             if callback:
-                total = session.query(Obj).count()
+                total = session.scalar(select(func.count()).select_from(Obj))
                 if total:
                     # If we have a callback, compute the total count of objects in this pack
                     callback(
@@ -1615,14 +1570,14 @@ class Container:  # pylint: disable=too-many-public-methods
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
             last_pk = -1
             while True:
-                results_chunk = (
-                    session.query(Obj)
-                    .filter(Obj.id > last_pk)
+
+                stmt = (
+                    select(Obj.id, Obj.hashkey)
+                    .where(Obj.id > last_pk)
                     .order_by(Obj.id)
                     .limit(yield_per_size)
-                    .with_entities(Obj.id, Obj.hashkey)
-                    .all()
                 )
+                results_chunk = session.execute(stmt).all()
 
                 if not results_chunk:
                     # No more packed objects
@@ -1893,10 +1848,15 @@ class Container:  # pylint: disable=too-many-public-methods
 
         (See also description in issue #94).
         """
-        engine = self._get_cached_session().get_bind()
-        engine.execute("VACUUM")
+        # VACUUM cannot be performed from within a transaction
+        # see: https://github.com/sqlalchemy/sqlalchemy/discussions/6959
+        session = self._get_cached_session()
+        session.execute(text("COMMIT"))
+        session.execute(text("VACUUM"))
+        # ensure sqlalchemy knows to open a new transaction for the next execution
+        session.commit()
 
-    def clean_storage(  # pylint: disable=too-many-branches
+    def clean_storage(  # pylint: disable=too-many-branches,too-many-locals
         self, vacuum: bool = False
     ) -> None:
         """Perform some maintenance clean-up of the container.
@@ -1991,17 +1951,13 @@ class Container:  # pylint: disable=too-many-public-methods
         if len(loose_objects) <= self._MAX_CHUNK_ITERATE_LENGTH:
             for chunk in chunk_iterator(loose_objects, size=self._IN_SQL_MAX_LENGTH):
                 # I check the hash keys that are already in the pack
-                for res in (
-                    session.query(Obj)
-                    .filter(Obj.hashkey.in_(chunk))
-                    .with_entities(Obj.hashkey)
-                    .all()
-                ):
-                    existing_packed_hashkeys.append(res[0])
+                stmt = select(Obj.hashkey).where(Obj.hashkey.in_(chunk))
+                for row in session.execute(stmt):
+                    existing_packed_hashkeys.append(row[0])
         else:
             sorted_hashkeys = sorted(loose_objects)
             pack_iterator = session.execute(
-                "SELECT hashkey FROM db_object ORDER BY hashkey"
+                text("SELECT hashkey FROM db_object ORDER BY hashkey")
             )
 
             # The query returns a tuple of length 1, so I still need a left_key
@@ -2085,7 +2041,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # NOTE: I need to wrap in the `yield_first_element` iterator since it returns a list of lists
             sorted_packed = yield_first_element(
                 self._get_cached_session().execute(
-                    "SELECT hashkey FROM db_object ORDER BY hashkey"
+                    text("SELECT hashkey FROM db_object ORDER BY hashkey")
                 )
             )
             sorted_existing = merge_sorted(sorted_loose, sorted_packed)
@@ -2349,7 +2305,9 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if callback:
             # If we have a callback, compute the total count of objects in this pack
-            total = session.query(Obj).filter(Obj.pack_id == pack_id).count()
+            total = session.scalar(
+                select(func.count()).select_from(Obj).where(Obj.pack_id == pack_id)
+            )
             callback(
                 action="init",
                 value={"total": total, "description": f"Pack {pack_id}"},
@@ -2364,14 +2322,12 @@ class Container:  # pylint: disable=too-many-public-methods
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         current_pos = 0
         with open(pack_path, mode="rb") as pack_handle:
-            query = (
-                session.query(
-                    Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed
-                )
-                .filter(Obj.pack_id == pack_id)
+            stmt = (
+                select(Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed)
+                .where(Obj.pack_id == pack_id)
                 .order_by(Obj.offset)
             )
-            for hashkey, size, offset, length, compressed in query:
+            for hashkey, size, offset, length, compressed in session.execute(stmt):
                 obj_reader: StreamSeekBytesType = PackedObjectReader(
                     fhandle=pack_handle, offset=offset, length=length
                 )
@@ -2440,7 +2396,7 @@ class Container:  # pylint: disable=too-many-public-methods
         session = self._get_cached_session()
 
         all_pack_ids = sorted(
-            {res[0] for res in session.query(Obj).with_entities(Obj.pack_id).distinct()}
+            {res[0] for res in session.execute(select(Obj.pack_id).distinct())}
         )
 
         for pack_id in all_pack_ids:
@@ -2515,14 +2471,19 @@ class Container:  # pylint: disable=too-many-public-methods
         # Operate in chunks, due to the SQLite limits
         # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
         for chunk in chunk_iterator(hashkeys, size=self._IN_SQL_MAX_LENGTH):
-            query = session.query(Obj.hashkey).filter(Obj.hashkey.in_(chunk))
-            deleted_this_chunk = [res[0] for res in query]
+            results = session.execute(select(Obj.hashkey).where(Obj.hashkey.in_(chunk)))
+            deleted_this_chunk = [res[0] for res in results]
             # I need to specify either `False` or `'fetch'`
             # otherwise one gets 'sqlalchemy.exc.InvalidRequestError: Could not evaluate current criteria in Python'
             # `'fetch'` will run the query twice so it's less efficient
             # False is beter but one needs to either `expire_all` at the end, or commit.
             # I will commit at the end.
-            query.delete(synchronize_session=False)
+            stmt = (
+                delete(Obj)
+                .where(Obj.hashkey.in_(chunk))
+                .execution_options(synchronize_session=False)
+            )
+            session.execute(stmt)
             deleted_packed.update(deleted_this_chunk)
 
         session.commit()
@@ -2579,9 +2540,10 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
         session = self._get_cached_session()
-        one_object_in_pack = (
-            session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
-        )
+
+        one_object_in_pack = session.execute(
+            select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
+        ).all()
         if not one_object_in_pack:
             # No objects. Clean up the pack file, if it exists.
             if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
@@ -2595,8 +2557,8 @@ class Container:  # pylint: disable=too-many-public-methods
             str(self._REPACK_PACK_ID), allow_repack_pack=True
         ) as write_pack_handle:
             with open(self._get_pack_path_from_pack_id(pack_id), "rb") as read_pack:
-                query = (
-                    session.query(
+                stmt = (
+                    select(
                         Obj.id,
                         Obj.hashkey,
                         Obj.size,
@@ -2604,10 +2566,12 @@ class Container:  # pylint: disable=too-many-public-methods
                         Obj.length,
                         Obj.compressed,
                     )
-                    .filter(Obj.pack_id == pack_id)
+                    .where(Obj.pack_id == pack_id)
                     .order_by(Obj.offset)
                 )
-                for rowid, hashkey, size, offset, length, compressed in query:
+                for rowid, hashkey, size, offset, length, compressed in session.execute(
+                    stmt
+                ):
                     # Since I am assuming above that the method is `KEEP`, I will just transfer
                     # the bytes. Otherwise I have to properly take into account compression in the
                     # source and in the destination.
@@ -2655,9 +2619,9 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Now we can safely delete the old object. I just check that there is no object still
         # refencing the old pack, to be sure.
-        one_object_in_pack = (
-            session.query(Obj.id).filter(Obj.pack_id == pack_id).limit(1).all()
-        )
+        one_object_in_pack = session.execute(
+            select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
+        ).all()
         assert not one_object_in_pack, (
             "I moved the objects of pack '{pack_id}' to pack '{repack_id}' "
             "but there are still references to pack '{pack_id}'!".format(
@@ -2679,8 +2643,10 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Before deleting the source (pack -1) I need now to update again all
         # entries to point to the correct pack id
-        session.query(Obj).filter(Obj.pack_id == self._REPACK_PACK_ID).update(
-            {Obj.pack_id: pack_id}
+        session.execute(
+            update(Obj)
+            .where(Obj.pack_id == self._REPACK_PACK_ID)
+            .values(pack_id=pack_id)
         )
         session.commit()
 

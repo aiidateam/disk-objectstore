@@ -19,13 +19,12 @@ from typing import (
     Iterable,
     Iterator,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union,
 )
 from zlib import error
-
-from sqlalchemy.engine.result import ResultProxy
 
 from .exceptions import ClosingNotAllowed, ModificationNotAllowed
 
@@ -1265,7 +1264,7 @@ def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statemen
         now_left = new_now_left
 
 
-def yield_first_element(iterator: Union[ResultProxy, zip]) -> Iterator[Union[str, int]]:
+def yield_first_element(iterator: Iterable[Sequence]) -> Iterator[Any]:
     """Given an iterator that returns a tuple, return an iterator that yields only the first element of the tuple."""
     for elem in iterator:
         yield elem[0]
