@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1630499872696,
+  "lastUpdate": 1630500033022,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -9016,6 +9016,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.7543324329050824e-8",
             "extra": "mean: 261.52528089876967 nsec\nrounds: 188680"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0a67a33dbe0634005ee2d5789214808ee205b02",
+          "message": "🔧 MAINTAIN: Add typing (#113)\n\nAdded type annotations to code base and mypy type checking.\r\n\r\nIt was found that there were some inconsistencies with classes\r\nlooking to implement subsets of the `BinaryIO` interface,\r\nwhich were fixed:\r\n\r\n- Remove `@property` from `seekable` method\r\n- Disallow mode in `LazyOpen` (should always be readable binary)\r\n- Added `__enter__`/`__exit__` methods to `PackedObjectReader`, `CallbackStreamWrapper`, `ZlibLikeBaseStreamDecompresser`,\r\n  so they won't fail in `add_streamed_objects_to_pack` with `open_streams=True`",
+          "timestamp": "2021-09-01T14:36:15+02:00",
+          "tree_id": "d230b7bc0b95dc71a7939d3be0d0590552bb25c9",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/c0a67a33dbe0634005ee2d5789214808ee205b02"
+        },
+        "date": 1630500028297,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 0.9878226492191727,
+            "unit": "iter/sec",
+            "range": "stddev: 0.019655355465199437",
+            "extra": "mean: 1.0123274666666662 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1693360710836701,
+            "unit": "iter/sec",
+            "range": "stddev: 0.2920130239531486",
+            "extra": "mean: 5.905416333333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 8.371791638756706,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009944387527785443",
+            "extra": "mean: 119.44874444444606 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 9.782077326832141,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006344069659981386",
+            "extra": "mean: 102.22777500000024 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.7375569636331112,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012763176116863227",
+            "extra": "mean: 575.5206999999984 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3529143.651149304,
+            "unit": "iter/sec",
+            "range": "stddev: 1.8528381141409038e-7",
+            "extra": "mean: 283.35485852900985 nsec\nrounds: 156251"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3517585.1689584153,
+            "unit": "iter/sec",
+            "range": "stddev: 6.029868788851762e-7",
+            "extra": "mean: 284.28593821244635 nsec\nrounds: 181819"
           }
         ]
       }
