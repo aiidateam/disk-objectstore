@@ -189,7 +189,11 @@ def main(
             with container.get_objects_stream_and_meta(
                 all_hashkeys, skip_if_missing=False
             ) as triplets:
-                for obj_hashkey, stream, meta in triplets:
+                for (
+                    obj_hashkey,
+                    stream,
+                    meta,
+                ) in triplets:  # pylint: disable=not-an-iterable
                     if stream is None:
                         retrieved_content[obj_hashkey] = None
                     else:

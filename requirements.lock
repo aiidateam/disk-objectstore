@@ -75,8 +75,10 @@ toml==0.10.2
     #   pre-commit
     #   pytest
     #   pytest-cov
-typing-extensions==3.10.0.0
-    # via importlib-metadata
+typing-extensions==3.10.0.0 ; python_version < "3.8"
+    # via
+    #   disk-objectstore (setup.py)
+    #   importlib-metadata
 virtualenv==20.7.2
     # via pre-commit
 zipp==3.5.0

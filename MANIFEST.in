@@ -11,3 +11,4 @@ include LICENSE.txt
 include CHANGELOG.md
 include README.md
 include requirements.lock
+include disk_objectstore/py.typed

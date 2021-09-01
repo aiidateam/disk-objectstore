@@ -5,7 +5,7 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()  # pylint: disable=invalid-name,useless-suppression
 
 
-class Obj(Base):  # pylint: disable=too-few-public-methods
+class Obj(Base):  # type: ignore # pylint: disable=too-few-public-methods
     """The main (and only) table to store object metadata (hashkey, offset, length, ...)."""
 
     __tablename__ = "db_object"

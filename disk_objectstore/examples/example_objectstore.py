@@ -143,9 +143,7 @@ def main(
         for filename, item in retrieved.items():
             assert (
                 item == files[filename]
-            ), "Mismatch (content) for {}, {} vs {}".format(
-                filename, item, files[filename]
-            )
+            ), f"Mismatch (content) for {filename}, {item!r} vs {files[filename]!r}"
 
         # Check that num_files new loose files are present now
         counts = container.count_objects()
@@ -299,7 +297,7 @@ def main(
     for filename, content in retrieved.items():
         assert (
             content == files[filename]
-        ), f"Mismatch (content) for {filename}, {content} vs {files[filename]}"
+        ), f"Mismatch (content) for {filename}, {content!r} vs {files[filename]!r}"
 
     print("All tests passed")
 

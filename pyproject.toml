@@ -25,3 +25,10 @@ docstring-min-length = 5
 
 [tool.pylint.design]
 max-locals = 20
+
+[tool.mypy]
+show_error_codes = true
+check_untyped_defs = true
+scripts_are_modules = true
+warn_unused_ignores = true
+warn_redundant_casts = true
