@@ -451,6 +451,13 @@ class PackedObjectReader:
         self._update_pos()
         return stream
 
+    def __enter__(self) -> "PackedObjectReader":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+
 
 class CallbackStreamWrapper:
     """A class to just wrap a read stream, but perform a callback every few bytes.
@@ -541,6 +548,13 @@ class CallbackStreamWrapper:
 
         return data
 
+    def __enter__(self) -> "CallbackStreamWrapper":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+ 
     def close_callback(self):
         """
         Call the wrap up closing calls for the callback.
@@ -679,6 +693,13 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._pos += len(to_return)
 
         return to_return
+
+    def __enter__(self) -> "ZlibLikeBaseStreamDecompresser":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
 
     @property
     def seekable(self):
