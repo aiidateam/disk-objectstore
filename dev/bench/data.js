@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1630590366790,
+  "lastUpdate": 1630590460962,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6156,6 +6156,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.4158712393802936e-7",
             "extra": "mean: 234.89263796366365 nsec\nrounds: 196773"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55c40ffa05cd603c0b722953fbf5d043f7015bde",
+          "message": "⬆️ UPGRADE: sqlalchemy v1.4 (v2 API) (#114)\n\nFollowing migration guidelines:\r\nhttps://docs.sqlalchemy.org/en/14/changelog/migration_20.html\r\n\r\n- Added `SQLALCHEMY_WARN_20` environmental variable\r\n- Use `future=True` for engine and session creation (V1 -> v2 API)\r\n- `query` -> `select` (V1 -> v2 API)\r\n- Rename `models.py` -> `database.py`\r\n  (models is too generic does not describe the module's purpose)\r\n- Moved `get_session` -> `database.py`\r\n  (this method can be independent of the container)\r\n- Added mypy extension:\r\n  https://docs.sqlalchemy.org/en/14/orm/extensions/mypy.html\r\n\r\nNote, the `count()` method is now a bit more complex,\r\nbut this is explained in: https://github.com/sqlalchemy/sqlalchemy/issues/6794\r\n\r\nAlso, the vacuum code required changing, since it is in a transaction.\r\nThe workaround is discussed in:\r\nhttps://github.com/sqlalchemy/sqlalchemy/discussions/6959#discussioncomment-1251681",
+          "timestamp": "2021-09-02T15:44:37+02:00",
+          "tree_id": "58708e4c7cbc4eb4609c2d96c9ce5b022ac21ea2",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/55c40ffa05cd603c0b722953fbf5d043f7015bde"
+        },
+        "date": 1630590459639,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.207646214908041,
+            "unit": "iter/sec",
+            "range": "stddev: 0.30242061587965097",
+            "extra": "mean: 828.0570813333336 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.2165154868402094,
+            "unit": "iter/sec",
+            "range": "stddev: 1.4888100016843575",
+            "extra": "mean: 4.618607262666665 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.528596805014074,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0076838992498781174",
+            "extra": "mean: 153.17227114285612 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.218075751078281,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012622449584336621",
+            "extra": "mean: 70.33300549999962 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 3.3800361348002026,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011577593639190671",
+            "extra": "mean: 295.8548252500002 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2308111.0737333735,
+            "unit": "iter/sec",
+            "range": "stddev: 5.52188975728416e-7",
+            "extra": "mean: 433.25471264365905 nsec\nrounds: 181852"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4271189.762116543,
+            "unit": "iter/sec",
+            "range": "stddev: 6.891789090093281e-8",
+            "extra": "mean: 234.1268020609786 nsec\nrounds: 193237"
           }
         ]
       }
