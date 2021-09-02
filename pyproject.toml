@@ -32,3 +32,4 @@ check_untyped_defs = true
 scripts_are_modules = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+plugins = ["sqlalchemy.ext.mypy.plugin"]
