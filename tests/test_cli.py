@@ -35,17 +35,20 @@ def test_add_file(temp_dir, temp_container):
     assert sum(1 for _ in temp_container.list_all_objects()) == 1
 
 
-def test_optimize(temp_dir):
+def test_optimize(temp_container):
     """Test optimizing a container"""
-    temp_container = Container(temp_dir)
     temp_container.init_container(clear=True)
     temp_container.add_object(b"test")
-    assert temp_container.count_objects() == {"loose": 1, "packed": 0, "pack_files": 0}
+    assert temp_container.count_objects() == {
+        "loose": 1,
+        "packed": 0,
+        "pack_files": 0,
+    }
     temp_container.close()
     obj = cli.ContainerContext(temp_container.get_folder())
     result = CliRunner().invoke(cli.optimize, ["--non-interactive"], obj=obj)
     assert result.exit_code == 0, result.output
-    assert Container(temp_dir).count_objects() == {
+    assert temp_container.count_objects() == {
         "loose": 0,
         "packed": 1,
         "pack_files": 1,

@@ -1,9 +1,8 @@
 """A small CLI tool for managing stores."""
-import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Iterator, List
+from typing import List
 
 import click
 
@@ -22,16 +21,14 @@ class ContainerContext:
         """Get the path to the container."""
         return self._path
 
-    @contextlib.contextmanager
-    def container(self) -> Iterator[Container]:
+    @property
+    def container(self) -> Container:
         """Get the container, creating if it does not exist."""
         if not self.path.exists():
             raise click.ClickException(
                 f"Container does not exist (run create command): {self.path}"
             )
-        container = Container(str(self.path))
-        yield container
-        container.close()
+        return Container(str(self.path))
 
 
 pass_dostore = click.make_pass_decorator(ContainerContext)
@@ -76,7 +73,7 @@ def create(dostore: ContainerContext, algorithm: str):
 @pass_dostore
 def status(dostore: ContainerContext):
     """Print details about the container"""
-    with dostore.container() as container:
+    with dostore.container as container:
         data: dict = {"path": container.get_folder()}
         data["id"] = container.container_id
         data["compression"] = container.compression_algorithm
@@ -90,7 +87,7 @@ def status(dostore: ContainerContext):
 @pass_dostore
 def add_files(dostore: ContainerContext, files: List[str]):
     """Add file(s) to the container"""
-    with dostore.container() as container:
+    with dostore.container as container:
         click.echo(
             f"Adding {len(files)} file(s) to container: {container.get_folder()}"
         )
@@ -123,7 +120,7 @@ def optimize(
         return
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
     click.echo(f"Initial container size: {round(size/1000, 2)} Mb")
-    with dostore.container() as container:
+    with dostore.container as container:
         container.pack_all_loose(compress=compress)
         container.clean_storage(vacuum=vacuum)
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
