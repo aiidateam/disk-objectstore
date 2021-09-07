@@ -297,7 +297,7 @@ This implementation, in particular, addresses the following aspects:
   To guarantee the possibility of concurrent operations, the loose objects are not removed
   while repacking.
   It is instead needed to run the `clean_storage()` method as discussed earlier,
-  but this is a maintenance operation, so this can be run when noone is using
+  but this is a maintenance operation, so this can be run when no one is using
   the container in read or write mode.
 
   This packing operation takes all loose objects and puts them together in packs.
