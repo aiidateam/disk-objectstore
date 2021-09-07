@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 """Check that the GitHub release tag matches the package version."""
 import argparse
-import re
 import pathlib
+import re
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
