@@ -32,6 +32,14 @@ def test_status(temp_container):
     assert "path" in result.output
 
 
+def test_status_not_exist():
+    """Test status command when container does not exist"""
+    obj = cli.ContainerContext(Path("/does/not/exist"))
+    result = CliRunner().invoke(cli.status, obj=obj)
+    assert result.exit_code != 0, result.output
+    assert "Container does not exist" in result.output
+
+
 def test_add_file(temp_dir, temp_container):
     """Test add-files command"""
     path = Path(temp_dir, "test.txt")
