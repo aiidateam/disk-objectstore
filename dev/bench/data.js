@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1631044028872,
+  "lastUpdate": 1631047035575,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -3369,6 +3369,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000018671578485137419",
             "extra": "mean: 427.55435993732095 nsec\nrounds: 113637"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6259e2330ccb44aea06890071c6e83559ef20693",
+          "message": "🔀 MERGE: master -> develop #120",
+          "timestamp": "2021-09-07T22:36:13+02:00",
+          "tree_id": "0f874bbb5424bb25b9c5a784eb30f1f7466fd53d",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/6259e2330ccb44aea06890071c6e83559ef20693"
+        },
+        "date": 1631047034966,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 4.1761352878069955,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009662824123685576",
+            "extra": "mean: 239.4558439999983 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.822085905578083,
+            "unit": "iter/sec",
+            "range": "stddev: 0.019681477444873165",
+            "extra": "mean: 548.821543999999 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 9.720804931563544,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006402359839831693",
+            "extra": "mean: 102.87213939999873 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 47.8925848467814,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001186381214515141",
+            "extra": "mean: 20.880059057142425 msec\nrounds: 35"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 7.268025270029851,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007890957060585844",
+            "extra": "mean: 137.58895475000088 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3284673.212043047,
+            "unit": "iter/sec",
+            "range": "stddev: 1.1887820788124953e-8",
+            "extra": "mean: 304.4442888056283 nsec\nrounds: 153847"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3304638.838497569,
+            "unit": "iter/sec",
+            "range": "stddev: 3.350742746246811e-8",
+            "extra": "mean: 302.6049286687859 nsec\nrounds: 161291"
           }
         ]
       }
