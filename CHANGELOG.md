@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.0 (September 2021)
+
+- ⬆️ UPGRADE: Remove Python support for 3.5 and 3.6, and add support for 3.9.
+- ⬆️ UPGRADE: SQLAlchemy v1.4 (with v2 API) [\[#114\]](https://github.com/aiidateam/disk-objectstore/pull/114)
+- ✨ NEW: Add basic CLI [\[#117\]](https://github.com/aiidateam/disk-objectstore/pull/117) (see README.md for details)
+- 🔧 MAINTAIN: Add type annotations and mypy type checking [\[#113\]](https://github.com/aiidateam/disk-objectstore/pull/113)
+
 ## v0.5.0 (November 2020)
 
 - Various general (but very important) speed improvements [\[#96\]](https://github.com/aiidateam/disk-objectstore/pull/96) [\[#102\]](https://github.com/aiidateam/disk-objectstore/pull/102)
