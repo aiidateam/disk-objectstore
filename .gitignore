@@ -8,3 +8,5 @@ disk_objectstore.egg-info
 
 htmlcov
 .coverage
+.tox/
+dostore/

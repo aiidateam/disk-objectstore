@@ -1,0 +1,14 @@
+exclude tests
+recursive-exclude tests *
+exclude performance-benchmarks
+recursive-exclude performance-benchmarks *
+
+exclude .pre-commit-config.yaml
+exclude codecov.yml
+exclude tox.ini
+
+include LICENSE.txt
+include CHANGELOG.md
+include README.md
+include requirements.lock
+include disk_objectstore/py.typed

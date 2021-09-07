@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=46.4.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "black"
+src_paths = ["disk_objectstore", "tests"]
+
+[tool.pylint.master]
+
+[tool.pylint.format]
+max-line-length = 120
+max-args = 6
+
+[tool.pylint.messages_control]
+disable = [
+    "duplicate-code",
+    "too-few-public-methods",
+    "unspecified-encoding"
+]
+
+[tool.pylint.basic]
+good-names = []
+docstring-min-length = 5
+
+[tool.pylint.design]
+max-locals = 20
+
+[tool.mypy]
+show_error_codes = true
+check_untyped_defs = true
+scripts_are_modules = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+plugins = ["sqlalchemy.ext.mypy.plugin"]

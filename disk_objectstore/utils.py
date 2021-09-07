@@ -10,18 +10,52 @@ import itertools
 import os
 import uuid
 import zlib
-
+from contextlib import contextmanager
 from enum import Enum
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
+from zlib import error
+
+from .exceptions import ClosingNotAllowed, ModificationNotAllowed
+
+try:
+    from typing import Literal  # pylint: disable=ungrouped-imports
+except ImportError:
+    # Python <3.8 backport
+    from typing_extensions import Literal  # type: ignore
 
 try:
     import fcntl
 except ImportError:
     # Not available on Windows
-    fcntl = None
+    fcntl = None  # type: ignore[assignment]
 
-from contextlib import contextmanager
-
-from .exceptions import ModificationNotAllowed, ClosingNotAllowed
+# requires read method only
+StreamReadBytesType = Union[
+    BinaryIO,
+    "PackedObjectReader",
+    "CallbackStreamWrapper",
+    "ZlibLikeBaseStreamDecompresser",
+    "ZeroStream",
+]
+# requires read and seek capability
+StreamSeekBytesType = Union[
+    BinaryIO,
+    "PackedObjectReader",
+    "CallbackStreamWrapper",
+    "ZlibLikeBaseStreamDecompresser",
+]
+StreamWriteBytesType = BinaryIO
 
 # For now I I don't always activate it as I need to think at the right balance between
 # safety and performance/disk wearing
@@ -31,6 +65,7 @@ _MACOS_ALWAYS_USE_FULLSYNC = False
 
 class Location(Enum):
     """Enum that describes if an element is only on the left or right iterator, or on both."""
+
     LEFTONLY = -1
     BOTH = 0
     RIGHTONLY = 1
@@ -43,46 +78,45 @@ class LazyOpener:
     when opening the stream.
     """
 
-    def __init__(self, path, mode='rb'):
+    def __init__(self, path: str) -> None:
         """Lazily store file path and mode, but do not open now.
 
         File will be opened only when entering the context manager.
         """
         self._path = path
-        self._mode = mode
-        self._fhandle = None
+        self._fhandle: Optional[BinaryIO] = None
 
     @property
-    def path(self):
+    def path(self) -> str:
         """The file path."""
         return self._path
 
     @property
-    def mode(self):
+    def mode(self) -> Literal["rb"]:
         """The file open mode."""
-        return self._mode
+        return "rb"
 
-    def tell(self):
+    def tell(self) -> int:
         """Return the position in the underlying file object.
 
         :return: an integer with the position.
         :raises ValueError: if the file is not open.
         """
         if self._fhandle is None:
-            raise ValueError('I/O operation on closed file.')
+            raise ValueError("I/O operation on closed file.")
         return self._fhandle.tell()
 
-    def __enter__(self):
+    def __enter__(self) -> BinaryIO:
         """Open the file when entering the with context manager.
 
         Note: you cannot open it twice with two with statements.
         """
         if self._fhandle is not None:
-            raise IOError('File {} already open'.format(self.path))
+            raise OSError(f"File {self.path} already open")
         self._fhandle = open(self.path, mode=self.mode)
         return self._fhandle
 
-    def __exit__(self, exc_type, value, traceback):
+    def __exit__(self, exc_type, value, traceback) -> None:
         """Close the file when exiting the with context manager."""
         if self._fhandle is not None:
             if not self._fhandle.closed:
@@ -91,7 +125,7 @@ class LazyOpener:
 
 
 @contextmanager
-def nullcontext(enter_result):
+def nullcontext(enter_result: Any) -> Iterator[Any]:
     """Return a context manager that returns enter_result from __enter__, but otherwise does nothing.
 
     This can be replaced by ``contextlib.nullcontext`` if we want to support only py>=3.7.
@@ -99,11 +133,18 @@ def nullcontext(enter_result):
     yield enter_result
 
 
-class ObjectWriter:
+class ObjectWriter:  # pylint: disable=too-many-instance-attributes
     """A class to get direct write access for a new object."""
 
     def __init__(  # pylint: disable=too-many-arguments
-            self, sandbox_folder, loose_folder, loose_prefix_len, duplicates_folder, hash_type, trust_existing=False):
+        self,
+        sandbox_folder: str,
+        loose_folder: str,
+        loose_prefix_len: int,
+        duplicates_folder: str,
+        hash_type: str,
+        trust_existing: bool = False,
+    ) -> None:
         """Initialise an object to store a new loose object.
 
         :param sandbox_folder: the folder to store objects while still giving
@@ -123,23 +164,23 @@ class ObjectWriter:
         self._loose_folder = loose_folder
         self._duplicates_folder = duplicates_folder
         self._hash_type = hash_type
-        self._hashkey = None
+        self._hashkey: Optional[str] = None
         self._loose_prefix_len = loose_prefix_len
         self._stored = False
-        self._obj_path = None
-        self._filehandle = None
+        self._obj_path: Optional[str] = None
+        self._filehandle: Optional[HashWriterWrapper] = None
         self._trust_existing = trust_existing
 
     @property
-    def hash_type(self):
+    def hash_type(self) -> str:
         """Return the currently used hash type."""
         return self._hash_type
 
-    def get_hashkey(self):
+    def get_hashkey(self) -> Optional[str]:
         """Return the object hash key. Return None if the stream wasn't opened yet."""
         return self._hashkey
 
-    def __enter__(self):
+    def __enter__(self) -> "HashWriterWrapper":
         """Start creating a new object in a context manager.
 
         You will get access access to a file-like object.
@@ -147,24 +188,33 @@ class ObjectWriter:
         :note: Do not close the file, it will be closed automatically.
         """
         if self._filehandle is not None:
-            raise IOError('You have already opened this ObjectWriter instance')
+            raise OSError("You have already opened this ObjectWriter instance")
         if self._stored:
-            raise ModificationNotAllowed("You have already tried to store this object '{}'".format(self.get_hashkey()))
+            raise ModificationNotAllowed(
+                f"You have already tried to store this object '{self.get_hashkey()}'"
+            )
         # Create a new uniquely-named file in the sandbox.
         # It seems faster than using a NamedTemporaryFile, see benchmarks.
         self._obj_path = os.path.join(self._sandbox_folder, uuid.uuid4().hex)
-        self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
+        self._filehandle = HashWriterWrapper(
+            open(self._obj_path, "wb"), hash_type=self.hash_type
+        )
         return self._filehandle
 
-    def __exit__(self, exc_type, value, traceback):  # pylint: disable=too-many-branches, too-many-statements
+    def __exit__(  # pylint: disable=too-many-branches, too-many-statements
+        self, exc_type: Any, value: Any, traceback: Any
+    ) -> None:
         """
         Close the file object, and move it from the sandbox to the loose
         object folder, possibly using sharding if loose_prexix_len is not 0.
         """
         try:
             if exc_type is None:
+                assert self._filehandle is not None and self._obj_path is not None
                 if self._filehandle.closed:
-                    raise ClosingNotAllowed('You cannot close the file handle yourself!')
+                    raise ClosingNotAllowed(
+                        "You cannot close the file handle yourself!"
+                    )
                 # Flush out of the buffer and sync to disk so data is preserved even for power failures
                 # NOTE: For now I don't use `fullsync` on Mac for performance reasons, for loose objects - to decide
                 # if we want to change this!
@@ -174,7 +224,9 @@ class ObjectWriter:
                 self._filehandle = None
 
                 if self._loose_prefix_len:
-                    parent_folder = os.path.join(self._loose_folder, self._hashkey[:self._loose_prefix_len])
+                    parent_folder = os.path.join(
+                        self._loose_folder, self._hashkey[: self._loose_prefix_len]
+                    )
                     # Create parent folder the first time; done with try/except
                     # rather than with if/else to avoid problems at the beginning, for concurrent writing
                     try:
@@ -184,8 +236,9 @@ class ObjectWriter:
                         pass
 
                     dest_loose_object = os.path.join(
-                        self._loose_folder, self._hashkey[:self._loose_prefix_len],
-                        self._hashkey[self._loose_prefix_len:]
+                        self._loose_folder,
+                        self._hashkey[: self._loose_prefix_len],
+                        self._hashkey[self._loose_prefix_len :],
                     )
                 else:  # prefix_len == 0
                     dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
@@ -295,7 +348,7 @@ class ObjectWriter:
                 # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
                 # I do not call safe_flush_to_disk as I need to flush only the folder metadata (I think)
                 # Otherwise I should open again the file
-                if os.name == 'posix':
+                if os.name == "posix":
                     dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
                     os.fsync(dirfd)
                     os.close(dirfd)
@@ -305,17 +358,19 @@ class ObjectWriter:
 
             if self._filehandle is not None and not self._filehandle.closed:
                 self._filehandle.close()
-            if os.path.exists(self._obj_path):
+            if self._obj_path and os.path.exists(self._obj_path):
                 os.remove(self._obj_path)
 
-    def _store_duplicate_copy(self, source_file, hashkey):
+    def _store_duplicate_copy(self, source_file: str, hashkey: str) -> None:
         """This function is called (on Windows) when trying to store a file that already exists.
 
         In the `clean_storage` I will clean up old copies if the hash matches.
         """
         # Destination file starts with the hashkey, then has an dot as a separator, and is
         # followed by un UUID to make sure there is never a collision
-        dest_file = os.path.join(self._duplicates_folder, '{}.{}'.format(hashkey, uuid.uuid4().hex))
+        dest_file = os.path.join(
+            self._duplicates_folder, f"{hashkey}.{uuid.uuid4().hex}"
+        )
         os.rename(source_file, dest_file)
 
 
@@ -323,47 +378,10 @@ class PackedObjectReader:
     """A class to read from a pack file.
 
     This ensures that the .read() method works and does not go beyond the
-    length of the given object."""
+    length of the given object.
+    """
 
-    @property
-    def mode(self):
-        return self._fhandle.mode
-
-    @property
-    def seekable(self):
-        """Return whether object supports random access."""
-        return True
-
-    def seek(self, target, whence=0):
-        """Change stream position.
-
-        Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
-
-        :raises NotImplementedError: if ``whence`` is not 0 or 1.
-        """
-        if whence not in [0, 1]:
-            raise NotImplementedError('Invalid value for `whence`: only 0 and 1 are currently implemented.')
-
-        if whence == 1:
-            target = self.tell() + target
-
-        if target < 0:
-            raise ValueError('specified target would exceed the lower boundary of bytes that are accessible.')
-        if target > self._length:
-            raise ValueError('specified target would exceed the upper boundary of bytes that are accessible.')
-        new_pos = self._offset + target
-        self._fhandle.seek(new_pos)
-        # Next function MUST be called every time we move into the _fhandle file, to update the position
-        self._update_pos()
-
-        # seek returns the new absolute position
-        return target
-
-    def tell(self):
-        """Return current stream position, relative to the internal offset."""
-        return self._fhandle.tell() - self._offset
-
-    def __init__(self, fhandle, offset, length):
+    def __init__(self, fhandle: StreamSeekBytesType, offset: int, length: int) -> None:
         """
         Initialises the reader to a pack file.
 
@@ -372,8 +390,8 @@ class PackedObjectReader:
         :param length: the integer length of the byte stream.
           The read() method will ensure that you never go beyond the given length.
         """
-        assert 'b' in fhandle.mode
-        assert 'r' in fhandle.mode
+        assert "b" in fhandle.mode
+        assert "r" in fhandle.mode
 
         self._fhandle = fhandle
         self._offset = offset
@@ -383,7 +401,51 @@ class PackedObjectReader:
         self._fhandle.seek(self._offset)
         self._update_pos()
 
-    def _update_pos(self):
+    @property
+    def mode(self) -> str:
+        return self._fhandle.mode
+
+    @staticmethod
+    def seekable() -> bool:
+        """Return whether object supports random access."""
+        return True
+
+    def seek(self, target: int, whence: int = 0) -> int:
+        """Change stream position.
+
+        Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
+
+        :raises NotImplementedError: if ``whence`` is not 0 or 1.
+        """
+        if whence not in [0, 1]:
+            raise NotImplementedError(
+                "Invalid value for `whence`: only 0 and 1 are currently implemented."
+            )
+
+        if whence == 1:
+            target = self.tell() + target
+
+        if target < 0:
+            raise ValueError(
+                "specified target would exceed the lower boundary of bytes that are accessible."
+            )
+        if target > self._length:
+            raise ValueError(
+                "specified target would exceed the upper boundary of bytes that are accessible."
+            )
+        new_pos = self._offset + target
+        self._fhandle.seek(new_pos)
+        # Next function MUST be called every time we move into the _fhandle file, to update the position
+        self._update_pos()
+
+        # seek returns the new absolute position
+        return target
+
+    def tell(self) -> int:
+        """Return current stream position, relative to the internal offset."""
+        return self._fhandle.tell() - self._offset
+
+    def _update_pos(self) -> None:
         """Update the internal position variable with the correct value.
 
         This function must be called (internally) after any operation that
@@ -398,7 +460,7 @@ class PackedObjectReader:
             "PackedObjectReader didn't manage to prevent to go beyond the length (in the negative direction)!"
         )
 
-    def read(self, size=-1):
+    def read(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes.
 
@@ -423,6 +485,13 @@ class PackedObjectReader:
         self._update_pos()
         return stream
 
+    def __enter__(self) -> "PackedObjectReader":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+
 
 class CallbackStreamWrapper:
     """A class to just wrap a read stream, but perform a callback every few bytes.
@@ -430,46 +499,13 @@ class CallbackStreamWrapper:
     Should be used only for streams open in read mode.
     """
 
-    @property
-    def mode(self):
-        return self._stream.mode
-
-    @property
-    def seekable(self):
-        """Return whether object supports random access."""
-        return self._stream.seekable
-
-    def seek(self, target, whence=0):
-        """Change stream position."""
-        if target > self.tell():
-            if self._callback:
-                self._since_last_update += target - self.tell()
-                if self._since_last_update >= self._update_every:
-                    self._callback(action='update', value=self._since_last_update)
-                    self._since_last_update = 0
-        else:
-            self.close_callback()
-            if self._callback:
-                # If we have a callback, compute the total count of objects in this pack
-                self._callback(
-                    action='init',
-                    value={
-                        'total': self._total_length,
-                        'description': '{} [rewind]'.format(self._description)
-                    }
-                )
-                # Counter of how many objects have been since since the last update.
-                # A new callback will be performed when this value is > update_every.
-                self._since_last_update = target
-                self._callback(action='update', value=self._since_last_update)
-
-        return self._stream.seek(target, whence)
-
-    def tell(self):
-        """Return current stream position."""
-        return self._stream.tell()
-
-    def __init__(self, stream, callback, total_length=0, description='Streamed object'):
+    def __init__(
+        self,
+        stream: StreamSeekBytesType,
+        callback: Optional[Callable],
+        total_length: int = 0,
+        description: str = "Streamed object",
+    ) -> None:
         """
         Initialises the reader to a given stream.
 
@@ -482,16 +518,56 @@ class CallbackStreamWrapper:
         self._total_length = total_length
         self._description = description
 
+        # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
+        self._update_every: int = max(int(total_length / 400), 1) if total_length else 1
+        # Counter of how many objects have been since since the last update.
+        # A new callback will be performed when this value is > update_every.
+        self._since_last_update: int = 0
         if self._callback:
             # If we have a callback, compute the total count of objects in this pack
-            self._callback(action='init', value={'total': total_length, 'description': description})
-            # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
-            self._update_every = max(int(total_length / 400), 1) if total_length else 1
-            # Counter of how many objects have been since since the last update.
-            # A new callback will be performed when this value is > update_every.
-            self._since_last_update = 0
+            self._callback(
+                action="init", value={"total": total_length, "description": description}
+            )
 
-    def read(self, size=-1):
+    @property
+    def mode(self) -> str:
+        return self._stream.mode
+
+    def seekable(self) -> bool:
+        """Return whether object supports random access."""
+        return self._stream.seekable()
+
+    def seek(self, target: int, whence: int = 0) -> int:
+        """Change stream position."""
+        if target > self.tell():
+            if self._callback:
+                self._since_last_update = self._since_last_update + target - self.tell()
+                if self._since_last_update >= self._update_every:
+                    self._callback(action="update", value=self._since_last_update)
+                    self._since_last_update = 0
+        else:
+            self.close_callback()
+            if self._callback:
+                # If we have a callback, compute the total count of objects in this pack
+                self._callback(
+                    action="init",
+                    value={
+                        "total": self._total_length,
+                        "description": f"{self._description} [rewind]",
+                    },
+                )
+                # Counter of how many objects have been since since the last update.
+                # A new callback will be performed when this value is > update_every.
+                self._since_last_update = target
+                self._callback(action="update", value=self._since_last_update)
+
+        return self._stream.seek(target, whence)
+
+    def tell(self) -> int:
+        """Return current stream position."""
+        return self._stream.tell()
+
+    def read(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes.
 
@@ -506,12 +582,19 @@ class CallbackStreamWrapper:
         if self._callback:
             self._since_last_update += len(data)
             if self._since_last_update >= self._update_every:
-                self._callback(action='update', value=self._since_last_update)
+                self._callback(action="update", value=self._since_last_update)
                 self._since_last_update = 0
 
         return data
 
-    def close_callback(self):
+    def __enter__(self) -> "CallbackStreamWrapper":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+
+    def close_callback(self) -> None:
         """
         Call the wrap up closing calls for the callback.
 
@@ -520,12 +603,14 @@ class CallbackStreamWrapper:
         if self._callback:
             # Final call to complete the bar
             if self._since_last_update:
-                self._callback(action='update', value=self._since_last_update)
+                self._callback(action="update", value=self._since_last_update)
             # Perform any wrap-up, if needed
-            self._callback(action='close', value=None)
+            self._callback(action="close", value=None)
 
 
-def rename_callback(callback, new_description):
+def rename_callback(
+    callback: Optional[Callable], new_description: str
+) -> Optional[Callable]:
     """Given a callback, return a new one where the description will be changed to `new_name`.
 
     Works even if `callback` is None (in this case, it returns None).
@@ -538,11 +623,11 @@ def rename_callback(callback, new_description):
 
     def wrapper_callback(action, value):
         """A wrapper callback with changed description."""
-        if action == 'init':
+        if action == "init":
             new_value = value.copy()
-            new_value['description'] = new_description
-            return callback(action, new_value)
-        return callback(action, value)
+            new_value["description"] = new_description
+            return callback(action, new_value)  # type: ignore
+        return callback(action, value)  # type: ignore
 
     return wrapper_callback
 
@@ -557,23 +642,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     _CHUNKSIZE = 524288
 
-    @property
-    @abc.abstractmethod
-    def decompressobj_class(self):
-        """Return here the `decompressobj` class of the given compression type.
-
-        Needs to be implemented by subclasses.
-        """
-
-    @property
-    @abc.abstractmethod
-    def decompress_error(self):
-        """Return here the Exception (or tuple of exceptions) that need to be caught if there is a compression error.
-
-        Needs to be implemented by subclasses.
-        """
-
-    def __init__(self, compressed_stream):
+    def __init__(self, compressed_stream: StreamSeekBytesType) -> None:
         """Create the class from a given compressed bytestream.
 
         :param compressed_stream: an open bytes stream that supports the .read() method,
@@ -581,10 +650,14 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         """
         self._compressed_stream = compressed_stream
         self._decompressor = self.decompressobj_class()
-        self._internal_buffer = b''
+        self._internal_buffer = b""
         self._pos = 0
 
-    def read(self, size=-1):
+    @property
+    def mode(self) -> str:
+        return getattr(self._compressed_stream, "mode", "rb")
+
+    def read(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes.
 
@@ -605,14 +678,16 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
                     break
                 data.append(next_chunk)
             # Making a list and joining does many less mallocs, so should be faster
-            return b''.join(data)
+            return b"".join(data)
 
         if size == 0:
-            return b''
+            return b""
 
         while len(self._internal_buffer) < size:
             old_unconsumed = self._decompressor.unconsumed_tail
-            next_chunk = self._compressed_stream.read(max(0, self._CHUNKSIZE - len(old_unconsumed)))
+            next_chunk = self._compressed_stream.read(
+                max(0, self._CHUNKSIZE - len(old_unconsumed))
+            )
 
             # In the previous step, I might have some leftover data
             # since I am using the max_size parameter of .decompress()
@@ -621,9 +696,11 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             # not need more than `size` bytes. Leftovers will be left in
             # .unconsumed_tail and reused a the next loop
             try:
-                decompressed_chunk = self._decompressor.decompress(compressed_chunk, size)
+                decompressed_chunk = self._decompressor.decompress(
+                    compressed_chunk, size
+                )
             except self.decompress_error as exc:
-                raise ValueError('Error while uncompressing data: {}'.format(exc))
+                raise ValueError("Error while uncompressing data") from exc
             self._internal_buffer += decompressed_chunk
 
             if not next_chunk and not self._decompressor.unconsumed_tail:
@@ -633,26 +710,52 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
                     break
                 raise ValueError(
                     "There is no data in the reading buffer, but we didn't reach the end of "
-                    'the compressed stream: there must be a problem in the incoming buffer'
+                    "the compressed stream: there must be a problem in the incoming buffer"
                 )
 
         # Note that we could be here also with len(self._internal_buffer) < size,
         # if we used 'break' because the internal buffer reached EOF.
-        to_return, self._internal_buffer = self._internal_buffer[:size], self._internal_buffer[size:]
+        to_return, self._internal_buffer = (
+            self._internal_buffer[:size],
+            self._internal_buffer[size:],
+        )
         self._pos += len(to_return)
 
         return to_return
 
+    def __enter__(self) -> "ZlibLikeBaseStreamDecompresser":
+        """Use as context manager."""
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+
     @property
-    def seekable(self):
+    @abc.abstractmethod
+    def decompressobj_class(self):
+        """Return here the `decompressobj` class of the given compression type.
+
+        Needs to be implemented by subclasses.
+        """
+
+    @property
+    @abc.abstractmethod
+    def decompress_error(self):
+        """Return here the Exception (or tuple of exceptions) that need to be caught if there is a compression error.
+
+        Needs to be implemented by subclasses.
+        """
+
+    @staticmethod
+    def seekable() -> bool:
         """Return whether object supports random access."""
         return True
 
-    def tell(self):
+    def tell(self) -> int:
         """Return current position in file."""
         return self._pos
 
-    def seek(self, target, whence=0):
+    def seek(self, target: int, whence: int = 0) -> int:
         """Change stream position.
 
         ..note:: This is particularly inefficient if `target > 0` since it will have
@@ -663,18 +766,20 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         read_chunk_size = 256 * 1024
 
         if whence not in [0, 1]:
-            raise NotImplementedError('Invalid value for `whence`: only 0 and 1 are currently implemented.')
+            raise NotImplementedError(
+                "Invalid value for `whence`: only 0 and 1 are currently implemented."
+            )
 
         if whence == 1:
             target = self.tell() + target
 
         if target < 0:
-            raise ValueError('negative seek position {}'.format(target))
+            raise ValueError(f"negative seek position {target}")
         if target == 0:
             # Going back to zero it's efficient. I need to reset all internal variables, as in the init.
             self._compressed_stream.seek(0)
             self._decompressor = self.decompressobj_class()
-            self._internal_buffer = b''
+            self._internal_buffer = b""
             self._pos = 0
             return 0
 
@@ -698,44 +803,52 @@ class ZlibStreamDecompresser(ZlibLikeBaseStreamDecompresser):
     uncompressed bytes when being read via the .read() method."""
 
     @property
-    def decompressobj_class(self):
+    def decompressobj_class(self) -> Callable:
         """Return the `decompressobj` class of zlib."""
         return zlib.decompressobj
 
     @property
-    def decompress_error(self):
+    def decompress_error(self) -> Type[error]:
         """Return the zlib error raised when there is an error."""
         return zlib.error
 
 
-def _get_compression_algorithm_info(algorithm):
+def _get_compression_algorithm_info(algorithm: str):
     """Return a compresser and a decompresser for the given algorithm."""
     known_algorithms = {
-        'zlib': {
-            'compressobj': zlib.compressobj,
-            'variant_name': 'level',
-            'variant_mapper': {str(i): i for i in range(1, 10)},  # from 1 to 9
-            'decompresser': ZlibStreamDecompresser
+        "zlib": {
+            "compressobj": zlib.compressobj,
+            "variant_name": "level",
+            "variant_mapper": {str(i): i for i in range(1, 10)},  # from 1 to 9
+            "decompresser": ZlibStreamDecompresser,
         }
     }
 
-    algorithm_name, _, variant = algorithm.partition('+')
+    algorithm_name, _, variant = algorithm.partition("+")
     try:
         algorithm_info = known_algorithms[algorithm_name]
     except KeyError:
-        raise ValueError("Unknown or unsupported compression algorithm '{}'".format(algorithm_name))
+        # pylint: disable=raise-missing-from)
+        raise ValueError(
+            f"Unknown or unsupported compression algorithm '{algorithm_name}'"
+        )
     try:
-        kwargs = {algorithm_info['variant_name']: algorithm_info['variant_mapper'][variant]}
-        compresser = algorithm_info['compressobj'](**kwargs)
+        kwargs = {
+            algorithm_info["variant_name"]: algorithm_info["variant_mapper"][variant]  # type: ignore
+        }
+        compresser = algorithm_info["compressobj"](**kwargs)  # type: ignore
     except KeyError:
-        raise ValueError("Invalid variant '{}' for compression algorithm '{}'".format(variant, algorithm_name))
+        # pylint: disable=raise-missing-from
+        raise ValueError(
+            f"Invalid variant '{variant}' for compression algorithm '{algorithm_name}'"
+        )
 
-    decompresser = algorithm_info['decompresser']
+    decompresser = algorithm_info["decompresser"]
 
     return compresser, decompresser
 
 
-def get_compressobj_instance(algorithm):
+def get_compressobj_instance(algorithm: str):
     """Return a compressobj class with a given algorithm.
 
     :param algorithm: A string defining the algorithm and its variant.
@@ -746,7 +859,7 @@ def get_compressobj_instance(algorithm):
     return _get_compression_algorithm_info(algorithm)[0]
 
 
-def get_stream_decompresser(algorithm):
+def get_stream_decompresser(algorithm: str) -> Type[ZlibStreamDecompresser]:
     """Return a StreamDecompresser class with a given algorithm.
 
     :param algorithm: a compression algorithm (see `get_compressionobj_instance` for a description).
@@ -757,7 +870,7 @@ def get_stream_decompresser(algorithm):
 class ZeroStream:
     """A class to return an (unseekable) stream returning only zeros, with length length."""
 
-    def __init__(self, length):
+    def __init__(self, length: int) -> None:
         """
         Initialises the object and specifies the expected length.
 
@@ -767,7 +880,11 @@ class ZeroStream:
         self._length = length
         self._pos = 0
 
-    def read(self, size=-1):
+    @property
+    def mode(self) -> str:
+        return "rb"
+
+    def read(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes (composed only of zeros).
 
@@ -782,18 +899,18 @@ class ZeroStream:
         remaining_bytes = self._length - self._pos
 
         if size is None or size < 0:
-            stream = b'\x00' * remaining_bytes
+            stream = b"\x00" * remaining_bytes
             self._pos += remaining_bytes
             return stream
 
         # Get the requested bytes, but at most the remaining_bytes
         bytes_to_fetch = min(remaining_bytes, size)
-        stream = b'\x00' * bytes_to_fetch
+        stream = b"\x00" * bytes_to_fetch
         self._pos += bytes_to_fetch
         return stream
 
 
-def is_known_hash(hash_type):
+def is_known_hash(hash_type: str) -> bool:
     """Return True if the hash_type is known, False otherwise."""
     try:
         get_hash(hash_type)
@@ -802,17 +919,18 @@ def is_known_hash(hash_type):
         return False
 
 
-def get_hash(hash_type):
+def get_hash(hash_type: str) -> Callable:
     """Return a hash class with an update method and a hexdigest method."""
-    known_hashes = {'sha1': hashlib.sha1, 'sha256': hashlib.sha256}
+    known_hashes = {"sha1": hashlib.sha1, "sha256": hashlib.sha256}
 
     try:
         return known_hashes[hash_type]
     except KeyError:
-        raise ValueError("Unknown or unsupported hash type '{}'".format(hash_type))
+        # pylint: disable=raise-missing-from
+        raise ValueError(f"Unknown or unsupported hash type '{hash_type}'")
 
 
-def _compute_hash_for_filename(filename, hash_type):
+def _compute_hash_for_filename(filename: str, hash_type: str) -> Optional[str]:
     """Return the hash for the given file.
 
     Will read the file in chunks.
@@ -825,7 +943,7 @@ def _compute_hash_for_filename(filename, hash_type):
 
     hasher = get_hash(hash_type)()
     try:
-        with open(filename, 'rb') as fhandle:
+        with open(filename, "rb") as fhandle:
             while True:
                 chunk = fhandle.read(_chunksize)
                 hasher.update(chunk)
@@ -840,10 +958,9 @@ def _compute_hash_for_filename(filename, hash_type):
 
 
 class HashWriterWrapper:
-    """A class that gets a stream open in write mode and wraps it in a new class that computes a hash while writing.
-    """
+    """A class that gets a stream open in write mode and wraps it in a new class that computes a hash while writing."""
 
-    def __init__(self, write_stream, hash_type):
+    def __init__(self, write_stream: BinaryIO, hash_type: str) -> None:
         """Create the class from a given compressed bytestream.
 
         :param write_stream: an open bytes stream that supports the .write() method.
@@ -852,22 +969,22 @@ class HashWriterWrapper:
            be also passed to a hashlib implementation to compute the hash.
         """
         self._write_stream = write_stream
-        assert 'b' in self._write_stream.mode
+        assert "b" in self._write_stream.mode
         self._hash_type = hash_type
 
         self._hash = get_hash(self._hash_type)()
         self._position = self._write_stream.tell()
 
     @property
-    def hash_type(self):
+    def hash_type(self) -> str:
         """Return the currently used hash type."""
         return self._hash_type
 
-    def flush(self):
+    def flush(self) -> None:
         """Flush the internal I/O buffer."""
         self._write_stream.flush()
 
-    def write(self, data):
+    def write(self, data: bytes) -> int:
         """
         Write binary data to the underlying write_stream object, and compute a hash at the same time.
         """
@@ -876,8 +993,8 @@ class HashWriterWrapper:
         # written to disk (e.g. a first chunk of bytes, and then the disk became full).
         # We want to make sure we are computing the correct hash.
         assert self._position == self._write_stream.tell(), (
-            'Error in the position ({} vs {}), possibly an error occurred in a previous `write` call. '
-            'This HashWriterMapper object is invalid and should not be used anymore'.format(
+            "Error in the position ({} vs {}), possibly an error occurred in a previous `write` call. "
+            "This HashWriterMapper object is invalid and should not be used anymore".format(
                 self._position, self._write_stream.tell()
             )
         )
@@ -891,26 +1008,27 @@ class HashWriterWrapper:
 
         # Update the hash information
         self._hash.update(data)
+        return self._position
 
-    def hexdigest(self):
+    def hexdigest(self) -> str:
         """Return the hexdigest of the hash computed until now."""
         return self._hash.hexdigest()
 
     @property
-    def closed(self):
+    def closed(self) -> bool:
         """Return True if the underlying file is closed."""
         return self._write_stream.closed
 
-    def close(self):
+    def close(self) -> None:
         """Close the underlying file."""
         self._write_stream.close()
 
     @property
-    def mode(self):
+    def mode(self) -> str:
         """Return a string with the mode the file was open with."""
         return self._write_stream.mode
 
-    def fileno(self):
+    def fileno(self) -> int:
         """Return the integer file descriptor of the underlying file object."""
         return self._write_stream.fileno()
 
@@ -930,7 +1048,11 @@ def chunk_iterator(iterator, size):
     return iter(lambda: tuple(itertools.islice(iterator, size)), ())
 
 
-def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
+def safe_flush_to_disk(
+    fhandle: Union[StreamWriteBytesType, HashWriterWrapper],
+    real_path: str,
+    use_fullsync: bool = False,
+) -> None:
     """Tries to to its best to safely commit to disk.
 
     Note that calling this is needed to reduce the risk of data loss due to, e.g., a power failure.
@@ -948,10 +1070,14 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
     fhandle.flush()
 
     # Default fsync function, replaced on Mac OS X
-    _fsync_function = lambda fileno: os.fsync(fileno)  # pylint: disable=unnecessary-lambda
+    _fsync_function: Callable[
+        [Any], Any
+    ] = lambda fileno: os.fsync(  # pylint: disable=unnecessary-lambda
+        fileno
+    )
 
     # Flush to disk
-    if hasattr(fcntl, 'F_FULLFSYNC') and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
+    if hasattr(fcntl, "F_FULLFSYNC") and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
         # This exists only on Mac OS X; See e.g. (link split on two lines, put them together):
         # https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/
         #          man2/fsync.2.html
@@ -963,21 +1089,26 @@ def safe_flush_to_disk(fhandle, real_path, use_fullsync=False):
         # > should use F_FULLFSYNC to ensure that their data is written in the order
         # > they expect.  Please see fcntl(2) for more detail.
         # Replace the _fsync_function
-        _fsync_function = lambda fileno: fcntl.fcntl(fileno, fcntl.F_FULLFSYNC)  # pylint: disable=no-member,useless-suppression
+        _fsync_function = lambda fileno: fcntl.fcntl(
+            fileno, fcntl.F_FULLFSYNC  # pylint: disable=no-member,useless-suppression
+        )
     else:
         # In general this is the function to call
         _fsync_function(fileno)
 
     # Flush also the parent directory on posix, see e.g.
     # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
-    if os.name == 'posix':
+    if os.name == "posix":
         dirfd = os.open(os.path.dirname(real_path), os.O_DIRECTORY)
         # Also here call the correct fsync function
         _fsync_function(dirfd)
         os.close(dirfd)
 
 
-def compute_hash_and_size(stream, hash_type):
+def compute_hash_and_size(
+    stream: StreamReadBytesType,
+    hash_type: str,
+) -> Tuple[str, int]:
     """Given a stream and a hash type, return the hash key (hexdigest) and the total size.
 
     :param stream: an open stream
@@ -1000,7 +1131,11 @@ def compute_hash_and_size(stream, hash_type):
     return hasher.hexdigest(), size
 
 
-def detect_where_sorted(left_iterator, right_iterator, left_key=None):  # pylint: disable=too-many-branches, too-many-statements
+def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statements
+    left_iterator: Iterable[Any],
+    right_iterator: Iterable[Any],
+    left_key: Optional[Callable] = None,
+) -> Iterator[Tuple[Any, Location]]:
     """Generator that loops in alternation (but only once each) the two iterators and yields an element, specifying if
     it's only on the left, only on the right, or in both.
 
@@ -1129,13 +1264,13 @@ def detect_where_sorted(left_iterator, right_iterator, left_key=None):  # pylint
         now_left = new_now_left
 
 
-def yield_first_element(iterator):
+def yield_first_element(iterator: Iterable[Sequence]) -> Iterator[Any]:
     """Given an iterator that returns a tuple, return an iterator that yields only the first element of the tuple."""
     for elem in iterator:
         yield elem[0]
 
 
-def merge_sorted(iterator1, iterator2):
+def merge_sorted(iterator1: Iterable[Any], iterator2: Iterable[Any]) -> Iterator[Any]:
     """Given two sorted iterators, return another sorted iterator being the union of the two."""
     for item, _ in detect_where_sorted(iterator1, iterator2):
         # Whereever it is (only left, only right, on both) I return the object.
