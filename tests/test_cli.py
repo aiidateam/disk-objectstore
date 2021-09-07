@@ -1,5 +1,4 @@
 """Test the CLI commands"""
-import os
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -9,11 +8,20 @@ from disk_objectstore import cli
 
 def test_create(temp_dir):
     """Test creating a container"""
-    path = os.path.join(temp_dir, "dostore")
+    path = Path(temp_dir) / "dostore"
     obj = cli.ContainerContext(path)
     result = CliRunner().invoke(cli.create, obj=obj)
     assert result.exit_code == 0, result.output
-    assert os.path.exists(path)
+    assert path.exists()
+
+
+def test_create_exists(temp_dir):
+    """Test creating a container that already exists fails"""
+    path = Path(temp_dir) / "dostore"
+    path.touch()
+    obj = cli.ContainerContext(path)
+    result = CliRunner().invoke(cli.create, obj=obj)
+    assert result.exit_code != 0, result.output
 
 
 def test_status(temp_container):
@@ -25,18 +33,17 @@ def test_status(temp_container):
 
 
 def test_add_file(temp_dir, temp_container):
-    """Test adding a file to a container"""
+    """Test add-files command"""
     path = Path(temp_dir, "test.txt")
     path.write_bytes(b"test")
     obj = cli.ContainerContext(temp_container.get_folder())
     result = CliRunner().invoke(cli.add_files, [str(path)], obj=obj)
-    print(result.output)
     assert result.exit_code == 0, result.output
     assert sum(1 for _ in temp_container.list_all_objects()) == 1
 
 
 def test_optimize(temp_container):
-    """Test optimizing a container"""
+    """Test optimize command"""
     temp_container.init_container(clear=True)
     temp_container.add_object(b"test")
     assert temp_container.count_objects() == {
@@ -53,3 +60,11 @@ def test_optimize(temp_container):
         "packed": 1,
         "pack_files": 1,
     }
+
+
+def test_optimize_cancel(temp_container):
+    """Test cancelling optimize command"""
+    obj = cli.ContainerContext(temp_container.get_folder())
+    result = CliRunner().invoke(cli.optimize, obj=obj, input="n")
+    assert result.exit_code == 1, result.output
+    assert "Abort" in result.output

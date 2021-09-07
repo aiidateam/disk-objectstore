@@ -113,11 +113,8 @@ def optimize(
     dostore: ContainerContext, non_interactive: bool, compress: bool, vacuum: bool
 ):
     """Optimize the container's memory use"""
-    if not non_interactive and not click.confirm(
-        "Is this the only process accessing the container?"
-    ):
-        click.echo("Skipping optimization")
-        return
+    if not non_interactive:
+        click.confirm("Is this the only process accessing the container?", abort=True)
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
     click.echo(f"Initial container size: {round(size/1000, 2)} Mb")
     with dostore.container as container:
