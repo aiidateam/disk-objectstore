@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1631041025030,
+  "lastUpdate": 1631041054834,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6302,6 +6302,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 6.891789090093281e-8",
             "extra": "mean: 234.1268020609786 nsec\nrounds: 193237"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a053f2a421b3c1dba0f660c64d126ef078bc4432",
+          "message": "✨ NEW: Add basic CLI (#116)\n\nAdded basic commands for container creation, inspection and cleaning.\r\nSee `README.md` tutorial section for details.\r\n\r\nAlso added __enter__/__exit__ for Container,\r\nto allow it to be used as a context manager\r\nwhich calls Container.close() on exit (i.e. closes the database).",
+          "timestamp": "2021-09-07T20:55:52+02:00",
+          "tree_id": "0b64013331471b98e551ba0a715fec848653fc3d",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/a053f2a421b3c1dba0f660c64d126ef078bc4432"
+        },
+        "date": 1631041053392,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.2663517639865975,
+            "unit": "iter/sec",
+            "range": "stddev: 0.13908858820711184",
+            "extra": "mean: 789.670002 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.3275878247072823,
+            "unit": "iter/sec",
+            "range": "stddev: 0.02122633192129847",
+            "extra": "mean: 753.2458353333335 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 5.0249681724043445,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0478103717395739",
+            "extra": "mean: 199.0062355999999 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 11.48556084534865,
+            "unit": "iter/sec",
+            "range": "stddev: 0.024881420652227197",
+            "extra": "mean: 87.06583975 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.921150449222882,
+            "unit": "iter/sec",
+            "range": "stddev: 0.030178365048075494",
+            "extra": "mean: 342.3308786666676 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1537592.6757181226,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000015383690687205766",
+            "extra": "mean: 650.3673019468284 nsec\nrounds: 161031"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3367741.613866393,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000007385126638928479",
+            "extra": "mean: 296.93489425748936 nsec\nrounds: 197981"
           }
         ]
       }
