@@ -4,7 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from disk_objectstore import Container, cli
+from disk_objectstore import cli
 
 
 def test_create(temp_dir):
