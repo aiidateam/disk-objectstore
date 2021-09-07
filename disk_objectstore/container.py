@@ -141,6 +141,14 @@ class Container:  # pylint: disable=too-many-public-methods
             self._session.close()
             self._session = None
 
+    def __enter__(self) -> "Container":
+        """Return a context manager that will close the session when exiting the context."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        """Close the session when exiting the context."""
+        self.close()
+
     def _get_sandbox_folder(self) -> str:
         """Return the path to the sandbox folder that is used during a new object creation.
 
