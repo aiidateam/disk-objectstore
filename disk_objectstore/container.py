@@ -11,6 +11,7 @@ import warnings
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -18,6 +19,7 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Sequence,
     Set,
     Tuple,
     Type,
@@ -117,7 +119,7 @@ class Container:  # pylint: disable=too-many-public-methods
     # (after VACUUMing, as mentioned above).
     _MAX_CHUNK_ITERATE_LENGTH = 9500
 
-    def __init__(self, folder: str) -> None:
+    def __init__(self, folder: Union[str, Path]) -> None:
         """Create the class that represents the container.
 
         :param folder: the path to a folder that will host this object-store container.
@@ -530,7 +532,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Union[List[str], Tuple[str, ...]],
+        hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
     ) -> Iterator[Tuple[str, Dict[str, Any]]]:
@@ -539,7 +541,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Union[List[str], Tuple[str, ...]],
+        hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
     ) -> Iterator[Tuple[str, Optional[StreamSeekBytesType], Dict[str, Any]]]:
@@ -547,7 +549,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
-        hashkeys: Union[List[str], Tuple[str, ...]],
+        hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: bool,
     ) -> Iterator[
@@ -824,7 +826,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     @contextmanager
     def get_objects_stream_and_meta(
-        self, hashkeys: List[str], skip_if_missing: bool = True
+        self, hashkeys: Sequence[str], skip_if_missing: bool = True
     ) -> Iterator[Iterator[Tuple[str, Optional[StreamSeekBytesType], Dict[str, Any]]]]:
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
@@ -868,7 +870,7 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
     def get_objects_meta(
-        self, hashkeys: Union[List[str], Tuple[str, ...]], skip_if_missing: bool = True
+        self, hashkeys: Sequence[str], skip_if_missing: bool = True
     ) -> Iterator[Tuple[str, Dict[str, Any]]]:
         """A generator yielding pairs of (hashkey, metadata).
 
@@ -1988,7 +1990,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-arguments
         self,
-        hashkeys: List[str],
+        hashkeys: Sequence[str],
         source_container: "Container",
         compress: bool = False,
         target_memory_bytes: int = 104857600,
@@ -2213,7 +2215,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def export(
         self,
-        hashkeys: List[str],
+        hashkeys: Sequence[str],
         other_container: "Container",
         compress: bool = False,
         target_memory_bytes: int = 104857600,
