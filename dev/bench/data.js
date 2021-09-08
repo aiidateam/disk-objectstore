@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1631080729913,
+  "lastUpdate": 1631080884849,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -10330,6 +10330,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.6496043091494e-7",
             "extra": "mean: 258.4402168631032 nsec\nrounds: 185186"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chrisj_sewell@hotmail.com",
+            "name": "Chris Sewell",
+            "username": "chrisjsewell"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0120568a992b41a55b325f3217d4902b5281070",
+          "message": "🔧 MAINTAIN: Make types more permissive (#121)\n\nAllow `Container` folder to be a `pathlib.Path`,\r\nand make hashkeys `Sequence[str]` rather than just `List[str]`.",
+          "timestamp": "2021-09-08T07:57:10+02:00",
+          "tree_id": "39bdfe2a4d7b1f4ed0561acc5c11bd66b08cd220",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/c0120568a992b41a55b325f3217d4902b5281070"
+        },
+        "date": 1631080880843,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4111007912606575,
+            "unit": "iter/sec",
+            "range": "stddev: 0.024285571865616033",
+            "extra": "mean: 708.6666 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.19302647712659088,
+            "unit": "iter/sec",
+            "range": "stddev: 0.23124440270748856",
+            "extra": "mean: 5.1806364333333335 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 8.966463632720744,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008819865625316434",
+            "extra": "mean: 111.52668888889077 msec\nrounds: 9"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.480990441822305,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002928350257088106",
+            "extra": "mean: 69.05604999999977 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.6952894426411116,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004048074170936502",
+            "extra": "mean: 371.0176666666645 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3784398.499614631,
+            "unit": "iter/sec",
+            "range": "stddev: 7.156827067124568e-8",
+            "extra": "mean: 264.24278524086134 nsec\nrounds: 175439"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3819306.403586021,
+            "unit": "iter/sec",
+            "range": "stddev: 2.6923212374993143e-7",
+            "extra": "mean: 261.8276446900047 nsec\nrounds: 188680"
           }
         ]
       }
