@@ -3039,9 +3039,9 @@ def test_packs_no_holes(
     assert sizes["total_size_packed"] == len(content1) + len(content2) + len(content3)
 
     if no_holes:
-        assert (
-            (sizes["total_size_packed_on_disk"] + 8 * 3) == sizes["total_size_packfiles_on_disk"]
-        )
+        assert (sizes["total_size_packed_on_disk"] + 8 * 3) == sizes[
+            "total_size_packfiles_on_disk"
+        ]
     else:
         # We have added twice each object. Note: we cannot use total_size_packed because this would be
         # before compression
@@ -3292,6 +3292,37 @@ def test_repack(temp_dir):
 
     # Important before exiting from the tests
     temp_container.close()
+
+
+def test_index_reconstruction(temp_dir):
+    """Test reconstructing the index from packed file"""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 18 bytes each. Will will one pack
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+    # Now reconstruct from pack 0
+    obj_dicts = temp_container._get_object_dicts_from_packed(0)
+    assert len(obj_dicts) == 3
+
+    for item in obj_dicts:
+        hashkey = item["hashkey"]
+        assert temp_container.has_object(item["hashkey"])
+        meta = temp_container.get_object_meta(hashkey)
+        assert meta["size"] == item["size"]
+        assert meta["pack_length"] == item["length"]
+        assert meta["pack_compressed"] == item["compressed"]
+        assert meta["pack_offset"] == item["offset"]
 
 
 def test_not_implemented_repacks(temp_container):

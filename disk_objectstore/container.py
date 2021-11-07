@@ -6,9 +6,9 @@ import io
 import json
 import os
 import shutil
+import struct
 import uuid
 import warnings
-import struct
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
@@ -68,8 +68,9 @@ ObjQueryResults = namedtuple(
     "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
 )
 
-MARKER_LENGTH=8
-MARKER_FORMAT=">q"
+MARKER_LENGTH = 8
+MARKER_FORMAT = ">q"
+
 
 class ObjectType(Enum):
     """Enum that describes the various types of an objec (as returned in ``meta['type']``)."""
@@ -1269,8 +1270,8 @@ class Container:  # pylint: disable=too-many-public-methods
            support at least the .read() method with a size parameter).
         :param compress: if True, compress the stream when writing to disk
         :param hash_type: if None, no hash is computed (more efficient). If it is a string, use that hash type.
-        :return: a tuple with ``(number_of_bytes, number_of_bytes_written, hashkey)`` where ``number_of_bytes`` is the (uncompressed)
-            size, ``number_of_bytes_written`` is the bytes written to the pack, 
+        :return: a tuple with ``(number_of_bytes, number_of_bytes_written, hashkey)`` where ``number_of_bytes``
+            is the (uncompressed) size, ``number_of_bytes_written`` is the bytes written to the pack,
             and ``hash_key`` is ``None`` if ``hash_type`` is ``None``, otherwise it contains the hash
             computed with the given ``hash_type`` algorithm.
         """
@@ -1304,14 +1305,17 @@ class Container:  # pylint: disable=too-many-public-methods
             # Write the remaining of the file, if any leftovers are still present in the
             # compressobj
             count_write_bytes += pack_handle.write(compressobj.flush())
-            pack_handle.write(struct.pack('>q', -count_write_bytes))
+            pack_handle.write(struct.pack(">q", -count_write_bytes))
         else:
-            pack_handle.write(struct.pack('>q', count_write_bytes))
-
+            pack_handle.write(struct.pack(">q", count_write_bytes))
 
         # Write the marker
 
-        return (count_read_bytes, count_write_bytes, hasher.hexdigest() if hash_type else None)
+        return (
+            count_read_bytes,
+            count_write_bytes,
+            hasher.hexdigest() if hash_type else None,
+        )
 
     def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
         self,
@@ -2683,7 +2687,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def _get_object_dict_from_packed(self, pack_id):
+    def _get_object_dicts_from_packed(self, pack_id):
         """
         Get objects from the a single packed file based on record markers
 
@@ -2694,15 +2698,16 @@ class Container:  # pylint: disable=too-many-public-methods
         obj_dicts = []
         with open(pack_path, "rb") as fhandle:
 
-            obj_dict: Dict[str, Any] = {}
             fhandle.seek(-MARKER_LENGTH, 2)
             while True:
                 obj_dict: Dict[str, Any] = {}
                 obj_dicts.append(obj_dict)
                 obj_dict["pack_id"] = pack_id
-                
+
                 # Read the record marker
-                record_length = struct.unpack(MARKER_FORMAT, fhandle.read(MARKER_LENGTH))[0]
+                record_length = struct.unpack(
+                    MARKER_FORMAT, fhandle.read(MARKER_LENGTH)
+                )[0]
                 obj_dict["length"] = abs(record_length)
                 obj_dict["compressed"] = record_length < 0
                 record_length = abs(record_length)
@@ -2710,11 +2715,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 # Go to the beginning of the record
                 obj_dict["offset"] = fhandle.seek(-(record_length + MARKER_LENGTH), 1)
                 # Read the object to get the hash
-                obj_reader = PackedObjectReader(fhandle, obj_dict["offset"], obj_dict["length"])
-                breakpoint()
+                obj_reader: StreamSeekBytesType = PackedObjectReader(
+                    fhandle, obj_dict["offset"], obj_dict["length"]
+                )
                 if obj_dict["compressed"]:
                     obj_reader = self._get_stream_decompresser()(obj_reader)
-                obj_dict["hashkey"], obj_dict["size"] = compute_hash_and_size(obj_reader, self.hash_type)                
+                obj_dict["hashkey"], obj_dict["size"] = compute_hash_and_size(
+                    obj_reader, self.hash_type
+                )
 
                 # This is the first record...
                 if obj_dict["offset"] == 0:
