@@ -68,6 +68,8 @@ ObjQueryResults = namedtuple(
     "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
 )
 
+MARKER_LENGTH=8
+MARKER_FORMAT=">q"
 
 class ObjectType(Enum):
     """Enum that describes the various types of an objec (as returned in ``meta['type']``)."""
@@ -2680,3 +2682,44 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
+
+    def _get_object_dict_from_packed(self, pack_id):
+        """
+        Get objects from the a single packed file based on record markers
+
+        The obtained information can be used to reconstruct the index.
+        WIP
+        """
+        pack_path = self._get_pack_path_from_pack_id(pack_id)
+        obj_dicts = []
+        with open(pack_path, "rb") as fhandle:
+
+            obj_dict: Dict[str, Any] = {}
+            fhandle.seek(-MARKER_LENGTH, 2)
+            while True:
+                obj_dict: Dict[str, Any] = {}
+                obj_dicts.append(obj_dict)
+                obj_dict["pack_id"] = pack_id
+                
+                # Read the record marker
+                record_length = struct.unpack(MARKER_FORMAT, fhandle.read(MARKER_LENGTH))[0]
+                obj_dict["length"] = abs(record_length)
+                obj_dict["compressed"] = record_length < 0
+                record_length = abs(record_length)
+
+                # Go to the beginning of the record
+                obj_dict["offset"] = fhandle.seek(-(record_length + MARKER_LENGTH), 1)
+                # Read the object to get the hash
+                obj_reader = PackedObjectReader(fhandle, obj_dict["offset"], obj_dict["length"])
+                breakpoint()
+                if obj_dict["compressed"]:
+                    obj_reader = self._get_stream_decompresser()(obj_reader)
+                obj_dict["hashkey"], obj_dict["size"] = compute_hash_and_size(obj_reader, self.hash_type)                
+
+                # This is the first record...
+                if obj_dict["offset"] == 0:
+                    break
+                # Go to the next record marker
+                fhandle.seek(obj_dict["offset"] - MARKER_LENGTH)
+
+        return obj_dicts
