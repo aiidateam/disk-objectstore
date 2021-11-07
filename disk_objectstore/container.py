@@ -385,6 +385,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     "hash_type": hash_type,
                     "container_id": container_id,
                     "compression_algorithm": compression_algorithm,
+                    "additional_pack_repos": [],
                 },
                 fhandle,
             )
@@ -399,7 +400,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         self._get_session(create=True)
 
-    def _get_repository_config(self) -> Dict[str, Union[int, str]]:
+    def _get_repository_config(self) -> Dict[str, Union[int, str, List]]:
         """Return the repository config."""
         if self._config is None:
             if not self.is_initialised:
@@ -409,6 +410,32 @@ class Container:  # pylint: disable=too-many-public-methods
             with open(self._get_config_file()) as fhandle:
                 self._config = json.load(fhandle)
         return self._config
+
+    def add_additional_pack_repo(self, repo_path):
+        """Add additional pack repository to the container"""
+        repo_path = Path(repo_path).resolve()
+        repo_path.mkdir(exist_ok=True)
+        pack_path = repo_path / "packs"
+        pack_path.mkdir(exist_ok=True)
+
+        if (repo_path / "config.json").is_file():
+            # This repository already exists
+            with open(repo_path / "config.json") as fhandle:
+                repo_config = json.load(fhandle)
+            if repo_config["container_id"] != self.container_id:
+                raise ValueError(
+                    "Trying to add a pack repository not belonging to this container!"
+                )
+        else:
+            # A new repository - store the the container_id in the config.json file
+            with open(repo_path / "config.json", mode="w") as fhandle:
+                json.dump({"container_id": self.container_id}, fhandle)
+        # Add the folder to the list of additional packs
+        self._get_repository_config()["additional_pack_repos"].append(str(repo_path))
+
+        # Save the configuration file
+        with open(self._get_config_file(), "w") as fhandle:
+            json.dump(self._config, fhandle)
 
     @property
     def loose_prefix_len(self) -> int:
@@ -433,6 +460,14 @@ class Container:  # pylint: disable=too-many-public-methods
         This is read from the (cached) repository configuration.
         """
         return self._get_repository_config()["hash_type"]  # type: ignore[return-value]
+
+    @property
+    def additional_pack_repos(self) -> List[Path]:
+        """Additional pack repository paths"""
+        return [
+            Path(repo)
+            for repo in self._get_repository_config().get("additional_pack_repos", [])
+        ]
 
     @property
     def container_id(self) -> str:
