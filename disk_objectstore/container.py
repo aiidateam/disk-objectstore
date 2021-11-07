@@ -8,6 +8,7 @@ import os
 import shutil
 import uuid
 import warnings
+import struct
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
@@ -1248,7 +1249,7 @@ class Container:  # pylint: disable=too-many-public-methods
         read_handle: StreamReadBytesType,
         compress: bool,
         hash_type: Optional[str] = None,
-    ) -> Union[Tuple[int, None], Tuple[int, str]]:
+    ) -> Union[Tuple[int, int, None], Tuple[int, int, str]]:
         """Append data, read from read_handle until it ends, to the correct packfile.
 
         Return the number of bytes READ (note that this will be different
@@ -1266,8 +1267,9 @@ class Container:  # pylint: disable=too-many-public-methods
            support at least the .read() method with a size parameter).
         :param compress: if True, compress the stream when writing to disk
         :param hash_type: if None, no hash is computed (more efficient). If it is a string, use that hash type.
-        :return: a tuple with ``(number_of_bytes, hashkey)`` where ``number_of_bytes`` is the (uncompressed)
-            size and ``hash_key`` is ``None`` is ``hash_type`` is ``None``, otherwise it contains the hash
+        :return: a tuple with ``(number_of_bytes, number_of_bytes_written, hashkey)`` where ``number_of_bytes`` is the (uncompressed)
+            size, ``number_of_bytes_written`` is the bytes written to the pack, 
+            and ``hash_key`` is ``None`` if ``hash_type`` is ``None``, otherwise it contains the hash
             computed with the given ``hash_type`` algorithm.
         """
         assert "b" in pack_handle.mode
@@ -1280,6 +1282,7 @@ class Container:  # pylint: disable=too-many-public-methods
             compressobj = self._get_compressobj_instance()
 
         count_read_bytes = 0
+        count_write_bytes = 0
         while True:
             chunk = read_handle.read(self._CHUNKSIZE)
             if chunk == b"":
@@ -1291,16 +1294,22 @@ class Container:  # pylint: disable=too-many-public-methods
             if hash_type:
                 hasher.update(chunk)
             if compress:
-                pack_handle.write(compressobj.compress(chunk))
+                count_write_bytes += pack_handle.write(compressobj.compress(chunk))
             else:
-                pack_handle.write(chunk)
+                count_write_bytes += pack_handle.write(chunk)
 
         if compress:
             # Write the remaining of the file, if any leftovers are still present in the
             # compressobj
-            pack_handle.write(compressobj.flush())
+            count_write_bytes += pack_handle.write(compressobj.flush())
+            pack_handle.write(struct.pack('>q', -count_write_bytes))
+        else:
+            pack_handle.write(struct.pack('>q', count_write_bytes))
 
-        return (count_read_bytes, hasher.hexdigest() if hash_type else None)
+
+        # Write the marker
+
+        return (count_read_bytes, count_write_bytes, hasher.hexdigest() if hash_type else None)
 
     def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
         self,
@@ -1405,6 +1414,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             # We can instead pass the hash algorithm and assert that it is correct
                             (
                                 obj_dict["size"],
+                                obj_dict["length"],
                                 new_hashkey,
                             ) = self._write_data_to_packfile(
                                 pack_handle=pack_handle,
@@ -1422,7 +1432,6 @@ class Container:  # pylint: disable=too-many-public-methods
                                 loose_hashkey, new_hashkey
                             )
                         )
-                    obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
 
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
@@ -1692,6 +1701,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
                         (
                             obj_dict["size"],
+                            obj_dict["length"],
                             obj_dict["hashkey"],
                         ) = self._write_data_to_packfile(
                             pack_handle=pack_handle,
@@ -1699,7 +1709,6 @@ class Container:  # pylint: disable=too-many-public-methods
                             compress=compress,
                             hash_type=self.hash_type,
                         )
-                    obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
                     # Here, we have appended the object to the pack file.
                     # And now that we are done, we know the hash key.
                     # However, we have to cope with the fact that an object with the same hash key

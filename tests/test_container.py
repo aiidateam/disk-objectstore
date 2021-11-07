@@ -3040,13 +3040,13 @@ def test_packs_no_holes(
 
     if no_holes:
         assert (
-            sizes["total_size_packed_on_disk"] == sizes["total_size_packfiles_on_disk"]
+            (sizes["total_size_packed_on_disk"] + 8 * 3) == sizes["total_size_packfiles_on_disk"]
         )
     else:
         # We have added twice each object. Note: we cannot use total_size_packed because this would be
         # before compression
         assert (
-            2 * sizes["total_size_packed_on_disk"]
+            2 * (sizes["total_size_packed_on_disk"] + 8 * 3)  # Include marker sizes
             == sizes["total_size_packfiles_on_disk"]
         )
 
