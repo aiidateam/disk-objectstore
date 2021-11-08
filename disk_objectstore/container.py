@@ -248,8 +248,11 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         pack_id = str(pack_id)
         assert self._is_valid_pack_id(
-            pack_id, allow_repack_pack=allow_repack_pack
+            pack_id, allow_repack_pack=False
         ), f"Invalid pack ID {pack_id}"
+        assert (
+            allow_repack_pack is True
+        ), "Please use _get_repack_path_from_pack_id to get a repack path valid for a pack_id"
 
         # Not in the main repository folder - try to locate it from the additional storages
         if not os.path.isfile(os.path.join(self._get_pack_folder(), pack_id)):
@@ -292,6 +295,18 @@ class Container:  # pylint: disable=too-many-public-methods
         if pack_id in self._get_additional_pack_locations(refresh=True):
             return True
         raise RuntimeError(f"Pack {pack_id} is missing!")
+
+    def _get_repack_path_from_pack_id(self, pack_id: Union[int, str]) -> str:
+        """
+        Return the path of a repack file for a given pack
+
+        This ensures that the path is on the same repository folder as the pack file
+        of the give pack_id.
+        """
+        pack_id = str(pack_id)
+        pack_path = Path(self._get_pack_path_from_pack_id(pack_id))
+        repack_file = pack_path.parent / str(self._REPACK_PACK_ID)
+        return str(repack_file)
 
     def _get_pack_index_path(self) -> str:
         """Return the path to the SQLite file containing the index of packed objects."""
@@ -481,7 +496,8 @@ class Container:  # pylint: disable=too-many-public-methods
             with open(repo_path / "config.json", mode="w") as fhandle:
                 json.dump({"container_id": self.container_id}, fhandle)
         # Add the folder to the list of additional packs
-        self._get_repository_config()["additional_pack_repos"].append(str(repo_path))
+        repo_list: List[str] = self._get_repository_config()["additional_pack_repos"]  # type: ignore[assignment]
+        repo_list.append(str(repo_path))
 
         # Save the configuration file
         with open(self._get_config_file(), "w") as fhandle:
@@ -514,10 +530,8 @@ class Container:  # pylint: disable=too-many-public-methods
     @property
     def additional_pack_repos(self) -> List[Path]:
         """Additional pack repository paths"""
-        return [
-            Path(repo)
-            for repo in self._get_repository_config().get("additional_pack_repos", [])
-        ]
+        repo_list: List[str] = self._get_repository_config()["additional_pack_repos"]  # type: ignore[assignment]
+        return [Path(repo) for repo in repo_list]
 
     @property
     def container_id(self) -> str:
@@ -1219,7 +1233,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     @contextmanager
     def lock_pack(
-        self, pack_id: str, allow_repack_pack: bool = False
+        self, pack_id: str, lock_repack: bool = False
     ) -> Iterator[StreamWriteBytesType]:
         """Lock the given pack id. Use as a context manager.
 
@@ -1228,15 +1242,19 @@ class Container:  # pylint: disable=too-many-public-methods
 
         Important to use for avoiding concurrent access/append to the same file.
         :param pack_id: a string with a valid pack name.
-        :param allow_pack_repack: if True, allow to open the pack file used for repacking
+        :param lock_repack: if True, is the corresponding repack file that will be locked and returned.
         """
-        assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
+        assert self._is_valid_pack_id(pack_id, allow_repack_pack=False)
+
+        if lock_repack:
+            pack_file = self._get_repack_path_from_pack_id(pack_id)
+        else:
+            pack_file = self._get_pack_path_from_pack_id(
+                pack_id, allow_repack_pack=False
+            )
 
         # Open file in exclusive mode
-        lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
-        pack_file = self._get_pack_path_from_pack_id(
-            pack_id, allow_repack_pack=allow_repack_pack
-        )
+        lock_file = Path(pack_file).with_suffix(".lock")
         try:
             with open(lock_file, "x"):
                 with open(pack_file, "ab") as pack_handle:
@@ -2620,13 +2638,6 @@ class Container:  # pylint: disable=too-many-public-methods
             as it can simply transfer the bytes without decompressing everything first,
             and recompressing it back again).
         """
-        if self._is_pack_in_additional_storage(pack_id):
-            # In theory this is doable, just need to revise some of the methods to allow getting a pack path
-            # inside the same additional repo folder
-            raise NotImplementedError(
-                "Repacking packs in the additional repository is not supported for now"
-            )
-
         if compress_mode != CompressMode.KEEP:
             raise NotImplementedError("Only keep method currently implemented")
 
@@ -2636,11 +2647,13 @@ class Container:  # pylint: disable=too-many-public-methods
             pack_id
         )
 
-        # Check that it does not exist
+        # Get the path of the pack and repack file - they are not expected to change thoughout this method
+        repack_path = self._get_repack_path_from_pack_id(pack_id)
+        pack_path = self._get_pack_path_from_pack_id(pack_id)
+
+        # The repack file should not exist yet
         assert not os.path.exists(
-            self._get_pack_path_from_pack_id(
-                self._REPACK_PACK_ID, allow_repack_pack=True
-            )
+            repack_path
         ), "The repack pack '{}' already exists, probably a previous repacking aborted?".format(
             self._REPACK_PACK_ID
         )
@@ -2652,17 +2665,15 @@ class Container:  # pylint: disable=too-many-public-methods
         ).all()
         if not one_object_in_pack:
             # No objects. Clean up the pack file, if it exists.
-            if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
-                os.remove(self._get_pack_path_from_pack_id(pack_id))
+            if os.path.exists(pack_path):
+                os.remove(pack_path)
             return
 
         obj_dicts = []
         # At least one object. Let's repack. We have checked before that the
         # REPACK_PACK_ID did not exist.
-        with self.lock_pack(
-            str(self._REPACK_PACK_ID), allow_repack_pack=True
-        ) as write_pack_handle:
-            with open(self._get_pack_path_from_pack_id(pack_id), "rb") as read_pack:
+        with self.lock_pack(pack_id, lock_repack=True) as write_pack_handle:
+            with open(pack_path, "rb") as read_pack:
                 stmt = (
                     select(
                         Obj.id,
@@ -2708,9 +2719,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dicts.append(obj_dict)
             safe_flush_to_disk(
                 write_pack_handle,
-                self._get_pack_path_from_pack_id(
-                    self._REPACK_PACK_ID, allow_repack_pack=True
-                ),
+                repack_path,
             )
 
         # We are done with data transfer.
@@ -2734,17 +2743,15 @@ class Container:  # pylint: disable=too-many-public-methods
                 pack_id=pack_id, repack_id=self._REPACK_PACK_ID
             )
         )
-        os.remove(self._get_pack_path_from_pack_id(pack_id))
+        os.remove(pack_path)
 
         # I need now to move the file back. I need to be careful, to avoid conditions in which
         # I remain with inconsistent data.
         # Since hard links seem to be supported on all three platforms, I do a hard link
         # of -1 back to the correct pack ID.
         os.link(
-            self._get_pack_path_from_pack_id(
-                self._REPACK_PACK_ID, allow_repack_pack=True
-            ),
-            self._get_pack_path_from_pack_id(pack_id),
+            repack_path,
+            pack_path,
         )
 
         # Before deleting the source (pack -1) I need now to update again all
@@ -2760,10 +2767,8 @@ class Container:  # pylint: disable=too-many-public-methods
         # I am not doing this for now
         # I now can unlink/delete the original source
         os.unlink(
-            self._get_pack_path_from_pack_id(
-                self._REPACK_PACK_ID, allow_repack_pack=True
-            )
+            repack_path,
         )
 
         # We are now done. The temporary pack is gone, and the old `pack_id`
-        # has now been replaced with an udpated, repacked pack.
+        # has now been replaced with an updated, repacked pack.
