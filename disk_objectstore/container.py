@@ -132,6 +132,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # IMPORANT! IF YOU ADD MORE, REMEMBER TO CLEAR THEM IN `init_container()`!
         self._current_pack_id: Optional[int] = None
         self._config: Optional[dict] = None
+        self._additional_pack_locations: Optional[dict] = None
 
     def get_folder(self) -> str:
         """Return the path to the folder that will host the object-store container."""
@@ -249,7 +250,48 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(
             pack_id, allow_repack_pack=allow_repack_pack
         ), f"Invalid pack ID {pack_id}"
+
+        # Not in the main repository folder - try to locate it from the additional storages
+        if not os.path.isfile(os.path.join(self._get_pack_folder(), pack_id)):
+
+            # locate the file path from the cache
+            loc_cache = self._get_additional_pack_locations(refresh=False)
+            if pack_id in loc_cache and os.path.isfile(loc_cache[pack_id]):
+                return loc_cache[pack_id]
+
+            # File moved? Refresh the cache again
+            loc_cache = self._get_additional_pack_locations(refresh=True)
+            # Try again
+            if pack_id in loc_cache:
+                return loc_cache[pack_id]
+
+        # Use the default path in the main repo folder
         return os.path.join(self._get_pack_folder(), pack_id)
+
+    def _get_additional_pack_locations(self, refresh=False) -> Dict[str, str]:
+        """Get cached pack location and refresh the cache if needed"""
+        # Build a dictionary mapping pack name to pack's absolute path
+        if self._additional_pack_locations is None or refresh:
+            self._additional_pack_locations = {}
+            for path in self.additional_pack_repos:
+                packs_folder = Path(path) / "packs"
+                for filepath in packs_folder.glob("*"):
+                    self._additional_pack_locations[filepath.name] = str(
+                        filepath.resolve()
+                    )
+
+        return self._additional_pack_locations
+
+    def _is_pack_in_additional_storage(self, pack_id: Union[str, int]) -> bool:
+        """Return wether a pack is in additional storage"""
+        pack_id = str(pack_id)
+        if os.path.isfile(os.path.join(self._get_pack_folder(), str(pack_id))):
+            return False
+        if pack_id in self._get_additional_pack_locations():
+            return True
+        if pack_id in self._get_additional_pack_locations(refresh=True):
+            return True
+        raise RuntimeError(f"Pack {pack_id} is missing!")
 
     def _get_pack_index_path(self) -> str:
         """Return the path to the SQLite file containing the index of packed objects."""
@@ -267,12 +309,19 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+        additional_packs = list(
+            map(int, self._get_additional_pack_locations(refresh=True).keys())
+        )
+        max_addon_packid = max(additional_packs) if additional_packs else -10
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
-            if not os.path.exists(pack_path):
+            if not os.path.exists(pack_path) and pack_id > max_addon_packid:
                 # Use this ID - the pack file does not exist yet
                 break
-            if os.path.getsize(pack_path) < self.pack_size_target:
+            if (
+                os.path.getsize(pack_path) < self.pack_size_target
+                and pack_id not in additional_packs
+            ):
                 # Use this ID - the pack file is not "full" yet
                 break
             # Try the next pack
@@ -345,6 +394,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # (at least the container_id, possibly the rest), and the other caches
             self._config = None
             self._current_pack_id = None
+            self._additional_pack_locations = None
 
         if self.is_initialised:
             raise FileExistsError(
@@ -1220,12 +1270,16 @@ class Container:  # pylint: disable=too-many-public-methods
                     continue
                 yield first_level
 
-    def _list_packs(self) -> Iterator[str]:
+    def _list_packs(self, only_main_repo=False) -> Iterator[str]:
         """Iterate over packs.
 
         .. note:: this returns a generator of the pack IDs.
         """
-        for fname in os.listdir(self._get_pack_folder()):
+
+        all_path = os.listdir(self._get_pack_folder())
+        if not only_main_repo:
+            all_path += self._get_additional_pack_locations(refresh=True)
+        for fname in all_path:
             ## I actually check for pack index files
             # if not fname.endswith(self._PACK_INDEX_SUFFIX):
             #    continue
@@ -2549,7 +2603,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :param compress_mode: see docstring of ``repack_pack``.
         """
-        for pack_id in self._list_packs():
+        for pack_id in self._list_packs(only_main_repo=True):
             self.repack_pack(pack_id, compress_mode=compress_mode)
         self._vacuum()
 
@@ -2566,6 +2620,13 @@ class Container:  # pylint: disable=too-many-public-methods
             as it can simply transfer the bytes without decompressing everything first,
             and recompressing it back again).
         """
+        if self._is_pack_in_additional_storage(pack_id):
+            # In theory this is doable, just need to revise some of the methods to allow getting a pack path
+            # inside the same additional repo folder
+            raise NotImplementedError(
+                "Repacking packs in the additional repository is not supported for now"
+            )
+
         if compress_mode != CompressMode.KEEP:
             raise NotImplementedError("Only keep method currently implemented")
 
