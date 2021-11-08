@@ -3357,8 +3357,8 @@ def test_additional_pack_repo(temp_container):
         os.path.join(temp_container._get_pack_folder(), "0"),
         os.path.join(temp_dir, "packs"),
     )
-    new_pack = pathlib.Path(temp_container._get_pack_path_from_pack_id(0))
-    assert new_pack.relative_to(temp_dir)
+    new_pack = pathlib.Path(temp_container._get_pack_path_from_pack_id(0)).resolve()
+    assert new_pack.relative_to(pathlib.Path(temp_dir).resolve())
 
     # Now the pack to write to is pack 1
     assert temp_container._get_pack_id_to_write_to() == 1
