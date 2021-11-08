@@ -1305,9 +1305,9 @@ class Container:  # pylint: disable=too-many-public-methods
             # Write the remaining of the file, if any leftovers are still present in the
             # compressobj
             count_write_bytes += pack_handle.write(compressobj.flush())
-            pack_handle.write(struct.pack(">q", -count_write_bytes))
+            pack_handle.write(struct.pack(MARKER_FORMAT, -count_write_bytes))
         else:
-            pack_handle.write(struct.pack(">q", count_write_bytes))
+            pack_handle.write(struct.pack(MARKER_FORMAT, count_write_bytes))
 
         # Write the marker
 
@@ -2614,13 +2614,19 @@ class Container:  # pylint: disable=too-many-public-methods
                     # No need to rehash - it's the same container so the same hash.
                     # Not checking the compression on source or destination - we are assuming
                     # for now that the mode is KEEP.
+                    bytes_written = 0
                     while True:
                         chunk = read_handle.read(self._CHUNKSIZE)
                         if chunk == b"":
                             # Returns an empty bytes object on EOF.
                             break
-                        write_pack_handle.write(chunk)
-                    obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
+                        bytes_written += write_pack_handle.write(chunk)
+                    obj_dict["length"] = bytes_written
+
+                    # Write the trailing marker
+                    if compressed:
+                        bytes_written *= -1
+                    write_pack_handle.write(struct.pack(MARKER_FORMAT, bytes_written))
 
                     # Appending for later bulk commit
                     # I will assume that all objects of a single pack fit in memory
