@@ -3336,6 +3336,49 @@ def test_container_id(temp_container):
     assert old_container_id != temp_container.container_id
 
 
+def test_additional_pack_repo(temp_container):
+    """Test adding additional pack locations"""
+
+    temp_dir = tempfile.mkdtemp()
+
+    temp_container: Container = temp_container
+
+    # Insert some random data
+    expected = {}
+    for idx in range(100):
+        content = f"{idx}".encode()
+        expected[temp_container.add_object(content)] = content
+
+    temp_container.pack_all_loose()
+    temp_container.add_additional_pack_repo(temp_dir)
+
+    # Move the pack 0 to the additional repository
+    shutil.move(
+        os.path.join(temp_container._get_pack_folder(), "0"),
+        os.path.join(temp_dir, "packs"),
+    )
+    new_pack = pathlib.Path(temp_container._get_pack_path_from_pack_id(0))
+    assert new_pack.relative_to(temp_dir)
+
+    # Now the pack to write to is pack 1
+    assert temp_container._get_pack_id_to_write_to() == 1
+    retrieved = temp_container.get_objects_content(expected.keys())
+    assert retrieved == expected
+
+    # Adding data to pack 1 and validate
+    for idx in range(100, 200):
+        content = f"{idx}".encode()
+        expected[temp_container.add_object(content)] = content
+    temp_container.pack_all_loose()
+    retrieved = temp_container.get_objects_content(expected.keys())
+    assert retrieved == expected
+
+    # The first part should be the pack 00 and the second part is in pack 1
+    assert pathlib.Path(temp_container._get_pack_path_from_pack_id(1)).is_file()
+    assert temp_container.get_object_meta(list(expected.keys())[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(list(expected.keys())[-1])["pack_id"] == 1
+
+
 @pytest.mark.parametrize(
     "compression_algorithm",
     [
