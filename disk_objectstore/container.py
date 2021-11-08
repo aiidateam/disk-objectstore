@@ -251,7 +251,7 @@ class Container:  # pylint: disable=too-many-public-methods
             pack_id, allow_repack_pack=False
         ), f"Invalid pack ID {pack_id}"
         assert (
-            allow_repack_pack is True
+            allow_repack_pack is False
         ), "Please use _get_repack_path_from_pack_id to get a repack path valid for a pack_id"
 
         # Not in the main repository folder - try to locate it from the additional storages
