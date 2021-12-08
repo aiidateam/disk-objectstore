@@ -1,12 +1,6 @@
 #
 # Configuration file for the Sphinx documentation builder.
 #
-
-# get the version from the inventory file
-from pathlib import Path
-
-import yaml
-
 import disk_objectstore
 
 # -- Project information -----------------------------------------------------
