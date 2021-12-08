@@ -4,7 +4,8 @@ ci:
 
 exclude: &exclude_files >
   (?x)^(
-    performance-benchmarks/.*/.*\.py
+    performance-benchmarks/.*/.*\.py |
+    docs/conf.py
   )$
 
 repos:
@@ -17,10 +18,10 @@ repos:
     - id: end-of-file-fixer
     - id: trailing-whitespace
 
-  - repo: https://github.com/asottile/setup-cfg-fmt
-    rev: v1.17.0
-    hooks:
-    - id: setup-cfg-fmt
+#  - repo: https://github.com/asottile/setup-cfg-fmt
+#    rev: v1.17.0
+#    hooks:
+#    - id: setup-cfg-fmt
 
   - repo: https://github.com/mgedmin/check-manifest
     rev: "0.46"
