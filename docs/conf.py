@@ -26,7 +26,6 @@ needs_sphinx = "2.0"
 extensions = [
     "myst_parser",
     "sphinx_panels",
-    "ablog",
     "sphinx.ext.intersphinx",
     "sphinxext.rediraffe",
 ]
