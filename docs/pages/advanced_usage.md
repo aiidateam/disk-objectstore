@@ -49,8 +49,10 @@ Meta for hashkey d1e4103ce093e26c63ce25366a9a131d60d3555073b8424d3322accefc36bf0
   Content: b'third_content'
 ```
 
-**IMPORTANT NOTE**: As you see above, the order of the triplets **IS NOT** the order in which you passed the hash keys to
+```{important}
+As you see above, the order of the triplets **IS NOT** the order in which you passed the hash keys to
 `get_objects_stream_and_meta`. The reason is efficiency: the library will try to keep a (pack) file open as long as possible, and read it in order, to exploit efficiently disk caches.
+```
 
 ### Memory-savvy approach
 
