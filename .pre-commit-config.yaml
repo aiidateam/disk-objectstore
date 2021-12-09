@@ -4,7 +4,8 @@ ci:
 
 exclude: &exclude_files >
   (?x)^(
-    performance-benchmarks/.*/.*\.py
+    performance-benchmarks/.*/.*\.py |
+    docs/conf.py
   )$
 
 repos:
