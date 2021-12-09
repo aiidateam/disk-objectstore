@@ -72,9 +72,7 @@ def main(
 
     start_counts = container.count_objects()
     print(
-        "Currently known objects: {} packed, {} loose".format(
-            start_counts["packed"], start_counts["loose"]
-        )
+        f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose"
     )
     print("Pack objects on disk:", start_counts["pack_files"])
 
@@ -86,9 +84,7 @@ def main(
         files[filename] = content
     total_size = sum(len(content) for content in files.values())
     print(
-        "Done. Total size: {} bytes (~{:.3f} MB).".format(
-            total_size, (total_size // 1024) / 1024
-        )
+        f"Done. Total size: {total_size} bytes (~{total_size // 1024 / 1024:.3f} MB)."
     )
 
     if directly_to_pack:
@@ -100,18 +96,14 @@ def main(
         hashkey_mapping = dict(zip(filenames, hashkeys))
         tot_time = time.time() - start
         print(
-            "Time to store {} objects DIRECTLY TO THE PACKS: {:.4} s".format(
-                num_files, tot_time
-            )
+            f"Time to store {num_files} objects DIRECTLY TO THE PACKS: {tot_time:.4} s"
         )
 
         # Check that no loose files were created
         counts = container.count_objects()
         assert (
             counts["loose"] == start_counts["loose"]
-        ), "Mismatch (loose in packed case): {} != {}".format(
-            start_counts["loose"], counts["loose"]
-        )
+        ), f"Mismatch (loose in packed case): {start_counts['loose']} != {counts['loose']}"
         ## Cannot do this with the hash key implenentation - I might have stored the same object twice
         # assert counts['packed'
         #             ] == start_counts['packed'] + num_files, 'Mismatch (packed in packed case): {} + {} != {}'.format(
@@ -171,11 +163,8 @@ def main(
 
         # Check that all loose files are gone
         counts = container.count_objects()
-        assert not counts["loose"], "loose objects left: {}".format(
-            os.listdir(
-                container._get_loose_folder()  # pylint: disable=protected-access
-            )
-        )
+        loose_folder = container._get_loose_folder()  # pylint: disable=protected-access
+        assert not counts["loose"], "loose objects left: " f"{os.listdir(loose_folder)}"
         ## I cannot do this because I could have overlap if the object is identical and has the same hash key
         # assert counts['packed'] == start_counts['packed'] + start_counts[
         #    'loose'] + num_files, 'Mismatch (post-pack): {} + {} + {} != {}'.format(
@@ -222,25 +211,17 @@ def main(
         func = bulk_read_data
     raw_retrieved = func(container=container, hashkey_list=all_hashkeys)
     if profile_file is not None:
-        print(
-            "You can check the profiling results running 'snakeviz {}'".format(
-                profile_file
-            )
-        )
+        print(f"You can check the profiling results running 'snakeviz {profile_file}'")
 
     tot_time = time.time() - start
     print(
-        "Time to retrieve {} packed objects in random order WITH ONE BULK CALL: {} s".format(
-            num_files, tot_time
-        )
+        f"Time to retrieve {num_files} packed objects in random order WITH ONE BULK CALL: {tot_time} s"
     )
     retrieved = {
         reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()
     }
     for filename in retrieved:
-        assert retrieved[filename] == files[filename], "Mismatch for {}".format(
-            filename
-        )
+        assert retrieved[filename] == files[filename], f"Mismatch for {filename}"
 
     ########################################
     # SECOND: num_bulk_calls bulk reads
@@ -266,17 +247,13 @@ def main(
 
     tot_time = time.time() - start
     print(
-        "Time to retrieve {} packed objects in random order WITH {} BULK CALLS: {} s".format(
-            num_files, num_bulk_calls, tot_time
-        )
+        f"Time to retrieve {num_files} packed objects in random order WITH {num_bulk_calls} BULK CALLS: {tot_time} s"
     )
     retrieved = {
         reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()
     }
     for filename in retrieved:
-        assert retrieved[filename] == files[filename], "Mismatch for {}".format(
-            filename
-        )
+        assert retrieved[filename] == files[filename], f"Mismatch for {filename}"
 
     ########################################
     # THIRD: a lot of independent reads, one per object
@@ -288,11 +265,7 @@ def main(
         retrieved_content = container.get_object_content(obj_hashkey)
         retrieved[filename] = retrieved_content
     tot_time = time.time() - start
-    print(
-        "Time to retrieve {} packed objects in random order: {} s".format(
-            num_files, tot_time
-        )
-    )
+    print(f"Time to retrieve {num_files} packed objects in random order: {tot_time} s")
 
     for filename, content in retrieved.items():
         assert (

@@ -131,9 +131,7 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
     ):
         if worker_proc.returncode:
             error_messages.append(
-                "WORKER process #{} failed with error code {}!".format(
-                    idx, worker_proc.returncode
-                )
+                f"WORKER process #{idx} failed with error code {worker_proc.returncode}!"
             )
             error_messages.append(f"WORKER {idx} output:")
             error_messages.append(worker_out.decode("utf8"))

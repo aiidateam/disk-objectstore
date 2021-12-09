@@ -1418,9 +1418,8 @@ class Container:  # pylint: disable=too-many-public-methods
                         continue
                     if hash_type and new_hashkey != loose_hashkey:
                         raise InconsistentContent(
-                            "Error when packing object '{}': re-computed hash is different! '{}'".format(
-                                loose_hashkey, new_hashkey
-                            )
+                            f"Error when packing object '{loose_hashkey}': "
+                            f"re-computed hash is different! '{new_hashkey}'"
                         )
                     obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
 
@@ -1933,9 +1932,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 else:
                     # No valid duplicates found! I raise
                     raise InconsistentContent(
-                        "There are duplicates of '{}' but they are all corrupt".format(
-                            reference_obj_hashkey
-                        )
+                        f"There are duplicates of '{reference_obj_hashkey}' but they are all corrupt"
                     )
                 # If we are here, we found the "good duplicate"; let's put it in place
                 # It should not be None, I should have raised!
@@ -2536,18 +2533,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
         assert (
             pack_id != self._REPACK_PACK_ID
-        ), "The specified pack_id '{}' is invalid, it is the one used for repacking".format(
-            pack_id
-        )
+        ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
 
         # Check that it does not exist
         assert not os.path.exists(
             self._get_pack_path_from_pack_id(
                 self._REPACK_PACK_ID, allow_repack_pack=True
             )
-        ), "The repack pack '{}' already exists, probably a previous repacking aborted?".format(
-            self._REPACK_PACK_ID
-        )
+        ), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
 
         session = self._get_cached_session()
 
@@ -2633,10 +2626,8 @@ class Container:  # pylint: disable=too-many-public-methods
             select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
         ).all()
         assert not one_object_in_pack, (
-            "I moved the objects of pack '{pack_id}' to pack '{repack_id}' "
-            "but there are still references to pack '{pack_id}'!".format(
-                pack_id=pack_id, repack_id=self._REPACK_PACK_ID
-            )
+            f"I moved the objects of pack '{pack_id}' to pack '{self._REPACK_PACK_ID}' "
+            f"but there are still references to pack '{pack_id}'!"
         )
         os.remove(self._get_pack_path_from_pack_id(pack_id))
 
