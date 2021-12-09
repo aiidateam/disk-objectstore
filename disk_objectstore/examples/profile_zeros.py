@@ -31,9 +31,7 @@ def main_run(container, size_gb, compress_packs):
 
     start_counts = container.count_objects()
     print(
-        "Currently known objects: {} packed, {} loose".format(
-            start_counts["packed"], start_counts["loose"]
-        )
+        f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose"
     )
     print("Pack objects on disk:", start_counts["pack_files"])
 
@@ -44,24 +42,16 @@ def main_run(container, size_gb, compress_packs):
         stream_list=[zero_stream], compress=compress_packs
     )[0]
     tot_time = time.time() - start
-    print(
-        "Time to store one file of zeros of size {} GB: {:.4} s".format(
-            size_gb, tot_time
-        )
-    )
+    print(f"Time to store one file of zeros of size {size_gb} GB: {tot_time:.4} s")
 
     # Check that no loose files were created
     counts = container.count_objects()
     assert (
         counts["loose"] == start_counts["loose"]
-    ), "Mismatch (loose in packed case): {} != {}".format(
-        start_counts["loose"], counts["loose"]
-    )
+    ), f"Mismatch (loose in packed case): {start_counts['loose']} != {counts['loose']}"
     assert (
         counts["packed"] == start_counts["packed"] + 1
-    ), "Mismatch (packed in packed case): {} + 1 != {}".format(
-        start_counts["packed"], counts["packed"]
-    )
+    ), f"Mismatch (packed in packed case): {start_counts['packed']} + 1 != {counts['packed']}"
 
     # print container size info
     size_info = container.get_total_size()
@@ -142,13 +132,9 @@ def main(
         for key, end_value in end_mem.items():
             start_value = start_mem[key]
             print(
-                "{}: {} -> {} (DELTA = {} = {:.2f} MB)".format(
-                    key,
-                    start_value,
-                    end_value,
-                    end_value - start_value,
-                    (end_value - start_value) / 1024.0 / 1024.0,
-                )
+                f"{key}: {start_value} -> {end_value} "
+                f"(DELTA = {end_value - start_value} = "
+                f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
             )
         del temp_array
 
@@ -158,13 +144,9 @@ def main(
         for key, end_value in end_mem.items():
             start_value = start_mem[key]
             print(
-                "{}: {} -> {} (DELTA = {} = {:.2f} MB)".format(
-                    key,
-                    start_value,
-                    end_value,
-                    end_value - start_value,
-                    (end_value - start_value) / 1024.0 / 1024.0,
-                )
+                f"{key}: {start_value} -> {end_value} "
+                f"(DELTA = {end_value - start_value} = "
+                f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
             )
         print("*" * 74)
 
@@ -193,14 +175,12 @@ def main(
             interval=memory_check_interval,
         )
         # Check that it's not an empty list
-        assert memory_report, (
-            ">> Process too fast for checking memory usage "
-            "with interval {} s!!!".format(memory_check_interval)
-        )
+        assert (
+            memory_report
+        ), f">> Process too fast for checking memory usage with interval {memory_check_interval} s!!!"
         print(
-            ">> Max memory usage (check interval {} s, {} checks performed): {:.3f} MB".format(
-                memory_check_interval, len(memory_report), max(memory_report)
-            )
+            f">> Max memory usage (check interval {memory_check_interval} s, "
+            f"{len(memory_report)} checks performed): {max(memory_report):.3f} MB"
         )
     else:
         function(container=container, size_gb=size_gb, compress_packs=compress_packs)
@@ -209,13 +189,9 @@ def main(
     for key, end_value in end_mem.items():
         start_value = start_mem[key]
         print(
-            "{}: {} -> {} (DELTA = {} = {:.2f} MB)".format(
-                key,
-                start_value,
-                end_value,
-                end_value - start_value,
-                (end_value - start_value) / 1024.0 / 1024.0,
-            )
+            f"{key}: {start_value} -> {end_value} "
+            f"(DELTA = {end_value - start_value} = "
+            f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
         )
 
 

@@ -66,9 +66,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                'fhandle=open(r"{}"); print(fhandle.read(), end=""); fhandle.close()'.format(
-                    os.path.realpath(fname)
-                ),
+                f'fhandle=open(r"{os.path.realpath(fname)}"); print(fhandle.read(), end=""); fhandle.close()',
             ]
         )
         assert read_chunk == first_part
@@ -83,9 +81,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                'import os; print(os.path.getsize(r"{}"), end="")'.format(
-                    os.path.realpath(fname)
-                ),
+                f'import os; print(os.path.getsize(r"{os.path.realpath(fname)}"), end="")',
             ]
         )
 
@@ -98,9 +94,9 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                'fhandle=open(r"{}"); fhandle.seek({}); print(fhandle.read(), end=""); fhandle.close()'.format(
-                    os.path.realpath(fname), len(first_part) + len(intermediate)
-                ),
+                f'fhandle=open(r"{os.path.realpath(fname)}"); '
+                f"fhandle.seek({len(first_part) + len(intermediate)}); "
+                'print(fhandle.read(), end=""); fhandle.close()',
             ]
         )
         assert read_chunk == second_part
@@ -137,9 +133,8 @@ def test_concurrent_append_write_buffer_size(temp_dir):
             [
                 sys.executable,
                 "-c",
-                'fhandle=open(r"{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
-                    os.path.realpath(fname), intermediate.decode("ascii")
-                ),
+                f'fhandle=open(r"{os.path.realpath(fname)}", "ab"); '
+                f'fhandle.write(b"{intermediate.decode("ascii")}"); fhandle.close()',
             ]
         )
 
@@ -156,9 +151,8 @@ def test_concurrent_append_write_buffer_size(temp_dir):
             [
                 sys.executable,
                 "-c",
-                'fhandle=open(r"{}", "ab"); fhandle.write(b"{}"); fhandle.close()'.format(
-                    os.path.realpath(fname), second_part.decode("ascii")
-                ),
+                f'fhandle=open(r"{os.path.realpath(fname)}", "ab"); '
+                f'fhandle.write(b"{second_part.decode("ascii")}"); fhandle.close()',
             ]
         )
 
@@ -350,9 +344,7 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
             [
                 sys.executable,
                 "-c",
-                'f=open(r"{}", "rb"); print(f.read()); f.close()'.format(
-                    os.path.realpath(fname)
-                ),
+                f'f=open(r"{os.path.realpath(fname)}", "rb"); print(f.read()); f.close()',
             ],
             stderr=subprocess.STDOUT,
         )

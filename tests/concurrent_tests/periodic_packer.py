@@ -47,13 +47,9 @@ def main(path, repetitions, wait_time):
         end_counts = container.count_objects()
 
         print(
-            "[PACKER {}] Packed objects (was {} loose, {} packed; now: {} loose, {} packed).".format(
-                timestamp(),
-                start_counts["loose"],
-                start_counts["packed"],
-                end_counts["loose"],
-                end_counts["packed"],
-            )
+            f"[PACKER {timestamp()}] Packed objects (was {start_counts['loose']} loose, "
+            f"{start_counts['packed']} packed; now: "
+            f"{end_counts['loose']} loose, {end_counts['packed']} packed)."
         )
 
 
