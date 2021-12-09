@@ -1066,6 +1066,9 @@ def test_sizes(
         == total_object_size
     )
 
+    total_header_dd_size = (
+        temp_container._zip_header_size + temp_container._zip_dd_size
+    ) * len(data)
     if compress_packs:
         compressed_data = {}
         for key, val in data.items():
@@ -1078,7 +1081,10 @@ def test_sizes(
         size_info = temp_container.get_total_size()
         assert size_info["total_size_packed"] == total_object_size
         assert size_info["total_size_packed_on_disk"] == total_compressed_size
-        assert size_info["total_size_packfiles_on_disk"] == total_compressed_size
+        assert (
+            size_info["total_size_packfiles_on_disk"]
+            == total_compressed_size + total_header_dd_size
+        )
         assert size_info["total_size_packindexes_on_disk"] == os.path.getsize(
             temp_container._get_pack_index_path()
         )
@@ -1087,7 +1093,10 @@ def test_sizes(
         size_info = temp_container.get_total_size()
         assert size_info["total_size_packed"] == total_object_size
         assert size_info["total_size_packed_on_disk"] == total_object_size
-        assert size_info["total_size_packfiles_on_disk"] == total_object_size
+        assert (
+            size_info["total_size_packfiles_on_disk"]
+            == total_object_size + total_header_dd_size
+        )
         assert size_info["total_size_packindexes_on_disk"] == os.path.getsize(
             temp_container._get_pack_index_path()
         )
@@ -1334,7 +1343,7 @@ def test_stream_meta(  # pylint: disable=too-many-locals
                 "size": len(content_packed),
                 "pack_id": 0,  # First pack, it's a new container
                 "pack_compressed": compress,
-                "pack_offset": 0,  # Only one object in the pack, must start from zero
+                "pack_offset": temp_container._zip_header_size,  # Only one object in the pack, must start from zero
                 "pack_length": object_pack_length,
             },
         },
@@ -1450,7 +1459,7 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
                 "size": len(content_packed),
                 "pack_id": 0,  # First pack, it's a new container
                 "pack_compressed": compress,
-                "pack_offset": 0,  # Only one object in the pack, must start from zero
+                "pack_offset": temp_container._zip_header_size,  # Only one object in the pack, must start from zero
                 "pack_length": object_pack_length,
             },
         },

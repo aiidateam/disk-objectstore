@@ -348,7 +348,14 @@ class Container:  # pylint: disable=too-many-public-methods
             raise ValueError(f'Unknown hash type "{hash_type}"')
 
         # Place holder for unknown hash
-        self._hash_place_holder = get_hash(self.hash_type)(b"").hexdigest()
+        hasher = get_hash(hash_type)()
+        hasher.update(b"")
+        self._hash_place_holder = hasher.hexdigest()
+
+        # Size of the ZIP local file header
+        self._zip_header_size = 30 + len(self._hash_place_holder) + 20
+        # Size of the Data descriptor
+        self._zip_dd_size = 24  # struct.calcsize("<LLQQ")
 
         if clear:
             if os.path.exists(self._folder):
@@ -2729,11 +2736,6 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
-
-    @property
-    def _zip_header_size(self):
-        """Return the expected size of the zip header if written by this package"""
-        return 30 + len(self._hash_place_holder) + 20
 
     def seal_pack(self, pack_id, dryrun=False):
         """
