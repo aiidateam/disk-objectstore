@@ -8,6 +8,7 @@ recursive-exclude performance-benchmarks *
 exclude .pre-commit-config.yaml
 exclude codecov.yml
 exclude tox.ini
+exclude .readthedocs.yml
 
 include LICENSE.txt
 include CHANGELOG.md
