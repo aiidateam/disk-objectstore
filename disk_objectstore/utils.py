@@ -24,7 +24,7 @@ from typing import (
     Type,
     Union,
 )
-from zlib import error
+from zlib import crc32, error
 
 from .exceptions import ClosingNotAllowed, ModificationNotAllowed
 
@@ -960,7 +960,7 @@ def _compute_hash_for_filename(filename: str, hash_type: str) -> Optional[str]:
 class HashWriterWrapper:
     """A class that gets a stream open in write mode and wraps it in a new class that computes a hash while writing."""
 
-    def __init__(self, write_stream: BinaryIO, hash_type: str) -> None:
+    def __init__(self, write_stream: BinaryIO, hash_type: str, do_crc=True) -> None:
         """Create the class from a given compressed bytestream.
 
         :param write_stream: an open bytes stream that supports the .write() method.
@@ -971,6 +971,8 @@ class HashWriterWrapper:
         self._write_stream = write_stream
         assert "b" in self._write_stream.mode
         self._hash_type = hash_type
+        self._do_crc = do_crc
+        self._crc = 0
 
         self._hash = get_hash(self._hash_type)()
         self._position = self._write_stream.tell()
@@ -1008,11 +1010,20 @@ class HashWriterWrapper:
 
         # Update the hash information
         self._hash.update(data)
+
+        # Update CRC
+        if self._do_crc:
+            self._crc = crc32(data, self._crc)
+
         return self._position
 
     def hexdigest(self) -> str:
         """Return the hexdigest of the hash computed until now."""
         return self._hash.hexdigest()
+
+    @property
+    def crc32(self) -> int:
+        return self._crc
 
     @property
     def closed(self) -> bool:
