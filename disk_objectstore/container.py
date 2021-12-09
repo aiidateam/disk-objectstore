@@ -32,6 +32,8 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipInfo
 from zlib import crc32
 
 from disk_objectstore.zipsupport import (
+    _DD_SIGNATURE,
+    _DD_SIZE,
     write_end_record,
     write_file_describer,
     write_zip_header,
@@ -2773,7 +2775,7 @@ class Container:  # pylint: disable=too-many-public-methods
         all_zipinfo.sort(key=lambda x: x.header_offset)
         # We write the end of file table
         with self.lock_pack(
-            str(self._REPACK_PACK_ID), allow_repack_pack=False, mode="r+b"
+            str(pack_id), allow_repack_pack=False, mode="r+b"
         ) as write_pack_handle:
 
             # Update the hashes as filenames
@@ -2797,12 +2799,17 @@ class Container:  # pylint: disable=too-many-public-methods
                         write_pack_handle.seek(-local_header[-2], 1)
                         write_pack_handle.write(zipinfo.filename.encode("ascii"))
 
+                # skip to the end of the record and Find the CRC
+                offset = local_header[-1] + zipinfo.compress_size
+                write_pack_handle.seek(offset, 1)
+                data = write_pack_handle.read(_DD_SIZE)
+                dd_sign, zipinfo.CRC, _, _ = struct.unpack("<LLQQ", data)
+                assert dd_sign == _DD_SIGNATURE, f"{dd_sign} {_DD_SIGNATURE}"
+
         if dryrun:
             return
 
         # Finally, write the final central directory
-        with self.lock_pack(
-            str(self._REPACK_PACK_ID), allow_repack_pack=False
-        ) as write_pack_handle:
+        with self.lock_pack(str(pack_id), allow_repack_pack=False) as write_pack_handle:
 
             write_end_record(write_pack_handle, all_zipinfo)

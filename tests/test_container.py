@@ -3303,6 +3303,33 @@ def test_repack(temp_dir):
     temp_container.close()
 
 
+def test_sealing(temp_dir):
+    """Test the repacking functionality."""
+    from zipfile import ZipFile
+
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+    ]
+    hexkeys = []
+    for value in data:
+        hexkeys.append(temp_container.add_objects_to_pack([value])[0])
+    temp_container.seal_pack("0")
+    temp_container.list_all_objects()
+
+    zif = ZipFile(temp_container._get_pack_path_from_pack_id("0"))
+    for i in range(len(data)):
+        with zif.open(hexkeys[i], mode="r") as fh:
+            zdata = fh.read()
+        assert zdata == data[i]
+    # Check the zipfile
+    zif.testzip()
+
+
 def test_not_implemented_repacks(temp_container):
     """Check the error for not implemented repack methods."""
     # We need to have at least one pack

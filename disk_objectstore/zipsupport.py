@@ -30,6 +30,9 @@ def write_file_describer(fhandle, crc, compressed_size, file_size):
     fhandle.write(struct.pack(fmt, _DD_SIGNATURE, crc, compressed_size, file_size))
 
 
+_DD_SIZE = 24
+
+
 def write_end_record(fhandle, zinfos):
     """
     Write the tailing central directory of contents and the end of zip-archive record
@@ -186,7 +189,7 @@ def write_end_record(fhandle, zinfos):
         len(COMMENT),
     )
     fhandle.write(endrec)
-    fhandle.write(COMMENT)
+    fhandle.write(COMMENT.encode())
     fhandle.flush()
 
 
