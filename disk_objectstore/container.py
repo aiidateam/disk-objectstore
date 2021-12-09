@@ -2813,3 +2813,7 @@ class Container:  # pylint: disable=too-many-public-methods
         with self.lock_pack(str(pack_id), allow_repack_pack=False) as write_pack_handle:
 
             write_end_record(write_pack_handle, all_zipinfo)
+
+    def _is_pack_sealed(self, pack_id):
+        """Check if a pack is sealed"""
+        pack_loc = self._get_pack_path_from_pack_id(str(pack_id))

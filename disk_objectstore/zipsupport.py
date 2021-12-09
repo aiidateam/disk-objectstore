@@ -211,3 +211,47 @@ def _strip_extra(extra, xids):
     if not modified:
         return extra
     return b"".join(buffer)
+
+
+# Copied from zipfile.py
+def is_zip(fpin):
+    """This if a file is a ZIP archive"""
+    # Determine file size
+    fpin.seek(0, 2)
+    filesize = fpin.tell()
+
+    # Check to see if this is ZIP file with no archive comment (the
+    # "end of central directory" structure should be the last item in the
+    # file if this is the case).
+    try:
+        fpin.seek(-zipfile.sizeEndCentDir, 2)
+    except OSError:
+        return False
+    data = fpin.read()
+    if (
+        len(data) == zipfile.sizeEndCentDir
+        and data[0:4] == zipfile.stringEndArchive
+        and data[-2:] == b"\000\000"
+    ):
+        # the signature is correct and there's no comment, unpack structure
+        return True
+
+    # Either this is not a ZIP file, or it is a ZIP file with an archive
+    # comment.  Search the end of the file for the "end of central directory"
+    # record signature. The comment is the last item in the ZIP file and may be
+    # up to 64K long.  It is assumed that the "end of central directory" magic
+    # number does not appear in the comment.
+    maxCommentStart = max(filesize - (1 << 16) - zipfile.sizeEndCentDir, 0)
+    fpin.seek(maxCommentStart, 0)
+    data = fpin.read()
+    start = data.rfind(zipfile.stringEndArchive)
+    if start >= 0:
+        # found the magic number; attempt to unpack and interpret
+        recData = data[start : start + zipfile.sizeEndCentDir]
+        if len(recData) != zipfile.sizeEndCentDir:
+            # Zip file is corrupted.
+            return False
+        return True
+
+    # Unable to find a valid end of central directory structure
+    return False
