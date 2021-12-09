@@ -134,7 +134,7 @@ def main(
             print(
                 f"{key}: {start_value} -> {end_value} "
                 f"(DELTA = {end_value - start_value} = "
-                f"{(end_value - start_value) / 1024.0 / 1024.0,:.2f} MB)"
+                f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
             )
         del temp_array
 
@@ -146,7 +146,7 @@ def main(
             print(
                 f"{key}: {start_value} -> {end_value} "
                 f"(DELTA = {end_value - start_value} = "
-                f"{(end_value - start_value) / 1024.0 / 1024.0,:.2f} MB)"
+                f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
             )
         print("*" * 74)
 
@@ -191,7 +191,7 @@ def main(
         print(
             f"{key}: {start_value} -> {end_value} "
             f"(DELTA = {end_value - start_value} = "
-            f"{(end_value - start_value) / 1024.0 / 1024.0,:.2f} MB)"
+            f"{(end_value - start_value) / 1024.0 / 1024.0:.2f} MB)"
         )
 
 
