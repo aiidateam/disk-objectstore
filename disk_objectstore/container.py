@@ -79,6 +79,8 @@ ObjQueryResults = namedtuple(
     "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
 )
 
+FN_SIZE = 16  # Size for the file name used in LOCAL header for each object
+
 
 class ObjectType(Enum):
     """Enum that describes the various types of an objec (as returned in ``meta['type']``)."""
@@ -352,7 +354,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # Place holder for unknown hash
         hasher = get_hash(hash_type)()
         hasher.update(b"")
-        self._hash_place_holder = hasher.hexdigest()
+        self._hash_place_holder = hasher.hexdigest()[:FN_SIZE]
 
         # Size of the ZIP local file header
         self._zip_header_size = 30 + len(self._hash_place_holder) + 20
@@ -1425,7 +1427,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict["compressed"] = compress
                     # Write the header
                     write_zip_header(
-                        pack_handle, loose_hashkey, None if not compress else "zlib"
+                        pack_handle,
+                        loose_hashkey[:FN_SIZE],
+                        None if not compress else "zlib",
                     )
                     # Record the start of the actual data
                     obj_dict["offset"] = pack_handle.tell()
@@ -2631,7 +2635,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     rowid,
                     hashkey,
                     size,
-                    ofggfset,
+                    offset,
                     length,
                     compressed,
                 ) in session.execute(stmt):
@@ -2648,7 +2652,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict["size"] = size
                     write_zip_header(
                         write_pack_handle,
-                        obj_dict["hashkey"],
+                        obj_dict["hashkey"][:FN_SIZE],
                         "zlib" if compressed else None,
                     )
                     obj_dict["offset"] = write_pack_handle.tell()
@@ -2763,7 +2767,7 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
         for rowid, hashkey, size, offset, length, compressed in session.execute(stmt):
-            zipinfo = ZipInfo(filename=hashkey)
+            zipinfo = ZipInfo(filename=hashkey[:FN_SIZE])
             zipinfo.compress_type = ZIP_DEFLATED if compressed else ZIP_STORED
             zipinfo.file_size = size
             zipinfo.compress_size = length

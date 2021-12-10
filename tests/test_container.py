@@ -9,12 +9,14 @@ import random
 import shutil
 import stat
 import tempfile
+from zipfile import ZipFile
 
 import psutil
 import pytest
 
 import disk_objectstore.exceptions as exc
 from disk_objectstore import CompressMode, Container, ObjectType, database, utils
+from disk_objectstore.container import FN_SIZE
 
 COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
 
@@ -3305,7 +3307,6 @@ def test_repack(temp_dir):
 
 def test_sealing(temp_dir):
     """Test the repacking functionality."""
-    from zipfile import ZipFile
 
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True)
@@ -3321,13 +3322,13 @@ def test_sealing(temp_dir):
     temp_container.seal_pack("0")
     temp_container.list_all_objects()
 
-    zif = ZipFile(temp_container._get_pack_path_from_pack_id("0"))
-    for i in range(len(data)):
-        with zif.open(hexkeys[i], mode="r") as fh:
-            zdata = fh.read()
-        assert zdata == data[i]
-    # Check the zipfile
-    zif.testzip()
+    with ZipFile(temp_container._get_pack_path_from_pack_id("0")) as zif:
+        for idx, expected in enumerate(data):
+            with zif.open(hexkeys[idx][:FN_SIZE], mode="r") as fhandle:
+                zdata = fhandle.read()
+            assert zdata == expected
+        # Check the zipfile
+        zif.testzip()
 
 
 def test_not_implemented_repacks(temp_container):
