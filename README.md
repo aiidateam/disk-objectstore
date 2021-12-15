@@ -46,5 +46,5 @@ on the design of the library and its performance, you can check [the documentati
 [pypi-badge]: https://badge.fury.io/py/disk-objectstore.svg
 [pypi-link]: https://pypi.python.org/pypi/disk-objectstore
 [pypi-pyversions]: https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg
-[rtd-link]: http://disk-objectstore.readthedocs.io/
 [rtd-badge]: https://readthedocs.org/projects/disk-objectstore/badge
+[rtd-link]: http://disk-objectstore.readthedocs.io/
