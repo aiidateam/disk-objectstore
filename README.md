@@ -7,7 +7,7 @@ and does not require a server running.
 | -------------- | -------------------------------------------------------------------------------------------- |
 | Latest release | [![PyPI version][pypi-badge]][pypi-link] [![PyPI pyversions][pypi-pyversions]][pypi-link]    |
 | Build status   | [![Build Status][build-badge]][build-link] [![Coverage Status][codecov-badge]][codecov-link] |
-| Getting help   | [![Docs status](rtd-badge)][rtd-link]                                                        |
+| Getting help   | [![Docs status][rtd-badge]][rtd-link]                                                        |
 | Performance    | [Benchmarks][bench-link]                                                                     |
 
 ## Goal
@@ -46,4 +46,5 @@ on the design of the library and its performance, you can check [the documentati
 [pypi-badge]: https://badge.fury.io/py/disk-objectstore.svg
 [pypi-link]: https://pypi.python.org/pypi/disk-objectstore
 [pypi-pyversions]: https://img.shields.io/badge/Supported%20platforms-windows%20%7c%20macos%20%7c%20linux-1f425f.svg
+[rtd-badge]: https://readthedocs.org/projects/disk-objectstore/badge
 [rtd-link]: http://disk-objectstore.readthedocs.io/
