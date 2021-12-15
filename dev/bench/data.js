@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1639093609555,
+  "lastUpdate": 1639563575225,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -3734,6 +3734,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 9.206771436173523e-7",
             "extra": "mean: 401.6802780347329 nsec\nrounds: 126567"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65a3e5d9b8c95d7f9a7309a01f8be68bc11be1bd",
+          "message": "Missing badge from RTD added (#129)\n\n* Missing badge from RTD added\r\n\r\n* [pre-commit.ci] auto fixes from pre-commit.com hooks",
+          "timestamp": "2021-12-15T11:18:23+01:00",
+          "tree_id": "b0581635f9dbaa13760e30de0b0e5c3aa75ff806",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/65a3e5d9b8c95d7f9a7309a01f8be68bc11be1bd"
+        },
+        "date": 1639563574546,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.98781062674528,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011524756960093124",
+            "extra": "mean: 250.7641644999996 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.5881743504493455,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06890084563867725",
+            "extra": "mean: 629.6537906666657 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 9.480333401028142,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00776904836442887",
+            "extra": "mean: 105.48152239999808 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 43.192227677407814,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006514311535894132",
+            "extra": "mean: 23.15231359375014 msec\nrounds: 32"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 6.614444174729539,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016939518661683164",
+            "extra": "mean: 151.18428299999817 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2179965.6223666873,
+            "unit": "iter/sec",
+            "range": "stddev: 1.0345958988188959e-7",
+            "extra": "mean: 458.7228301858937 nsec\nrounds: 161291"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2194762.0488174395,
+            "unit": "iter/sec",
+            "range": "stddev: 8.55520083031421e-8",
+            "extra": "mean: 455.63025866007223 nsec\nrounds: 181819"
           }
         ]
       }
