@@ -3046,16 +3046,17 @@ def test_packs_no_holes(
 
     sizes = temp_container.get_total_size()
     assert sizes["total_size_packed"] == len(content1) + len(content2) + len(content3)
-
+    header_size = temp_container._zip_header_size
     if no_holes:
         assert (
-            sizes["total_size_packed_on_disk"] == sizes["total_size_packfiles_on_disk"]
+            sizes["total_size_packed_on_disk"] + header_size * 3
+            == sizes["total_size_packfiles_on_disk"]
         )
     else:
         # We have added twice each object. Note: we cannot use total_size_packed because this would be
         # before compression
         assert (
-            2 * sizes["total_size_packed_on_disk"]
+            2 * (sizes["total_size_packed_on_disk"] + header_size * 3)
             == sizes["total_size_packfiles_on_disk"]
         )
 

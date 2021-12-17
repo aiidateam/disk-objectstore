@@ -1305,9 +1305,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if compress:
             compressobj = self._get_compressobj_instance()
-
+        write_zip_header(
+            pack_handle,
+            self._hash_place_holder,
+            "zlib" if compress else None,
+        )
         count_read_bytes = 0
         crc_value = 0
+        offset = pack_handle.tell()
         while True:
             chunk = read_handle.read(self._CHUNKSIZE)
             if chunk == b"":
@@ -1329,7 +1334,12 @@ class Container:  # pylint: disable=too-many-public-methods
             # compressobj
             pack_handle.write(compressobj.flush())
 
-        return (count_read_bytes, hasher.hexdigest() if hash_type else None, crc_value)
+        return (
+            offset,
+            count_read_bytes,
+            hasher.hexdigest() if hash_type else None,
+            crc_value,
+        )
 
     def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
         self,
@@ -1425,14 +1435,6 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict["hashkey"] = loose_hashkey
                     obj_dict["pack_id"] = pack_int_id
                     obj_dict["compressed"] = compress
-                    # Write the header
-                    write_zip_header(
-                        pack_handle,
-                        loose_hashkey[:FN_SIZE],
-                        None if not compress else "zlib",
-                    )
-                    # Record the start of the actual data
-                    obj_dict["offset"] = pack_handle.tell()
                     try:
                         with open(
                             self._get_loose_path_from_hashkey(loose_hashkey), "rb"
@@ -1440,6 +1442,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             # The second parameter is `None` since we are not computing the hash
                             # We can instead pass the hash algorithm and assert that it is correct
                             (
+                                obj_dict["offset"],
                                 obj_dict["size"],
                                 new_hashkey,
                                 crc_value,
@@ -1713,11 +1716,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict: Dict[str, Any] = {}
                     obj_dict["pack_id"] = pack_int_id
                     obj_dict["compressed"] = compress
-                    write_zip_header(
-                        pack_handle,
-                        self._hash_place_holder,
-                        "zlib" if compress else None,
-                    )
+
                     obj_dict["offset"] = pack_handle.tell()
                     with stream_context_manager as stream:
                         if no_holes and no_holes_read_twice:
@@ -1737,8 +1736,8 @@ class Container:  # pylint: disable=too-many-public-methods
                             # I therefore need to seek back to zero, because the next line will read it again
                             # in _write_data_to_packfile.
                             stream.seek(0)
-
                         (
+                            obj_dict["offset"],
                             obj_dict["size"],
                             obj_dict["hashkey"],
                             crc_value,
