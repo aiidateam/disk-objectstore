@@ -29,6 +29,11 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
     pack_id = Column(
         Integer, nullable=False
     )  # integer ID of the pack in which this entry is stored
+    # CRC of the object - used for sealing the pack and making it ZIP compatible
+    crc = Column(
+        Integer,
+        nullable=True,
+    )
 
 
 def get_session(

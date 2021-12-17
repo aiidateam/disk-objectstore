@@ -1460,11 +1460,12 @@ class Container:  # pylint: disable=too-many-public-methods
                             )
                         )
                     obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
+                    obj_dict["crc"] = crc_value
 
                     # Write the tailing marker
-                    write_file_describer(
-                        pack_handle, crc_value, obj_dict["length"], obj_dict["size"]
-                    )
+                    # write_file_describer(
+                    #    pack_handle, crc_value, obj_dict["length"], obj_dict["size"]
+                    # )
 
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
@@ -1748,9 +1749,11 @@ class Container:  # pylint: disable=too-many-public-methods
                             hash_type=self.hash_type,
                         )
                     obj_dict["length"] = pack_handle.tell() - obj_dict["offset"]
-                    write_file_describer(
-                        pack_handle, crc_value, obj_dict["length"], obj_dict["size"]
-                    )
+                    obj_dict["crc"] = crc_value
+
+                    # write_file_describer(
+                    #    pack_handle, crc_value, obj_dict["length"], obj_dict["size"]
+                    # )
 
                     # Here, we have appended the object to the pack file.
                     # And now that we are done, we know the hash key.
@@ -2627,6 +2630,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         Obj.offset,
                         Obj.length,
                         Obj.compressed,
+                        Obj.crc,
                     )
                     .where(Obj.pack_id == pack_id)
                     .order_by(Obj.offset)
@@ -2638,6 +2642,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     offset,
                     length,
                     compressed,
+                    crc,
                 ) in session.execute(stmt):
                     # Since I am assuming above that the method is `KEEP`, I will just transfer
                     # the bytes. Otherwise I have to properly take into account compression in the
@@ -2650,13 +2655,13 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict["pack_id"] = self._REPACK_PACK_ID
                     obj_dict["compressed"] = compressed
                     obj_dict["size"] = size
+                    obj_dict["crc"] = crc
                     write_zip_header(
                         write_pack_handle,
                         obj_dict["hashkey"][:FN_SIZE],
                         "zlib" if compressed else None,
                     )
                     obj_dict["offset"] = write_pack_handle.tell()
-                    crc_value = 0
 
                     # Transfer data in chunks.
                     # No need to rehash - it's the same container so the same hash.
@@ -2668,15 +2673,15 @@ class Container:  # pylint: disable=too-many-public-methods
                             # Returns an empty bytes object on EOF.
                             break
                         write_pack_handle.write(chunk)
-                        crc_value = crc32(chunk, crc_value)
                     obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
+
                     # Write trailing file describer
-                    write_file_describer(
-                        write_pack_handle,
-                        crc_value,
-                        obj_dict["length"],
-                        obj_dict["size"],
-                    )
+                    # write_file_describer(
+                    #    write_pack_handle,
+                    #    crc_value,
+                    #    obj_dict["length"],
+                    #    obj_dict["size"],
+                    # )
 
                     # Appending for later bulk commit
                     # I will assume that all objects of a single pack fit in memory
@@ -2761,16 +2766,20 @@ class Container:  # pylint: disable=too-many-public-methods
                 Obj.offset,
                 Obj.length,
                 Obj.compressed,
+                Obj.crc,
             )
             .where(Obj.pack_id == pack_id)
             .order_by(Obj.offset)
         )
 
-        for rowid, hashkey, size, offset, length, compressed in session.execute(stmt):
+        for rowid, hashkey, size, offset, length, compressed, crc in session.execute(
+            stmt
+        ):
             zipinfo = ZipInfo(filename=hashkey[:FN_SIZE])
             zipinfo.compress_type = ZIP_DEFLATED if compressed else ZIP_STORED
             zipinfo.file_size = size
             zipinfo.compress_size = length
+            zipinfo.CRC = crc
             # Offset for the header
             zipinfo.header_offset = offset - header_size
             all_zipinfo.append(zipinfo)
@@ -2787,11 +2796,12 @@ class Container:  # pylint: disable=too-many-public-methods
                 write_pack_handle.seek(zipinfo.header_offset, 0)
                 header_data = write_pack_handle.read(zipfile.sizeFileHeader)
                 local_header = struct.unpack(zipfile.structFileHeader, header_data)
+                fnlen = local_header[-2]
                 # Check the magic
                 if local_header[0] != zipfile.stringFileHeader:
                     raise ValueError(f"Cannot find ZIP header for record {zipinfo}")
                 # Read the filename
-                fname = write_pack_handle.read(local_header[-2]).decode("ascii")
+                fname = write_pack_handle.read(fnlen).decode("ascii")
 
                 # Seek back and rewrite the file name
                 if fname != zipinfo.filename:
@@ -2800,15 +2810,25 @@ class Container:  # pylint: disable=too-many-public-methods
                             f"Dryrun - changing filename {fname} to {zipinfo.filename}"
                         )
                     else:
-                        write_pack_handle.seek(-local_header[-2], 1)
+                        write_pack_handle.seek(-fnlen, 1)
                         write_pack_handle.write(zipinfo.filename.encode("ascii"))
 
-                # skip to the end of the record and Find the CRC
-                offset = local_header[-1] + zipinfo.compress_size
-                write_pack_handle.seek(offset, 1)
-                data = write_pack_handle.read(_DD_SIZE)
-                dd_sign, zipinfo.CRC, _, _ = struct.unpack("<LLQQ", data)
-                assert dd_sign == _DD_SIGNATURE, f"{dd_sign} {_DD_SIGNATURE}"
+                # Update the CRC field
+                write_pack_handle.seek(zipinfo.header_offset + 14, 0)
+                write_pack_handle.write(struct.pack("<L", zipinfo.CRC))
+
+                # Reset the flag bits from 0x08 to 0
+                write_pack_handle.seek(zipinfo.header_offset + 6, 0)
+                write_pack_handle.write(struct.pack("<B", 0))
+
+                # Update the file length and compressed file length in the extras field
+                write_pack_handle.seek(zipinfo.header_offset, 0)
+                write_pack_handle.seek(30 + fnlen + 4, 1)
+                bytes_to_write = struct.pack(
+                    "<QQ", zipinfo.file_size, zipinfo.compress_size
+                )
+                # Update the file size and the compressed size in the zip header
+                write_pack_handle.write(bytes_to_write)
 
         if dryrun:
             return

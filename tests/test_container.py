@@ -1068,9 +1068,7 @@ def test_sizes(
         == total_object_size
     )
 
-    total_header_dd_size = (
-        temp_container._zip_header_size + temp_container._zip_dd_size
-    ) * len(data)
+    total_header_dd_size = (temp_container._zip_header_size) * len(data)
     if compress_packs:
         compressed_data = {}
         for key, val in data.items():
