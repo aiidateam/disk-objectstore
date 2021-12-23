@@ -2379,6 +2379,7 @@ class Container:  # pylint: disable=too-many-public-methods
         current_pos = 0
         if include_crc:
             computed_crc = {}
+        zip_compatible = self._is_zip_compatible(pack_id)
         with open(pack_path, mode="rb") as pack_handle:
             stmt = (
                 select(Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed)
@@ -2410,8 +2411,12 @@ class Container:  # pylint: disable=too-many-public-methods
                     invalid_sizes.append(hashkey)
 
                 # Check that there are no overlapping objects
-                if offset < current_pos:
+
+                if (
+                    zip_compatible and (offset < current_pos + self._zip_header_size)
+                ) or (not zip_compatible and (offset < current_pos)):
                     overlapping.append(hashkey)
+
                 current_pos = offset + length
 
                 if callback:
@@ -2865,6 +2870,13 @@ class Container:  # pylint: disable=too-many-public-methods
         session.add(pack)
         session.commit()
 
-    def _is_pack_sealed(self, pack_id):
+    def _is_zip_compatible(self, pack_id):
         """Check if a pack is sealed"""
-        pack_loc = self._get_pack_path_from_pack_id(str(pack_id))
+        pack_path = self._get_pack_path_from_pack_id(str(pack_id))
+        with open(pack_path, mode="rb") as pack_handle:
+            # Validate the existence of ZIP local header for the first record
+            header_data = pack_handle.read(zipfile.sizeFileHeader)
+            local_header = struct.unpack(zipfile.structFileHeader, header_data)
+            if local_header[0] == zipfile.stringFileHeader:
+                return True
+        return False

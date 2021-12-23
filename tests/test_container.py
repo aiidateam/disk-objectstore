@@ -2235,6 +2235,7 @@ def test_validate_corrupt_packed(temp_container):
     with open(
         temp_container._get_pack_path_from_pack_id(str(meta["pack_id"])), "wb"
     ) as fhandle:
+        fhandle.seek(temp_container._zip_header_size, 0)
         fhandle.write(b"CORRU890890890809PT")
 
     errors = temp_container.validate()
