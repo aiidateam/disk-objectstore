@@ -2379,7 +2379,7 @@ class Container:  # pylint: disable=too-many-public-methods
         current_pos = 0
         if include_crc:
             computed_crc = {}
-        zip_compatible = self._is_zip_compatible(pack_id)
+        zip_compatible = self._is_pack_zip_compatible(pack_id)
         with open(pack_path, mode="rb") as pack_handle:
             stmt = (
                 select(Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed)
@@ -2745,7 +2745,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def seal_pack(self, pack_id):
+    def seal_pack(self, pack_id: str):
         """
         Seal a pack by adding a central directory in the end, making the file a fully functional
         ZIP file.
@@ -2761,17 +2761,13 @@ class Container:  # pylint: disable=too-many-public-methods
         # Validate if the pack is sealable
         # Trying to seal a pack file that was not written in ZIP compatible format can result in
         # serious data corrutpion
+        if not self._is_pack_zip_compatible(pack_id):
+            raise ValueError(
+                f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealled."
+            )
         with self.lock_pack(
             str(pack_id), allow_repack_pack=False, mode="rb"
         ) as pack_handle:
-            # Validate the existence of ZIP local header for the first record
-            header_data = pack_handle.read(zipfile.sizeFileHeader)
-            local_header = struct.unpack(zipfile.structFileHeader, header_data)
-            if local_header[0] != zipfile.stringFileHeader:
-                raise ValueError(
-                    f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealled."
-                )
-
             if is_zip(pack_handle):
                 raise ValueError(f"Pack file {pack_id} has already been sealed!")
 
@@ -2870,8 +2866,8 @@ class Container:  # pylint: disable=too-many-public-methods
         session.add(pack)
         session.commit()
 
-    def _is_zip_compatible(self, pack_id):
-        """Check if a pack is sealed"""
+    def _is_pack_zip_compatible(self, pack_id: str) -> bool:
+        """Check if a pack is written in zip compatible format"""
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         with open(pack_path, mode="rb") as pack_handle:
             # Validate the existence of ZIP local header for the first record
