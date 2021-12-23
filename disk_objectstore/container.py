@@ -136,6 +136,9 @@ class Container:  # pylint: disable=too-many-public-methods
     # (after VACUUMing, as mentioned above).
     _MAX_CHUNK_ITERATE_LENGTH = 9500
 
+    # Size of the ZIP local file header
+    _ZIP_HEADER_SIZE = 30 + FN_SIZE + 20
+
     def __init__(self, folder: Union[str, Path]) -> None:
         """Create the class that represents the container.
 
@@ -358,11 +361,6 @@ class Container:  # pylint: disable=too-many-public-methods
         hasher = get_hash(hash_type)()
         hasher.update(b"")
         self._hash_place_holder = hasher.hexdigest()[:FN_SIZE]
-
-        # Size of the ZIP local file header
-        self._zip_header_size = 30 + len(self._hash_place_holder) + 20
-        # Size of the Data descriptor
-        self._zip_dd_size = 24  # struct.calcsize("<LLQQ")
 
         if clear:
             if os.path.exists(self._folder):
@@ -2413,7 +2411,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 # Check that there are no overlapping objects
 
                 if (
-                    zip_compatible and (offset < current_pos + self._zip_header_size)
+                    zip_compatible and (offset < current_pos + self._ZIP_HEADER_SIZE)
                 ) or (not zip_compatible and (offset < current_pos)):
                     overlapping.append(hashkey)
 
@@ -2783,7 +2781,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # Gather information for each object
         session = self._get_cached_session()
         all_zipinfo = []
-        header_size = self._zip_header_size
+        header_size = self._ZIP_HEADER_SIZE
         # Size of the file local header
         # the extra field takes 20 bytes with format "<HHQQ"
         stmt = (

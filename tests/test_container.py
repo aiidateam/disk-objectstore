@@ -1068,7 +1068,7 @@ def test_sizes(
         == total_object_size
     )
 
-    total_header_dd_size = (temp_container._zip_header_size) * len(data)
+    total_header_size = (temp_container._ZIP_HEADER_SIZE) * len(data)
     if compress_packs:
         compressed_data = {}
         for key, val in data.items():
@@ -1083,7 +1083,7 @@ def test_sizes(
         assert size_info["total_size_packed_on_disk"] == total_compressed_size
         assert (
             size_info["total_size_packfiles_on_disk"]
-            == total_compressed_size + total_header_dd_size
+            == total_compressed_size + total_header_size
         )
         assert size_info["total_size_packindexes_on_disk"] == os.path.getsize(
             temp_container._get_pack_index_path()
@@ -1095,7 +1095,7 @@ def test_sizes(
         assert size_info["total_size_packed_on_disk"] == total_object_size
         assert (
             size_info["total_size_packfiles_on_disk"]
-            == total_object_size + total_header_dd_size
+            == total_object_size + total_header_size
         )
         assert size_info["total_size_packindexes_on_disk"] == os.path.getsize(
             temp_container._get_pack_index_path()
@@ -1343,7 +1343,7 @@ def test_stream_meta(  # pylint: disable=too-many-locals
                 "size": len(content_packed),
                 "pack_id": 0,  # First pack, it's a new container
                 "pack_compressed": compress,
-                "pack_offset": temp_container._zip_header_size,  # Only one object in the pack, must start from zero
+                "pack_offset": temp_container._ZIP_HEADER_SIZE,  # Only one object in the pack, must start from zero
                 "pack_length": object_pack_length,
             },
         },
@@ -1459,7 +1459,7 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
                 "size": len(content_packed),
                 "pack_id": 0,  # First pack, it's a new container
                 "pack_compressed": compress,
-                "pack_offset": temp_container._zip_header_size,  # Only one object in the pack, must start from zero
+                "pack_offset": temp_container._ZIP_HEADER_SIZE,  # Only one object in the pack, must start from zero
                 "pack_length": object_pack_length,
             },
         },
@@ -2235,7 +2235,7 @@ def test_validate_corrupt_packed(temp_container):
     with open(
         temp_container._get_pack_path_from_pack_id(str(meta["pack_id"])), "wb"
     ) as fhandle:
-        fhandle.seek(temp_container._zip_header_size, 0)
+        fhandle.seek(temp_container._ZIP_HEADER_SIZE, 0)
         fhandle.write(b"CORRU890890890809PT")
 
     errors = temp_container.validate()
@@ -3047,7 +3047,7 @@ def test_packs_no_holes(
 
     sizes = temp_container.get_total_size()
     assert sizes["total_size_packed"] == len(content1) + len(content2) + len(content3)
-    header_size = temp_container._zip_header_size
+    header_size = temp_container._ZIP_HEADER_SIZE
     if no_holes:
         assert (
             sizes["total_size_packed_on_disk"] + header_size * 3
@@ -3217,7 +3217,9 @@ def test_packs_read_in_order(temp_dir):
 def test_repack(temp_dir):
     """Test the repacking functionality."""
     temp_container = Container(temp_dir)
-    temp_container.init_container(clear=True, pack_size_target=39)
+    temp_container.init_container(
+        clear=True, pack_size_target=39 + 4 * temp_container._ZIP_HEADER_SIZE
+    )
 
     # data of 10 bytes each. Will fill two packs.
     data = [
@@ -3258,7 +3260,9 @@ def test_repack(temp_dir):
     assert counts["packed"] == len(data)
     size = temp_container.get_total_size()
     assert size["total_size_packed"] == 10 * len(data)
-    assert size["total_size_packfiles_on_disk"] == 10 * len(data)
+    assert size["total_size_packfiles_on_disk"] == (
+        10 + temp_container._ZIP_HEADER_SIZE
+    ) * len(data)
 
     # I delete an object in the middle, an object at the end of a pack, and an object at the beginning.
     # I also delete the only object
@@ -3278,7 +3282,9 @@ def test_repack(temp_dir):
     # I deleted 4 objects
     assert size["total_size_packed"] == 10 * (len(data) - len(to_delete))
     # Still full size on disk
-    assert size["total_size_packfiles_on_disk"] == 10 * len(data)
+    assert size["total_size_packfiles_on_disk"] == (
+        10 + temp_container._ZIP_HEADER_SIZE
+    ) * len(data)
 
     # I now repack
     temp_container.repack(compress_mode=CompressMode.KEEP)
@@ -3294,7 +3300,9 @@ def test_repack(temp_dir):
     size = temp_container.get_total_size()
     assert size["total_size_packed"] == 10 * (len(data) - len(to_delete))
     # This time also the size on disk should be adapted (it's the main goal of repacking)
-    assert size["total_size_packfiles_on_disk"] == 10 * (len(data) - len(to_delete))
+    assert size["total_size_packfiles_on_disk"] == (
+        10 + temp_container._ZIP_HEADER_SIZE
+    ) * (len(data) - len(to_delete))
 
     # Check that the content is still correct
     # Should not raise
