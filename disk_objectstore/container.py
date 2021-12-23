@@ -34,6 +34,7 @@ from zlib import crc32
 from disk_objectstore.zipsupport import (
     _DD_SIGNATURE,
     _DD_SIZE,
+    is_zip,
     write_end_record,
     write_file_describer,
     write_zip_header,
@@ -49,7 +50,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update, values
 
-from .database import Obj, get_session
+from .database import Obj, Pack, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
@@ -63,9 +64,11 @@ from .utils import (
     ZlibStreamDecompresser,
     chunk_iterator,
     compute_hash_and_size,
+    compute_hash_crc_and_size,
     detect_where_sorted,
     get_compressobj_instance,
     get_hash,
+    get_md5,
     get_stream_decompresser,
     is_known_hash,
     merge_sorted,
@@ -2288,7 +2291,10 @@ class Container:  # pylint: disable=too-many-public-methods
 
     # Let us also compute the hash
     def _validate_hashkeys_pack(
-        self, pack_id: int, callback: Optional[Callable] = None
+        self,
+        pack_id: int,
+        callback: Optional[Callable] = None,
+        include_crc: bool = False,
     ) -> Dict[
         str, Union[List[Union[str, Any]], List[Any]]
     ]:  # pylint: disable=too-many-locals
@@ -2319,6 +2325,8 @@ class Container:  # pylint: disable=too-many-public-methods
             - after every object has been processed, with ``action=='update'`` and value equal to the number of
               newly processed entries since the last call.
             - at the end, with ``action=='close'`` and value equal to ``None``.
+        :param include_crc: If set  to ``True``, compute the CRC32 value while validating the pack. The CRC32 is needed
+            for sealing the pack.
 
         Here is a minimal example of progress bar using the ``tqdm`` library:
 
@@ -2369,6 +2377,8 @@ class Container:  # pylint: disable=too-many-public-methods
         # Open the pack only once, read it in order
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         current_pos = 0
+        if include_crc:
+            computed_crc = {}
         with open(pack_path, mode="rb") as pack_handle:
             stmt = (
                 select(Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed)
@@ -2382,9 +2392,16 @@ class Container:  # pylint: disable=too-many-public-methods
                 if compressed:
                     obj_reader = self._get_stream_decompresser()(obj_reader)
 
-                computed_hash, computed_size = compute_hash_and_size(
-                    obj_reader, self.hash_type
-                )
+                if include_crc:
+                    (
+                        computed_hash,
+                        computed_crc[hashkey],
+                        computed_size,
+                    ) = compute_hash_crc_and_size(obj_reader, self.hash_type)
+                else:
+                    computed_hash, computed_size = compute_hash_and_size(
+                        obj_reader, self.hash_type
+                    )
 
                 # Check object correctness
                 if computed_hash != hashkey:
@@ -2410,11 +2427,14 @@ class Container:  # pylint: disable=too-many-public-methods
             # Perform any wrap-up, if needed
             callback(action="close", value=None)
 
-        return {
+        output = {
             "invalid_hashes_packed": invalid_hashes,
             "invalid_sizes_packed": invalid_sizes,
             "overlapping_packed": overlapping,
         }
+        if include_crc:
+            output["crc_of_hashes"] = computed_crc
+        return output
 
     def validate(
         self, callback: Optional[Callable] = None
@@ -2449,7 +2469,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         for pack_id in all_pack_ids:
             pack_errors = self._validate_hashkeys_pack(
-                pack_id=pack_id, callback=callback
+                pack_id=pack_id, callback=callback, include_crc=False
             )
             for error_type, problematic_objects in pack_errors.items():
                 all_errors[error_type] += problematic_objects
@@ -2720,11 +2740,46 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def seal_pack(self, pack_id, dryrun=False):
+    def seal_pack(self, pack_id):
         """
         Seal a pack by adding a central directory in the end, making the file a fully functional
         ZIP file.
+
+        The sealing process consists of following steps:
+
+        1. Validate the pack and compute the CRC32 for each key on-the-fly
+        2. Gather the information for each record as ZIP record
+        3. Go through each record and update the local header, include the CRC32, filename and file lengths fields.
+        4. Write the central directory file header and end of centra directory record
+        5. Update the SQLite database to mark that the pack is sealed.
         """
+        # Validate if the pack is sealable
+        # Trying to seal a pack file that was not written in ZIP compatible format can result in
+        # serious data corrutpion
+        with self.lock_pack(
+            str(pack_id), allow_repack_pack=False, mode="rb"
+        ) as pack_handle:
+            # Validate the existence of ZIP local header for the first record
+            header_data = pack_handle.read(zipfile.sizeFileHeader)
+            local_header = struct.unpack(zipfile.structFileHeader, header_data)
+            if local_header[0] != zipfile.stringFileHeader:
+                raise ValueError(
+                    f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealled."
+                )
+
+            if is_zip(pack_handle):
+                raise ValueError(f"Pack file {pack_id} has already been sealed!")
+
+        # Valid the pack conetents
+        errors_and_crc = self._validate_hashkeys_pack(pack_id, include_crc=True)
+        crc_of_hashes = errors_and_crc.pop("crc_of_hashes")
+        for error_type, problematic_objects in errors_and_crc.items():
+            if problematic_objects:
+                raise ValueError(
+                    f"Detected problematic objects: {problematic_objects} with error '{error_type}'"
+                )
+
+        # Gather information for each object
         session = self._get_cached_session()
         all_zipinfo = []
         header_size = self._zip_header_size
@@ -2750,6 +2805,7 @@ class Container:  # pylint: disable=too-many-public-methods
             zipinfo.compress_size = length
             # Offset for the header
             zipinfo.header_offset = offset - header_size
+            zipinfo.CRC = crc_of_hashes[hashkey]
             all_zipinfo.append(zipinfo)
 
         # Sort the zipinfo data so they are ordered by the header offset value
@@ -2772,14 +2828,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 fname = write_pack_handle.read(fnlen).decode("ascii")
 
                 # Seek back and rewrite the file name
-                if fname != zipinfo.filename:
-                    if dryrun:
-                        print(
-                            f"Dryrun - changing filename {fname} to {zipinfo.filename}"
-                        )
-                    else:
-                        write_pack_handle.seek(-fnlen, 1)
-                        write_pack_handle.write(zipinfo.filename.encode("ascii"))
+                write_pack_handle.seek(-fnlen, 1)
+                write_pack_handle.write(zipinfo.filename.encode("ascii"))
 
                 # Update the CRC field
                 write_pack_handle.seek(zipinfo.header_offset + 14, 0)
@@ -2798,13 +2848,22 @@ class Container:  # pylint: disable=too-many-public-methods
                 # Update the file size and the compressed size in the zip header
                 write_pack_handle.write(bytes_to_write)
 
-        if dryrun:
-            return
-
         # Finally, write the final central directory
-        with self.lock_pack(str(pack_id), allow_repack_pack=False) as write_pack_handle:
+        with self.lock_pack(
+            str(pack_id), allow_repack_pack=False, mode="ab"
+        ) as write_pack_handle:
 
             write_end_record(write_pack_handle, all_zipinfo)
+
+        with self.lock_pack(
+            str(pack_id), allow_repack_pack=False, mode="rb"
+        ) as read_pack_handle:
+            md5_obj = get_md5(read_pack_handle)
+
+        # Update the SQLite database
+        pack = Pack(id=int(pack_id), state="Sealed", md5=md5_obj.hexdigest())
+        session.add(pack)
+        session.commit()
 
     def _is_pack_sealed(self, pack_id):
         """Check if a pack is sealed"""

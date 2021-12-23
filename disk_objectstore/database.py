@@ -1,5 +1,6 @@
 """Models for the container index file (SQLite DB)."""
 import os
+from enum import unique
 from typing import Optional
 
 from sqlalchemy import Boolean, Column, Integer, String, create_engine, event
@@ -29,6 +30,17 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
     pack_id = Column(
         Integer, nullable=False
     )  # integer ID of the pack in which this entry is stored
+
+
+class Pack(Base):  # pylint: disable=too-few-public-methods
+    """The table for storing the state of pack files. If missing, it means that the pack is currently active"""
+
+    __tablename__ = "db_pack"
+
+    id = Column(Integer, primary_key=True)
+    state = Column(String, nullable=False, unique=False)
+    md5 = Column(String, unique=True, nullable=False)
+    location = Column(String, nullable=True)
 
 
 def get_session(

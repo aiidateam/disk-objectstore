@@ -1142,6 +1142,34 @@ def compute_hash_and_size(
     return hasher.hexdigest(), size
 
 
+def compute_hash_crc_and_size(
+    stream: StreamReadBytesType,
+    hash_type: str,
+) -> Tuple[str, int, int]:
+    """Given a stream and a hash type, return the hash key (hexdigest) and the total size.
+
+    :param stream: an open stream
+    :param hash_type: the string with a name of a valid hash type
+    :return: a tuple with ``(hash, size)`` where ``hash`` is the hexdigest and ``size`` is the size in bytes
+    """
+    _hash_chunksize = 524288
+    hasher = get_hash(hash_type)()
+
+    # Read and hash all content
+    size = 0
+    crc_value = 0
+    while True:
+        next_chunk = stream.read(_hash_chunksize)
+        if not next_chunk:
+            # Empty returned value: EOF
+            break
+        hasher.update(next_chunk)
+        size += len(next_chunk)
+        crc_value += crc32(next_chunk, crc_value)
+
+    return hasher.hexdigest(), crc_value, size
+
+
 def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statements
     left_iterator: Iterable[Any],
     right_iterator: Iterable[Any],
@@ -1286,3 +1314,15 @@ def merge_sorted(iterator1: Iterable[Any], iterator2: Iterable[Any]) -> Iterator
     for item, _ in detect_where_sorted(iterator1, iterator2):
         # Whereever it is (only left, only right, on both) I return the object.
         yield item
+
+
+def get_md5(handle):
+    """Compute MD5 of a stream"""
+    md5_object = hashlib.md5()
+    block_size = 128 * md5_object.block_size
+
+    chunk = handle.read(block_size)
+    while chunk:
+        md5_object.update(chunk)
+        chunk = handle.read(block_size)
+    return md5_object
