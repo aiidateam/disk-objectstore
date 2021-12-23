@@ -2300,6 +2300,7 @@ def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invali
         temp_container._get_pack_path_from_pack_id(str(meta["pack_id"])), "wb"
     ) as fhandle:
         # Short corrupted string so also the size is wrong
+        fhandle.write(b" " * temp_container._ZIP_HEADER_SIZE)  # Write a dummy header
         fhandle.write(b"COR")
 
     errors = temp_container.validate()

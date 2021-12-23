@@ -152,6 +152,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # IMPORANT! IF YOU ADD MORE, REMEMBER TO CLEAR THEM IN `init_container()`!
         self._current_pack_id: Optional[int] = None
         self._config: Optional[dict] = None
+        self._hash_place_holder = "0" * FN_SIZE
 
     def get_folder(self) -> str:
         """Return the path to the folder that will host the object-store container."""
@@ -356,11 +357,6 @@ class Container:  # pylint: disable=too-many-public-methods
             )
         if not is_known_hash(hash_type):
             raise ValueError(f'Unknown hash type "{hash_type}"')
-
-        # Place holder for unknown hash
-        hasher = get_hash(hash_type)()
-        hasher.update(b"")
-        self._hash_place_holder = hasher.hexdigest()[:FN_SIZE]
 
         if clear:
             if os.path.exists(self._folder):
@@ -2869,8 +2865,9 @@ class Container:  # pylint: disable=too-many-public-methods
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         with open(pack_path, mode="rb") as pack_handle:
             # Validate the existence of ZIP local header for the first record
-            header_data = pack_handle.read(zipfile.sizeFileHeader)
-            local_header = struct.unpack(zipfile.structFileHeader, header_data)
+            local_header = struct.unpack(
+                "<4s", pack_handle.read(4)
+            )  # Read the local header signature
             if local_header[0] == zipfile.stringFileHeader:
                 return True
         return False
