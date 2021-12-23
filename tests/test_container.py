@@ -3339,6 +3339,17 @@ def test_sealing(temp_dir):
         # Check the zipfile
         zif.testzip()
 
+    sealed = temp_container.get_sealed_packs()
+    assert 0 in sealed
+
+    infos = temp_container.get_all_pack_info()
+    assert infos[0]["state"] == "Sealed"
+    assert infos[0]["location"] is None
+    assert infos[0]["pack_id"] == 0
+
+    # Since pack 0 is seal, new data should be written to pack 1
+    assert temp_container._get_pack_id_to_write_to() == 1
+
 
 def test_not_implemented_repacks(temp_container):
     """Check the error for not implemented repack methods."""

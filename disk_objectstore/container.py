@@ -50,7 +50,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update, values
 
-from .database import Obj, Pack, get_session
+from .database import Obj, Pack, PackState, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
@@ -288,7 +288,11 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+        sealed_packs = self.get_sealed_packs(include_archived=True)
         while True:
+            if pack_id in sealed_packs:
+                pack_id += 1
+                continue
             pack_path = self._get_pack_path_from_pack_id(pack_id)
             if not os.path.exists(pack_path):
                 # Use this ID - the pack file does not exist yet
@@ -2739,7 +2743,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def seal_pack(self, pack_id: str):
+    def seal_pack(self, pack_id: int):
         """
         Seal a pack by adding a central directory in the end, making the file a fully functional
         ZIP file.
@@ -2793,7 +2797,7 @@ class Container:  # pylint: disable=too-many-public-methods
             .order_by(Obj.offset)
         )
 
-        for rowid, hashkey, size, offset, length, compressed in session.execute(stmt):
+        for _, hashkey, size, offset, length, compressed in session.execute(stmt):
             zipinfo = ZipInfo(filename=hashkey[:FN_SIZE])
             zipinfo.compress_type = ZIP_DEFLATED if compressed else ZIP_STORED
             zipinfo.file_size = size
@@ -2856,7 +2860,9 @@ class Container:  # pylint: disable=too-many-public-methods
             md5_obj = get_md5(read_pack_handle)
 
         # Update the SQLite database
-        pack = Pack(id=int(pack_id), state="Sealed", md5=md5_obj.hexdigest())
+        pack = Pack(
+            id=int(pack_id), state=PackState.Sealed.value, md5=md5_obj.hexdigest()
+        )
         session.add(pack)
         session.commit()
 
@@ -2871,3 +2877,98 @@ class Container:  # pylint: disable=too-many-public-methods
             if local_header[0] == zipfile.stringFileHeader:
                 return True
         return False
+
+    def get_sealed_packs(self, include_archived=True) -> Dict[int, str]:
+        """
+        Get a dictionary of sealed packs and their MD5
+
+        :param include_archived: Also included archived packs. These packs have been sealed previously.
+        """
+        session = self._get_cached_session()
+        if include_archived:
+            stmt = (
+                select(Pack.id, Pack.md5)
+                .where(
+                    (Pack.state == PackState.Sealed.value)
+                    | (PackState == PackState.Archived.value)
+                )
+                .order_by(Pack.id)
+            )
+        else:
+            stmt = (
+                select(Pack.id, Pack.md5)
+                .where(Pack.state == PackState.Sealed.value)
+                .order_by(Pack.id)
+            )
+
+        results = {}
+        for pack_id, pack_md5 in session.execute(stmt):
+            results[pack_id] = pack_md5
+        return results
+
+    def get_all_pack_info(self):
+        """Get the status of the packs"""
+        session = self._get_cached_session()
+        stmt = select(
+            Obj.pack_id,
+        ).distinct()
+        pack_ids = sorted(x[0] for x in session.execute(stmt))
+
+        # Locate those stored in Pack table
+        stmt = select(
+            Pack.id,
+            Pack.md5,
+            Pack.state,
+            Pack.location,
+        )
+        entry_in_pack_table = {}
+        for pack_id, md5_value, state, location in session.execute(stmt):
+            entry_in_pack_table[pack_id] = {
+                "pack_id": pack_id,
+                "md5": md5_value,
+                "state": state,
+                "location": location,
+            }
+        # Combine the two
+        info = []
+        for pack_id in pack_ids:
+            if pack_id in entry_in_pack_table:
+                info.append(entry_in_pack_table[pack_id])
+            else:
+                info.append(
+                    {
+                        "pack_id": pack_id,
+                        "md5": None,
+                        "state": PackState.Unsealed.value,
+                        "location": None,
+                    }
+                )
+        return info
+
+    def seal_all_sealable_packs(self):
+        """
+        Find packs that are no longer active for writing and seal them.
+        """
+
+        # Find which packs are eligible for sealing
+        pack_id = 0
+        eligible = []
+        sealed = self.get_sealed_packs(include_archived=True)
+        # Go through all paths
+        while True:
+            pack_path = self._get_pack_path_from_pack_id(pack_id)
+            if not os.path.exists(pack_path):
+                # Use this ID - the pack file does not exist yet
+                break
+            if (
+                os.path.getsize(pack_path) >= self.pack_size_target
+                and pack_id not in sealed
+            ):
+                # Use this ID - the pack file is not "full" yet
+                eligible.append(pack_id)
+            # Try the next pack
+            pack_id += 1
+
+        # Seal the packs one by one
+        for pack_id in eligible:
+            self.seal_pack(pack_id)

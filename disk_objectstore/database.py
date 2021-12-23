@@ -1,4 +1,5 @@
 """Models for the container index file (SQLite DB)."""
+import enum
 import os
 from enum import unique
 from typing import Optional
@@ -9,6 +10,14 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql.expression import text
 
 Base = declarative_base()  # pylint: disable=invalid-name,useless-suppression
+
+
+class PackState(enum.Enum):
+    """Enum for valid sate of seal packs"""
+
+    Sealed = "Sealed"
+    Archived = "Archived"
+    Unsealed = "Unsealed"
 
 
 class Obj(Base):  # pylint: disable=too-few-public-methods
