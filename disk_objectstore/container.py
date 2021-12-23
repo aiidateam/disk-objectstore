@@ -1175,6 +1175,10 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
 
+        # For sealed pack, we only allow reading
+        if pack_id in self.get_sealed_packs():
+            assert mode.startswith("r") and "+" not in mode
+
         # Open file in exclusive mode
         lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
         pack_file = self._get_pack_path_from_pack_id(
@@ -2823,11 +2827,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 # Check the magic
                 if local_header[0] != zipfile.stringFileHeader:
                     raise ValueError(f"Cannot find ZIP header for record {zipinfo}")
-                # Read the filename
-                fname = write_pack_handle.read(fnlen).decode("ascii")
 
-                # Seek back and rewrite the file name
-                write_pack_handle.seek(-fnlen, 1)
+                # rewrite the file name
                 write_pack_handle.write(zipinfo.filename.encode("ascii"))
 
                 # Update the CRC field
