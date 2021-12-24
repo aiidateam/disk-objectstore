@@ -1,15 +1,14 @@
+"""
+Utility module providing ZIP format support
+
+Many of the functions are adapted from the zipfile stdlib
+"""
 import struct
 import sys
 import zipfile
-from zipfile import (
-    ZIP64_LIMIT,
-    ZIP64_VERSION,
-    ZIP_DEFLATED,
-    ZIP_FILECOUNT_LIMIT,
-    ZIP_STORED,
-    ZipInfo,
-)
+from zipfile import ZIP64_LIMIT, ZIP_DEFLATED, ZIP_FILECOUNT_LIMIT, ZIP_STORED, ZipInfo
 
+# pylint: disable=too-many-locals, invalid-name, protected-access, too-many-statements
 _DD_SIGNATURE = 0x08074B50
 _EXTRA_FIELD_STRUCT = struct.Struct("<HH")
 
@@ -28,9 +27,6 @@ def write_file_describer(fhandle, crc, compressed_size, file_size):
     """Write the tailing descriptor"""
     fmt = "<LLQQ"  # ZIP64
     fhandle.write(struct.pack(fmt, _DD_SIGNATURE, crc, compressed_size, file_size))
-
-
-_DD_SIZE = 24
 
 
 def write_end_record(fhandle, zinfos):
@@ -69,7 +65,7 @@ def write_end_record(fhandle, zinfos):
                 + extra_data
             )
 
-            min_version = ZIP64_VERSION
+            min_version = zipfile.ZIP64_VERSION  # type: ignore
 
         # if zinfo.compress_type == ZIP_BZIP2:
         #     min_version = max(BZIP2_VERSION, min_version)
@@ -81,8 +77,8 @@ def write_end_record(fhandle, zinfos):
         try:
             filename, flag_bits = zinfo._encodeFilenameFlags()
             centdir = struct.pack(
-                zipfile.structCentralDir,
-                zipfile.stringCentralDir,
+                zipfile.structCentralDir,  # type: ignore
+                zipfile.stringCentralDir,  # type: ignore
                 create_version,
                 zinfo.create_system,
                 extract_version,
@@ -105,8 +101,8 @@ def write_end_record(fhandle, zinfos):
         except DeprecationWarning:
             print(
                 (
-                    zipfile.structCentralDir,
-                    zipfile.stringCentralDir,
+                    zipfile.structCentralDir,  # type: ignore
+                    zipfile.stringCentralDir,  # type: ignore
                     create_version,
                     zinfo.create_system,
                     extract_version,
@@ -151,8 +147,8 @@ def write_end_record(fhandle, zinfos):
     if requires_zip64:
         # Need to write the ZIP64 end-of-archive records
         zip64endrec = struct.pack(
-            zipfile.structEndArchive64,
-            zipfile.stringEndArchive64,
+            zipfile.structEndArchive64,  # type: ignore
+            zipfile.stringEndArchive64,  # type: ignore
             44,
             45,
             45,
@@ -166,8 +162,8 @@ def write_end_record(fhandle, zinfos):
         fhandle.write(zip64endrec)
 
         zip64locrec = struct.pack(
-            zipfile.structEndArchive64Locator,
-            zipfile.stringEndArchive64Locator,
+            zipfile.structEndArchive64Locator,  # type: ignore
+            zipfile.stringEndArchive64Locator,  # type: ignore
             0,
             pos2,
             1,
@@ -178,8 +174,8 @@ def write_end_record(fhandle, zinfos):
         centDirOffset = min(centDirOffset, 0xFFFFFFFF)
 
     endrec = struct.pack(
-        zipfile.structEndArchive,
-        zipfile.stringEndArchive,
+        zipfile.structEndArchive,  # type: ignore
+        zipfile.stringEndArchive,  # type: ignore
         0,
         0,
         centDirCount,
@@ -224,13 +220,13 @@ def is_zip(fpin):
     # "end of central directory" structure should be the last item in the
     # file if this is the case).
     try:
-        fpin.seek(-zipfile.sizeEndCentDir, 2)
+        fpin.seek(-zipfile.sizeEndCentDir, 2)  # type: ignore
     except OSError:
         return False
     data = fpin.read()
     if (
-        len(data) == zipfile.sizeEndCentDir
-        and data[0:4] == zipfile.stringEndArchive
+        len(data) == zipfile.sizeEndCentDir  # type: ignore
+        and data[0:4] == zipfile.stringEndArchive  # type: ignore
         and data[-2:] == b"\000\000"
     ):
         # the signature is correct and there's no comment, unpack structure
@@ -241,14 +237,14 @@ def is_zip(fpin):
     # record signature. The comment is the last item in the ZIP file and may be
     # up to 64K long.  It is assumed that the "end of central directory" magic
     # number does not appear in the comment.
-    maxCommentStart = max(filesize - (1 << 16) - zipfile.sizeEndCentDir, 0)
+    maxCommentStart = max(filesize - (1 << 16) - zipfile.sizeEndCentDir, 0)  # type: ignore
     fpin.seek(maxCommentStart, 0)
     data = fpin.read()
-    start = data.rfind(zipfile.stringEndArchive)
+    start = data.rfind(zipfile.stringEndArchive)  # type: ignore
     if start >= 0:
         # found the magic number; attempt to unpack and interpret
-        recData = data[start : start + zipfile.sizeEndCentDir]
-        if len(recData) != zipfile.sizeEndCentDir:
+        recData = data[start : start + zipfile.sizeEndCentDir]  # type: ignore
+        if len(recData) != zipfile.sizeEndCentDir:  # type: ignore
             # Zip file is corrupted.
             return False
         return True

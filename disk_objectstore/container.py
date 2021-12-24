@@ -29,26 +29,16 @@ from typing import (
     overload,
 )
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipInfo
-from zlib import crc32
-
-from disk_objectstore.zipsupport import (
-    _DD_SIGNATURE,
-    _DD_SIZE,
-    is_zip,
-    write_end_record,
-    write_file_describer,
-    write_zip_header,
-)
 
 try:
-    from typing import Literal
+    from typing import Literal  # pylint: disable=ungrouped-imports
 except ImportError:
     # Python <3.8 backport
     from typing_extensions import Literal  # type: ignore
 
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
-from sqlalchemy.sql.expression import delete, select, text, update, values
+from sqlalchemy.sql.expression import delete, select, text, update
 
 from .database import Obj, Pack, PackState, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
@@ -77,6 +67,7 @@ from .utils import (
     safe_flush_to_disk,
     yield_first_element,
 )
+from .zipsupport import is_zip, write_end_record, write_zip_header
 
 ObjQueryResults = namedtuple(
     "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
@@ -1280,7 +1271,7 @@ class Container:  # pylint: disable=too-many-public-methods
         read_handle: StreamReadBytesType,
         compress: bool,
         hash_type: Optional[str] = None,
-    ) -> Union[Tuple[int, None, int], Tuple[int, str, int]]:
+    ) -> Union[Tuple[int, int, None], Tuple[int, int, str]]:
         """Append data, read from read_handle until it ends, to the correct packfile.
 
         Return the number of bytes READ (note that this will be different
@@ -2292,14 +2283,12 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
     # Let us also compute the hash
-    def _validate_hashkeys_pack(
+    def _validate_hashkeys_pack(  # pylint: disable=too-many-branches, too-many-locals
         self,
         pack_id: int,
         callback: Optional[Callable] = None,
         include_crc: bool = False,
-    ) -> Dict[
-        str, Union[List[Union[str, Any]], List[Any]]
-    ]:  # pylint: disable=too-many-locals
+    ) -> Dict[str, Any]:
         """Validate all hashkeys and returns a dictionary of problematic entries.
 
         The keys are the problem type, the values are a list of hashkeys of problematic objects.
@@ -2438,7 +2427,7 @@ class Container:  # pylint: disable=too-many-public-methods
             "invalid_hashes_packed": invalid_hashes,
             "invalid_sizes_packed": invalid_sizes,
             "overlapping_packed": overlapping,
-        }
+        }  # type: Dict[str, Any]
         if include_crc:
             output["crc_of_hashes"] = computed_crc
         return output
@@ -2747,7 +2736,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def seal_pack(self, pack_id: int):
+    def seal_pack(self, pack_id: int):  # pylint: disable=too-many-locals
         """
         Seal a pack by adding a central directory in the end, making the file a fully functional
         ZIP file.
@@ -2765,7 +2754,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # serious data corrutpion
         if not self._is_pack_zip_compatible(pack_id):
             raise ValueError(
-                f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealled."
+                f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealed."
             )
         with self.lock_pack(
             str(pack_id), allow_repack_pack=False, mode="rb"
@@ -2785,9 +2774,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # Gather information for each object
         session = self._get_cached_session()
         all_zipinfo = []
-        header_size = self._ZIP_HEADER_SIZE
-        # Size of the file local header
-        # the extra field takes 20 bytes with format "<HHQQ"
         stmt = (
             select(
                 Obj.id,
@@ -2807,12 +2793,10 @@ class Container:  # pylint: disable=too-many-public-methods
             zipinfo.file_size = size
             zipinfo.compress_size = length
             # Offset for the header
-            zipinfo.header_offset = offset - header_size
+            zipinfo.header_offset = offset - self._ZIP_HEADER_SIZE
             zipinfo.CRC = crc_of_hashes[hashkey]
             all_zipinfo.append(zipinfo)
 
-        # Sort the zipinfo data so they are ordered by the header offset value
-        all_zipinfo.sort(key=lambda x: x.header_offset)
         # We write the end of file table
         with self.lock_pack(
             str(pack_id), allow_repack_pack=False, mode="r+b"
@@ -2821,11 +2805,12 @@ class Container:  # pylint: disable=too-many-public-methods
             # Update the hashes as filenames
             for zipinfo in all_zipinfo:
                 write_pack_handle.seek(zipinfo.header_offset, 0)
-                header_data = write_pack_handle.read(zipfile.sizeFileHeader)
-                local_header = struct.unpack(zipfile.structFileHeader, header_data)
-                fnlen = local_header[-2]
+                local_header = struct.unpack(
+                    zipfile.structFileHeader,  # type: ignore
+                    write_pack_handle.read(zipfile.sizeFileHeader),  # type: ignore
+                )
                 # Check the magic
-                if local_header[0] != zipfile.stringFileHeader:
+                if local_header[0] != zipfile.stringFileHeader:  # type: ignore
                     raise ValueError(f"Cannot find ZIP header for record {zipinfo}")
 
                 # rewrite the file name
@@ -2841,12 +2826,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 # Update the file length and compressed file length in the extras field
                 write_pack_handle.seek(zipinfo.header_offset, 0)
-                write_pack_handle.seek(30 + fnlen + 4, 1)
-                bytes_to_write = struct.pack(
-                    "<QQ", zipinfo.file_size, zipinfo.compress_size
-                )
+                write_pack_handle.seek(30 + local_header[-2] + 4, 1)
                 # Update the file size and the compressed size in the zip header
-                write_pack_handle.write(bytes_to_write)
+                write_pack_handle.write(
+                    struct.pack("<QQ", zipinfo.file_size, zipinfo.compress_size)
+                )
 
         # Finally, write the final central directory
         with self.lock_pack(
@@ -2858,16 +2842,16 @@ class Container:  # pylint: disable=too-many-public-methods
         with self.lock_pack(
             str(pack_id), allow_repack_pack=False, mode="rb"
         ) as read_pack_handle:
-            md5_obj = get_md5(read_pack_handle)
-
+            pack = Pack(
+                id=int(pack_id),
+                state=PackState.SEALED.value,
+                md5=get_md5(read_pack_handle).hexdigest(),
+            )
         # Update the SQLite database
-        pack = Pack(
-            id=int(pack_id), state=PackState.Sealed.value, md5=md5_obj.hexdigest()
-        )
         session.add(pack)
         session.commit()
 
-    def _is_pack_zip_compatible(self, pack_id: str) -> bool:
+    def _is_pack_zip_compatible(self, pack_id: int) -> bool:
         """Check if a pack is written in zip compatible format"""
         pack_path = self._get_pack_path_from_pack_id(str(pack_id))
         with open(pack_path, mode="rb") as pack_handle:
@@ -2875,7 +2859,7 @@ class Container:  # pylint: disable=too-many-public-methods
             local_header = struct.unpack(
                 "<4s", pack_handle.read(4)
             )  # Read the local header signature
-            if local_header[0] == zipfile.stringFileHeader:
+            if local_header[0] == zipfile.stringFileHeader:  # type: ignore
                 return True
         return False
 
@@ -2890,15 +2874,15 @@ class Container:  # pylint: disable=too-many-public-methods
             stmt = (
                 select(Pack.id, Pack.md5)
                 .where(
-                    (Pack.state == PackState.Sealed.value)
-                    | (PackState == PackState.Archived.value)
+                    (Pack.state == PackState.SEALED.value)
+                    | (PackState == PackState.ARCHIVED.value)
                 )
                 .order_by(Pack.id)
             )
         else:
             stmt = (
                 select(Pack.id, Pack.md5)
-                .where(Pack.state == PackState.Sealed.value)
+                .where(Pack.state == PackState.SEALED.value)
                 .order_by(Pack.id)
             )
 
@@ -2940,7 +2924,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     {
                         "pack_id": pack_id,
                         "md5": None,
-                        "state": PackState.Unsealed.value,
+                        "state": PackState.UNSEALED.value,
                         "location": None,
                     }
                 )

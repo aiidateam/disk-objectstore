@@ -3010,7 +3010,7 @@ def test_clean_storage_with_duplicates_original_deleted(
 )
 @pytest.mark.parametrize("use_streams", [True, False])
 @pytest.mark.parametrize("compress", [True, False])
-def test_packs_no_holes(
+def test_packs_no_holes(  # pylint: disable=too-many-locals
     temp_container, no_holes, no_holes_read_twice, use_streams, compress, monkeypatch
 ):
     """Test what happens when writing directly to packs and asking not to leave back holes."""
@@ -3320,7 +3320,7 @@ def test_sealing(temp_dir):
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True)
 
-    # data of 10 bytes each. Will fill two packs.
+    # data of 10 bytes each.
     data = [
         b"-123456789",
         b"a123456789",
@@ -3349,6 +3349,31 @@ def test_sealing(temp_dir):
 
     # Since pack 0 is seal, new data should be written to pack 1
     assert temp_container._get_pack_id_to_write_to() == 1
+
+    # Sealed pack cannot be sealed again
+    with pytest.raises(ValueError, match="has already been sealed"):
+        temp_container.seal_pack(0)
+
+    # Some new data
+    data = [
+        b"-123456788",
+        b"a123456788",
+    ]
+    hexkeys = []
+    for value in data:
+        hexkeys.append(temp_container.add_objects_to_pack([value])[0])
+
+    # Destroy header - the file is no longer ZIP compatible, e.g. similar to the old
+    # format
+    with open(f"{temp_dir}/packs/1", "r+b") as fhandle:
+        fhandle.write(b"0000")
+
+    # Sealed pack cannot be sealed again
+    with pytest.raises(ValueError, match=r"ZIP compatible"):
+        temp_container.seal_pack(1)
+
+    # Important before exiting from the tests
+    temp_container.close()
 
 
 def test_not_implemented_repacks(temp_container):
