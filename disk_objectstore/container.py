@@ -2758,7 +2758,8 @@ class Container:  # pylint: disable=too-many-public-methods
             )
 
         with open(
-            self._get_pack_path_from_pack_id(pack_id, allow_repack_pack=False)
+            self._get_pack_path_from_pack_id(pack_id, allow_repack_pack=False),
+            mode="rb",
         ) as pack_handle:
             if is_zip(pack_handle):
                 raise ValueError(f"Pack file {pack_id} has been sealed already!")
