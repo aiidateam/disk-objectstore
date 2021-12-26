@@ -3351,7 +3351,7 @@ def test_sealing(temp_dir):
     assert temp_container._get_pack_id_to_write_to() == 1
 
     # Sealed pack cannot be sealed again
-    with pytest.raises(ValueError, match="has already been sealed"):
+    with pytest.raises(ValueError, match="been sealed already"):
         temp_container.seal_pack(0)
 
     # Some new data
