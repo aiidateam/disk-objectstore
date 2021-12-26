@@ -448,6 +448,29 @@ This implementation, in particular, addresses the following aspects:
 - A number of streamins APIs are exposed to the users, who are encouraged to use this if they
   are not sure of the size of the objects and want to avoid out-of-memory crashes.
 
+## ZIP Compatible pack format
+
+The pack file contains the raw binary data of each record, concatenated together.
+While this format if efficient on space, it heavily relies on the SQLite index database.
+A recent improvement has made the pack file include headers that are similar to the ZIP archive format.
+In this format, a local header is written before each record, containing ZIP signature, compressed and uncompressed size of the record, and the CRC32 check sum.
+When the pack file is no longer active, e.g. it has exceeded the target size, it can be *sealed* such that it
+becomes a valid ZIP archive and can be extracted and validated, using a wide array of software packages.
+
+The changes are mainly for improving resilience in the case of catastrophic data lost - if the index database is lost or corrupted, the data can still be extracted from the pack files themselves. In the pack files are also damaged, the information in local and central header may be still be used to recover as much data as possible.
+
+The sealing operation involves checking the integrity of the pack file, calculating the CRC32 checksum needed, and update the local headers. This operation can take a while to complete, but will not cause any down time of the container. Finally, a central header directory of all records to the file is appended.
+
+Once, a pack file is *sealed*, its status is added to a table of the index database (`Pack` table). If a pack file is missing from this table, it simply means it is not *sealed* yet. Packs that are *sealed* will not be selected for writing new data, even if their sizes are below the target pack sizes.
+
+Pack files generated prior to this format change will continue to work, but they cannot be *sealed* due to the lack of local header. Repacking is necessary for regerating sealable files.
+
+The inclusion of local and central directory headers means there is a storage overhead for each record.
+The estimated size of each record is 66 bytes for the local header, and  62 + (20, if exceeding 4GB) bytes for the central directory, e.g. 128 + (20) bytes in total.
+Hence, storing many small files can be inefficient, however, it is expected that the majority of the records will be much larger, making this overhead insignificant.
+
+When extracted, each record will result in a single, uncompressed file named with the first 16 characters of its hash.
+
 ## Further design choices
 
 In addition, the following design choices have been made:

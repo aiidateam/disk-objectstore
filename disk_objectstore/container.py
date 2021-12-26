@@ -2756,11 +2756,12 @@ class Container:  # pylint: disable=too-many-public-methods
             raise ValueError(
                 f"Pack file {pack_id} is not written in ZIP compatible format and cannot be sealed."
             )
-        with self.lock_pack(
-            str(pack_id), allow_repack_pack=False, mode="rb"
+
+        with open(
+            self._get_pack_path_from_pack_id(pack_id, allow_repack_pack=False)
         ) as pack_handle:
             if is_zip(pack_handle):
-                raise ValueError(f"Pack file {pack_id} has already been sealed!")
+                raise ValueError(f"Pack file {pack_id} has been sealed already!")
 
         # Valid the pack conetents
         errors_and_crc = self._validate_hashkeys_pack(pack_id, include_crc=True)
