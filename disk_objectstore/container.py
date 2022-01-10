@@ -37,7 +37,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update
 
-from .database import Obj, get_session
+from .db import Obj, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
