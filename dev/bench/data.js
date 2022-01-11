@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1641925542658,
+  "lastUpdate": 1641925568206,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -7762,6 +7762,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.35270573291745e-7",
             "extra": "mean: 240.08213836127723 nsec\nrounds: 198610"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "16e6ff98c904ef0ec8b03ba3ce6e1eb00204c328",
+          "message": "FIX: mypy dependency problem and revert unnecessary file rename (#132)\n\nUpdated the version of mypy and of the SQLAlchemy dependency\r\n(the latter was needed to avoid some INTERNAL ERRORs when running\r\nmypy):\r\n\r\n- [github.com/pre-commit/pre-commit-hooks: v4.0.1 → v4.1.0](https://github.com/pre-commit/pre-commit-hooks/compare/v4.0.1...v4.1.0)\r\n- [github.com/asottile/pyupgrade: v2.29.1 → v2.31.0](https://github.com/asottile/pyupgrade/compare/v2.29.1...v2.31.0)\r\n- [github.com/pre-commit/mirrors-mypy: v0.910-1 → v0.930](https://github.com/pre-commit/mirrors-mypy/compare/v0.910-1...v0.930)\r\n\r\nThis also reverts commit 9eda5b8e8c6b4aa72a8cb36418382f9ea20cf307.",
+          "timestamp": "2022-01-11T19:23:52+01:00",
+          "tree_id": "7ff4d7fd420aae0879fce600637e11a137af9ec9",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/16e6ff98c904ef0ec8b03ba3ce6e1eb00204c328"
+        },
+        "date": 1641925567282,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.1573278790682173,
+            "unit": "iter/sec",
+            "range": "stddev: 0.026958224756663766",
+            "extra": "mean: 864.0593716666668 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.1575748341724668,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0699555960656259",
+            "extra": "mean: 863.8750346666661 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 5.585906710002182,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01507878309025103",
+            "extra": "mean: 179.0219657999998 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 11.014586881757621,
+            "unit": "iter/sec",
+            "range": "stddev: 0.015644628636461978",
+            "extra": "mean: 90.7886978181816 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.809588068515615,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007517039000366398",
+            "extra": "mean: 355.9240627499989 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2206825.7651490425,
+            "unit": "iter/sec",
+            "range": "stddev: 5.903647448767031e-7",
+            "extra": "mean: 453.13953452617176 nsec\nrounds: 189394"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3346843.106682331,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000028085510218716623",
+            "extra": "mean: 298.789028384284 nsec\nrounds: 198453"
           }
         ]
       }
