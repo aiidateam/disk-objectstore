@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1641922039939,
+  "lastUpdate": 1641922303367,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -11425,6 +11425,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.000005347930547886928",
             "extra": "mean: 560.5974722122611 nsec\nrounds: 135136"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ramirezfranciscof@users.noreply.github.com",
+            "name": "Francisco Ramirez",
+            "username": "ramirezfranciscof"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9eda5b8e8c6b4aa72a8cb36418382f9ea20cf307",
+          "message": "Fix `mypy` CI error due to file `database.py` name (#131)",
+          "timestamp": "2022-01-11T18:24:58+01:00",
+          "tree_id": "bc7456356aa2981645f679f9b967ccaa13703891",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/9eda5b8e8c6b4aa72a8cb36418382f9ea20cf307"
+        },
+        "date": 1641922293666,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.280283560617094,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008767330965198812",
+            "extra": "mean: 781.0769666666672 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1387560518105107,
+            "unit": "iter/sec",
+            "range": "stddev: 0.18310065241288165",
+            "extra": "mean: 7.206892866666667 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 9.325835361702689,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0053395772173473",
+            "extra": "mean: 107.22899999999811 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 13.428507131600492,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002693440738148033",
+            "extra": "mean: 74.46844166666604 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.5870327398478143,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0019177206530890877",
+            "extra": "mean: 386.54323333334634 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3936092.2288519363,
+            "unit": "iter/sec",
+            "range": "stddev: 5.628314113622379e-8",
+            "extra": "mean: 254.05908750554013 nsec\nrounds: 192308"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3915252.0615626504,
+            "unit": "iter/sec",
+            "range": "stddev: 8.073764505469104e-8",
+            "extra": "mean: 255.41139734475271 nsec\nrounds: 192308"
           }
         ]
       }
