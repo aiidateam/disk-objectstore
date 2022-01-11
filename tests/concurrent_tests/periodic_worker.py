@@ -23,7 +23,7 @@ import psutil
 from sqlalchemy.sql.expression import select
 
 from disk_objectstore.container import Container, NotExistent, ObjectType
-from disk_objectstore.database import Obj
+from disk_objectstore.db import Obj
 
 MAX_RETRIES_NO_PERM = 1000
 
