@@ -14,7 +14,7 @@ import psutil
 import pytest
 
 import disk_objectstore.exceptions as exc
-from disk_objectstore import CompressMode, Container, ObjectType, db, utils
+from disk_objectstore import CompressMode, Container, ObjectType, database, utils
 
 COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
 
@@ -2233,9 +2233,9 @@ def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid
     assert not any(errors.values())
 
     # Change the offset of the second object so that it's overlapping
-    temp_container._get_cached_session().query(db.Obj).filter(
-        db.Obj.hashkey == hashkey_second
-    ).update({db.Obj.offset: db.Obj.offset - 1})
+    temp_container._get_cached_session().query(database.Obj).filter(
+        database.Obj.hashkey == hashkey_second
+    ).update({database.Obj.offset: database.Obj.offset - 1})
 
     errors = temp_container.validate()
     problems = errors.pop("overlapping_packed")
