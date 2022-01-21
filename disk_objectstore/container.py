@@ -73,7 +73,7 @@ ObjQueryResults = namedtuple(
     "ObjQueryResults", ["hashkey", "offset", "length", "compressed", "size"]
 )
 
-FN_SIZE = 16  # Size for the file name used in LOCAL header for each object
+FN_SIZE = 64  # Size for the file name used in LOCAL header for each object
 
 
 class ObjectType(Enum):
@@ -143,7 +143,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # IMPORANT! IF YOU ADD MORE, REMEMBER TO CLEAR THEM IN `init_container()`!
         self._current_pack_id: Optional[int] = None
         self._config: Optional[dict] = None
-        self._hash_place_holder = "0" * FN_SIZE
+        self._hash_place_holder = " " * FN_SIZE
 
     def get_folder(self) -> str:
         """Return the path to the folder that will host the object-store container."""
@@ -2654,7 +2654,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict["size"] = size
                     write_zip_header(
                         write_pack_handle,
-                        obj_dict["hashkey"][:FN_SIZE],
+                        obj_dict["hashkey"].ljust(FN_SIZE),  # Ensure constant size
                         "zlib" if compressed else None,
                     )
                     obj_dict["offset"] = write_pack_handle.tell()
@@ -2790,7 +2790,7 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
         for _, hashkey, size, offset, length, compressed in session.execute(stmt):
-            zipinfo = ZipInfo(filename=hashkey[:FN_SIZE])
+            zipinfo = ZipInfo(filename=hashkey.ljust(FN_SIZE))
             zipinfo.compress_type = ZIP_DEFLATED if compressed else ZIP_STORED
             zipinfo.file_size = size
             zipinfo.compress_size = length
