@@ -995,10 +995,9 @@ class HashWriterWrapper:
         # written to disk (e.g. a first chunk of bytes, and then the disk became full).
         # We want to make sure we are computing the correct hash.
         assert self._position == self._write_stream.tell(), (
-            "Error in the position ({} vs {}), possibly an error occurred in a previous `write` call. "
-            "This HashWriterMapper object is invalid and should not be used anymore".format(
-                self._position, self._write_stream.tell()
-            )
+            f"Error in the position ({self._position} vs {self._write_stream.tell()}), "
+            "possibly an error occurred in a previous `write` call. "
+            "This HashWriterMapper object is invalid and should not be used anymore"
         )
 
         self._write_stream.write(data)
@@ -1273,9 +1272,8 @@ def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statemen
                 new = next(left_iterator)
                 if left_key(new) <= left_key(last_left):
                     raise ValueError(
-                        "The left iterator does not return sorted unique entries, I got '{}' after '{}'".format(
-                            left_key(new), left_key(last_left)
-                        )
+                        "The left iterator does not return sorted unique entries, "
+                        f"I got '{left_key(new)}' after '{left_key(last_left)}'"
                     )
                 last_left = new
             except StopIteration:
@@ -1289,9 +1287,7 @@ def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statemen
                 new = next(right_iterator)
                 if new <= last_right:
                     raise ValueError(
-                        "The right iterator does not return sorted unique entries, I got '{}' after '{}'".format(
-                            new, last_right
-                        )
+                        f"The right iterator does not return sorted unique entries, I got '{new}' after '{last_right}'"
                     )
                 last_right = new
             except StopIteration:

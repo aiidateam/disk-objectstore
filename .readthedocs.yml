@@ -1,0 +1,19 @@
+version: 2
+
+# We disable all unneeded formats.
+# Note that HTML and JSON are always built: https://docs.readthedocs.io/en/latest/yaml-config.html#formats
+formats: []
+
+# Need to install the package itself such that the entry points are installed and the API doc can build properly
+python:
+    version: 3.8
+    install:
+        - method: pip
+          path: .
+          extra_requirements:
+            - docs
+
+# Let the build fail if there are any warnings
+sphinx:
+    builder: html
+    fail_on_warning: true

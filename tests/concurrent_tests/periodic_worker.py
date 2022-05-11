@@ -87,14 +87,11 @@ def main(
 
     start_counts = container.count_objects()
     print(
-        "[{} {}] Currently known objects: {} packed, {} loose".format(
-            proc_id, timestamp(), start_counts["packed"], start_counts["loose"]
-        )
+        f"[{proc_id} {timestamp()}] Currently known objects: "
+        f"{start_counts['packed']} packed, {start_counts['loose']} loose"
     )
     print(
-        "[{} {}] Pack objects on disk: {}".format(
-            proc_id, timestamp(), start_counts["pack_files"]
-        )
+        f"[{proc_id} {timestamp()}] Pack objects on disk: {start_counts['pack_files']}"
     )
 
     for iteration in range(repetitions):
@@ -103,9 +100,8 @@ def main(
 
         contents = []
         print(
-            "[{} {}] Iteration {}/{}, generating {} files in memory...".format(
-                proc_id, timestamp(), iteration + 1, repetitions, num_files
-            )
+            f"[{proc_id} {timestamp()}] Iteration {iteration + 1}/{repetitions}, "
+            f"generating {num_files} files in memory..."
         )
         for _ in range(num_files):
             size = random.randint(min_size, max_size)
@@ -160,20 +156,14 @@ def main(
                 )  # Wait 10 ms and retry to open - probably it is renaming the file
             else:
                 raise PermissionError(
-                    "Retried {} times but I never could get the content...".format(
-                        MAX_RETRIES_NO_PERM
-                    )
+                    f"Retried {MAX_RETRIES_NO_PERM} times but I never could get the content..."
                 )
 
             all_checksums.update(chunk_checksums)
+        method_string = "with bulk reads" if bulk_read else "with single-object reads"
         print(
-            "[{} {}] {} object checksums read from {} files ({}).".format(
-                proc_id,
-                timestamp(),
-                len(all_checksums),
-                file_count,
-                "with bulk reads" if bulk_read else "with single-object reads",
-            )
+            f"[{proc_id} {timestamp()}] {len(all_checksums)} object checksums read "
+            f"from {file_count} files ({method_string})."
         )
 
         ########################################
@@ -217,11 +207,7 @@ def main(
                 except (PermissionError, FileExistsError) as exc:
                     # This sometimes happen on Windows (I think during packing), see issue #37
                     # The error message typically shows the error and the path, showing if it's loose
-                    print(
-                        "WARNING/ERROR: I got an exception, message: {}".format(
-                            str(exc)
-                        )
-                    )
+                    print(f"WARNING/ERROR: I got an exception, message: {str(exc)}")
 
                     # Before re-raising, I try to get the same object again, to see if this now works and is packed
                     # (or it crashes again!)
@@ -231,9 +217,7 @@ def main(
                     ):
                         new_content = stream.read()
                         print(
-                            "  |-> AFTER RE-READING: checksum={}, meta={}".format(
-                                hashlib.sha256(new_content).hexdigest(), meta
-                            )
+                            f"  |-> AFTER RE-READING: checksum={hashlib.sha256(new_content).hexdigest()}, meta={meta}"
                         )
                         print(f"  `-> CONTENT: {new_content}")
                     raise
@@ -250,9 +234,7 @@ def main(
                 != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             ):
                 print(
-                    "WARNING!!! {} is {} ({}); {}".format(
-                        obj_hashkey, content, type(content), metas[obj_hashkey]
-                    )
+                    f"WARNING!!! {obj_hashkey} is {content} ({type(content)}); {metas[obj_hashkey]}"
                 )
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
                 # been packed in the meantime if it was loose), see see issue #43
@@ -262,18 +244,14 @@ def main(
                 ):
                     new_content = stream.read()
                     print(
-                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
-                            hashlib.sha256(new_content).hexdigest(), meta
-                        )
+                        f"  |-> AFTER RE-READING: checksum={hashlib.sha256(new_content).hexdigest()}, meta={meta}"
                     )
                     print(f"  `-> CONTENT: {new_content}")
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
         assert not only_right, f"objects only in all_checksums: {only_right}"
-        assert not only_left, "objects only in retrieved_checksums: {}".format(
-            only_left
-        )
+        assert not only_left, f"objects only in retrieved_checksums: {only_left}"
         for key, value in retrieved_checksums.items():
             assert (
                 all_checksums[key] == value
@@ -298,9 +276,7 @@ def main(
                 ):
                     new_content = stream.read()
                     print(
-                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
-                            hashlib.sha256(new_content).hexdigest(), meta
-                        )
+                        f"  |-> AFTER RE-READING: checksum={hashlib.sha256(new_content).hexdigest()}, meta={meta}"
                     )
                     print(f"  `-> CONTENT: {new_content}")
                 raise
@@ -311,11 +287,7 @@ def main(
                 and obj_hashkey
                 != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             ):
-                print(
-                    "WARNING!!! {} is {} ({})".format(
-                        obj_hashkey, content, type(content)
-                    )
-                )
+                print(f"WARNING!!! {obj_hashkey} is {content} ({type(content)})")
                 # Try to retrieve again to check if it's a temporary problem (and/or if the file has
                 # been packed in the meantime if it was loose), see see issue #43
                 with container.get_object_stream_and_meta(obj_hashkey) as (
@@ -324,18 +296,14 @@ def main(
                 ):
                     new_content = stream.read()
                     print(
-                        "  |-> AFTER RE-READING: checksum={}, meta={}".format(
-                            hashlib.sha256(new_content).hexdigest(), meta
-                        )
+                        f"  |-> AFTER RE-READING: checksum={hashlib.sha256(new_content).hexdigest()}, meta={meta}"
                     )
                     print(f"  `-> CONTENT: {new_content}")
 
         only_left = set(retrieved_checksums).difference(all_checksums)
         only_right = set(all_checksums).difference(retrieved_checksums)
         assert not only_right, f"objects only in all_checksums: {only_right}"
-        assert not only_left, "objects only in retrieved_checksums: {}".format(
-            only_left
-        )
+        assert not only_left, f"objects only in retrieved_checksums: {only_left}"
         for key, value in retrieved_checksums.items():
             try:
                 assert (

@@ -425,8 +425,6 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         NOTE: This can only be done on Windows.
     """
     # Needed by the mocked function, but we need as well here to close the files before the test ends
-    global LOCKED_FILES_FD  # pylint: disable=global-statement
-
     sandbox_folder = os.path.join(temp_dir, "sandbox")
     loose_folder = os.path.join(temp_dir, "loose")
     duplicates_folder = os.path.join(temp_dir, "duplicates")
@@ -468,7 +466,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
             function.
         """
         # Needed to store the files that should be closed outside this mocked function
-        global LOCKED_FILES_FD  # pylint: disable=global-statement
+        global LOCKED_FILES_FD  # pylint: disable=global-statement,global-variable-not-assigned
 
         if os.path.realpath(dest) == os.path.realpath(mocked_dest):
             # Write a file just before calling the rename function, in this case

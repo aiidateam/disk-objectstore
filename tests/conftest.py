@@ -49,9 +49,7 @@ def callback_instance():
             if action == "init":
                 assert (
                     self.current_action is None
-                ), "Starting a new action '{}' without closing the old one {}".format(
-                    action, self.current_action
-                )
+                ), f"Starting a new action '{action}' without closing the old one {self.current_action}"
                 self.current_action = {"start_value": value, "value": 0}
             elif action == "update":
                 # Track the current position
