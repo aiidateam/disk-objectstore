@@ -2248,9 +2248,7 @@ class Container:  # pylint: disable=too-many-public-methods
     # Let us also compute the hash
     def _validate_hashkeys_pack(
         self, pack_id: int, callback: Optional[Callable] = None
-    ) -> Dict[
-        str, Union[List[Union[str, Any]], List[Any]]
-    ]:  # pylint: disable=too-many-locals
+    ) -> Dict[str, Union[List[Union[str, Any]], List[Any]]]:
         """Validate all hashkeys and returns a dictionary of problematic entries.
 
         The keys are the problem type, the values are a list of hashkeys of problematic objects.
@@ -2303,6 +2301,7 @@ class Container:  # pylint: disable=too-many-public-methods
             callback_tqdm = CallbackTqdm()
             container.validate(callback=callback_tqdm.callback)
         """
+        # pylint: disable=too-many-locals
         # Will contain hashkeys of invalid objects
         invalid_hashes = []
         invalid_sizes = []
