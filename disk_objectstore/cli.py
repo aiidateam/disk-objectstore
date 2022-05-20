@@ -34,7 +34,7 @@ class ContainerContext:
 pass_dostore = click.make_pass_decorator(ContainerContext)
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["--help"]})
 @click.version_option(__version__)
 @click.option(
     "-p",
@@ -44,13 +44,7 @@ pass_dostore = click.make_pass_decorator(ContainerContext)
     help="Path to the container (or set env DOSTORE_PATH)",
 )
 @click.pass_context
-def main(  # pylint: disable=dangerous-default-value
-    ctx,
-    path,
-    context_settings={
-        "help_option_names": ("--help",)
-    },  # pylint: disable=unused-argument
-):
+def main(ctx, path):
     """Manage a disk objectstore"""
     ctx.obj = ContainerContext(path)
 

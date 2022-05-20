@@ -1089,7 +1089,8 @@ def safe_flush_to_disk(
         # > they expect.  Please see fcntl(2) for more detail.
         # Replace the _fsync_function
         _fsync_function = lambda fileno: fcntl.fcntl(
-            fileno, fcntl.F_FULLFSYNC  # pylint: disable=no-member,useless-suppression
+            fileno,
+            fcntl.F_FULLFSYNC,  # type: ignore[attr-defined] # pylint: disable=no-member,useless-suppression
         )
     else:
         # In general this is the function to call
