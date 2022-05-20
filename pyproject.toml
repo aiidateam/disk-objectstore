@@ -1,12 +1,93 @@
 [build-system]
-requires = ["setuptools>=46.4.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ['flit_core>=3.4,<4']
+build-backend = 'flit_core.buildapi'
+
+[project]
+name = 'disk_objectstore'
+dynamic = ['description', 'version']
+authors = [
+    {name = 'Giovanni Pizzi'},
+    {name = 'Chris Sewell'},
+    {name = 'Sebastiaan P. Huber'}
+]
+readme = 'README.md'
+license = {file = 'LICENSE.txt'}
+classifiers = [
+    'Development Status :: 5 - Production/Stable',
+    'License :: OSI Approved :: MIT License',
+    'Operating System :: MacOS :: MacOS X',
+    'Operating System :: Microsoft :: Windows',
+    'Operating System :: POSIX :: Linux',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: Implementation :: CPython',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+]
+keywords = ['object store', 'repository', 'file store', 'key-value store']
+requires-python = '>=3.7'
+dependencies = [
+    'click',
+    'sqlalchemy~=1.4.22',
+    'typing-extensions;python_version < "3.8"',
+]
+
+[project.urls]
+Source = 'https://github.com/aiidateam/disk-objectstore'
+
+[project.optional-dependencies]
+dev = [
+    'coverage',
+    'pre-commit',
+    'pytest',
+    'pytest-benchmark',
+    'pytest-cov',
+]
+docs = [
+    'myst-parser~=0.15.0',
+    'sphinx~=3.5.4',
+    'sphinx-book-theme~=0.1.2',
+    'sphinx-panels~=0.5.2',
+    'sphinxext-rediraffe~=0.2.7',
+]
+examples = [
+    'memory-profiler',
+    'profilehooks',
+    'psutil',
+    'pywin32;platform_system == "Windows"',
+]
+
+[project.scripts]
+dostore = 'disk_objectstore.cli:main'
+
+[tool.flit.module]
+name = 'disk_objectstore'
+
+[tool.flit.sdist]
+exclude = [
+    '.github/',
+    '.gitignore',
+    '.pre-commit-config.yaml',
+    'docs/',
+    'tests/',
+]
+
+[tool.flynt]
+line-length = 120
+fail-on-change = true
 
 [tool.isort]
-profile = "black"
-src_paths = ["disk_objectstore", "tests"]
+profile = 'black'
+src_paths = ['disk_objectstore', 'tests']
 
-[tool.pylint.master]
+[tool.mypy]
+show_error_codes = true
+check_untyped_defs = true
+scripts_are_modules = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+plugins = ['sqlalchemy.ext.mypy.plugin']
 
 [tool.pylint.format]
 max-line-length = 120
@@ -14,9 +95,9 @@ max-args = 6
 
 [tool.pylint.messages_control]
 disable = [
-    "duplicate-code",
-    "too-few-public-methods",
-    "unspecified-encoding"
+    'duplicate-code',
+    'too-few-public-methods',
+    'unspecified-encoding'
 ]
 
 [tool.pylint.basic]
@@ -26,10 +107,28 @@ docstring-min-length = 5
 [tool.pylint.design]
 max-locals = 20
 
-[tool.mypy]
-show_error_codes = true
-check_untyped_defs = true
-scripts_are_modules = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-plugins = ["sqlalchemy.ext.mypy.plugin"]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+envlist = py38
+
+[testenv]
+usedevelop = true
+
+[testenv:py{37,38,39}]
+description = Run unit tests with this Python version
+extras =
+    examples
+    dev
+deps =
+    black
+setenv =
+    SQLALCHEMY_WARN_20 = 1
+commands = pytest {posargs}
+
+
+[testenv:cli]
+description = Run CLI
+commands = dostore {posargs}
+"""
