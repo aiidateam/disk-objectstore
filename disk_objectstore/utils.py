@@ -653,6 +653,14 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._internal_buffer = b""
         self._pos = 0
 
+    def set_zip_mode(self):
+        """Switch to ZIP mode - decompresss with WBITS=-15"""
+        self._decompressor = self.decompressobj_class(-15)
+
+    def set_zlib_mode(self):
+        """Switch to normal operation mode"""
+        self._decompressor = self.decompressobj_class()
+
     @property
     def mode(self) -> str:
         return getattr(self._compressed_stream, "mode", "rb")

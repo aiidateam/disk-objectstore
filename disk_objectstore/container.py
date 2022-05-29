@@ -270,6 +270,15 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the SQLite file containing the index of packed objects."""
         return os.path.join(self._folder, f"packs{self._PACK_INDEX_SUFFIX}")
 
+    def get_archived_pack_ids(self) -> List[int]:
+        """Return ids of the archived packs"""
+        session = self._get_cached_session()
+        archived = session.execute(
+            select(Pack.pack_id).filter_by(state=PackState.ARCHIVED.value)
+        ).all()
+        # Convert the string representation back to int
+        return [int(entry[0]) for entry in archived]
+
     def _get_pack_id_to_write_to(self) -> int:
         """Return the pack ID to write the next object.
 
@@ -285,17 +294,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Find all archived pack_ids
         # We do not expect this to change over the concurrent operation, so more efficient to do it in one go
-        session = self._get_cached_session()
-        archived = session.execute(
-            select(Pack.pack_id).filter_by(state=PackState.ARCHIVED.value)
-        ).all()
-        # Convert the string representation back to int
-        all_archived_ids = [int(entry[0]) for entry in archived]
-
+        archived_int_ids = self.get_archived_pack_ids()
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
             # Check if we are trying to accessing an archive pack
-            if pack_id not in all_archived_ids:
+            if pack_id not in archived_int_ids:
                 if not os.path.exists(pack_path):
                     # Use this ID - the pack file does not exist yet
                     break
@@ -625,6 +628,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         obj_reader: StreamReadBytesType
 
+        archived_pack_int_ids = self.get_archived_pack_ids()
+
         if len(hashkeys_set) <= self._MAX_CHUNK_ITERATE_LENGTH:
             # Operate in chunks, due to the SQLite limits
             # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
@@ -688,6 +693,8 @@ class Container:  # pylint: disable=too-many-public-methods
                         )
                         if metadata.compressed:
                             obj_reader = self._get_stream_decompresser()(obj_reader)
+                            if pack_int_id in archived_pack_int_ids:
+                                obj_reader.set_zip_mode()
                         yield metadata.hashkey, obj_reader, meta
                     else:
                         yield metadata.hashkey, meta
@@ -827,7 +834,12 @@ class Container:  # pylint: disable=too-many-public-methods
                                 length=metadata.length,
                             )
                             if metadata.compressed:
+                                # We reading from  archived pack we need to set it to ZIP mode.
+                                # This is because the stream in the ZIP file does not contain zlib
+                                # header/trailer (WBITS=-15)
                                 obj_reader = self._get_stream_decompresser()(obj_reader)
+                                if pack_int_id in archived_pack_int_ids:
+                                    obj_reader.set_zip_mode()
                             yield metadata.hashkey, obj_reader, meta
                         else:
                             yield metadata.hashkey, meta
@@ -1231,7 +1243,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     continue
                 yield first_level
 
-    def _list_packs(self) -> Iterator[str]:
+    def _list_packs(self, include_archived=True) -> Iterator[str]:
         """Iterate over packs.
 
         .. note:: this returns a generator of the pack IDs.
@@ -1243,6 +1255,11 @@ class Container:  # pylint: disable=too-many-public-methods
             # pack_id = fname[:-len(self._PACK_INDEX_SUFFIX)]
             if self._is_valid_pack_id(fname):
                 yield fname
+
+        # Include also archived packs
+        if include_archived:
+            for pack_id in self.get_archived_pack_ids():
+                yield str(pack_id)
 
     def list_all_objects(self) -> Iterator[str]:
         """Iterate of all object hashkeys.
@@ -2356,6 +2373,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         session = self._get_cached_session()
 
+        is_archived = pack_id in self.get_archived_pack_ids()
+
         if callback:
             # If we have a callback, compute the total count of objects in this pack
             total = session.scalar(
@@ -2385,7 +2404,10 @@ class Container:  # pylint: disable=too-many-public-methods
                     fhandle=pack_handle, offset=offset, length=length
                 )
                 if compressed:
+
                     obj_reader = self._get_stream_decompresser()(obj_reader)
+                    if is_archived:
+                        obj_reader.set_zip_mode()
 
                 computed_hash, computed_size = compute_hash_and_size(
                     obj_reader, self.hash_type
@@ -2709,7 +2731,9 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def archive_pack(self, pack_id, run_read_test=True):
+    def archive_pack(
+        self, pack_id, run_read_test=True, trim_filenames=True
+    ):  # pylint: disable=too-many-locals
         """
         Archive the pack - transfer the pack into a ZIP archive
 
@@ -2736,7 +2760,9 @@ class Container:  # pylint: disable=too-many-public-methods
             return
         # Gather all information of the objects to be stored
         stmt = (
-            select(Obj.id, Obj.hashkey, Obj.offset, Obj.length, Obj.compressed)
+            select(
+                Obj.id, Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed
+            )
             .where(Obj.pack_id == pack_id)
             .order_by(Obj.offset)
         )
@@ -2760,19 +2786,35 @@ class Container:  # pylint: disable=too-many-public-methods
                 obj_dict["filename"] = hashkey
             obj_dicts.append(obj_dict)
         # We now have a list of objects to be stored archived in the ZIP file
-        # Proceed with writing out the file
 
-        # Createa  temporary pack with id -1
+        # Check if we can trim the filename to save some overhead
+        if trim_filenames is True:
+            lname = minimum_length_without_duplication(
+                [x["filename"] for x in obj_dicts]
+            )
+            for obj_dict in obj_dicts:
+                obj_dict["filename"] = obj_dict["filename"][:lname]
+
+        # Proceed with writing out the file
+        assert self.compression_algorithm.startswith(
+            "zlib"
+        ), "Cannot make archive with compression algorithm other than zlib"
+        compress_level = int(self.compression_algorithm.split("+")[1])
         with open(
             self._get_archive_path_from_pack_id(pack_id), "wb"
         ) as write_pack_handle:
-            with zipfile.ZipFile(write_pack_handle, "w") as archive:
+            with zipfile.ZipFile(
+                write_pack_handle,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=compress_level,
+            ) as archive:
                 # Iterate all objects in the pack to be archived
                 for obj_dict in obj_dicts:
                     zinfo = zipfile.ZipInfo(filename=obj_dict["filename"])
                     zinfo.file_size = obj_dict["size"]
-                    # Using deflated compression algorithm
-                    zinfo.compress_type = zipfile.ZIP_DEFLATED
+                    # Set the correct compresslevel
+                    self._set_compresslevel(zinfo)
                     with archive.open(zinfo, "w") as zip_write_handle:
                         with self.get_object_stream(
                             obj_dict["hashkey"]
@@ -2780,7 +2822,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             shutil.copyfileobj(source_handle, zip_write_handle)
                     # Now the field of the zinfo has been set
                     obj_dict["length"] = zinfo.compress_size
-                    # Offset was the current location minus the size of the compressed information written
+                    # Offset was the current location minus the size of the compressed stream written
                     obj_dict["offset"] = write_pack_handle.tell() - zinfo.compress_size
                     obj_dict["compressed"] = True
         # The writing of the zip file is now completed
@@ -2789,13 +2831,19 @@ class Container:  # pylint: disable=too-many-public-methods
         for obj_dict in obj_dicts:
             obj_dict.pop("filename")
 
-        # Now test the archvie file
+        # Validate the archvie file just created
         if run_read_test is True:
             test_result = self._validate_archvie_file(
                 self._get_archive_path_from_pack_id(pack_id), obj_dicts
             )
             if test_result is False:
                 raise ValueError("Created archive file does not pass read tests")
+
+        # We can now update the database so the Obj table with the new offsets
+
+        # First, record the original "pack" file's path, since it will be changed once
+        # the archvied pack is active
+        original_pack_path = self._get_pack_path_from_pack_id(pack_id)
 
         # Update the pack table such that the pack is "archived"
         session.execute(
@@ -2807,11 +2855,12 @@ class Container:  # pylint: disable=too-many-public-methods
             )
         )
 
-        # Commit change in compress, offset, length, for each object
+        # Commit change in compress, offset, length, for each object in the Obj table
         session.bulk_update_mappings(Obj, obj_dicts)
+        session.commit()
 
-        # Delete the original pack file
-        os.unlink(self._get_pack_path_from_pack_id(pack_id))
+        # We can now delete the original pack file
+        os.unlink(original_pack_path)
 
     def _get_archive_path_from_pack_id(self, pack_id):
         """
@@ -2854,7 +2903,34 @@ class Container:  # pylint: disable=too-many-public-methods
                 reader = get_stream_decompresser(self.compression_algorithm)(
                     PackedObjectReader(fhandle, obj_dict["offset"], obj_dict["length"])
                 )
+                reader.set_zip_mode()
                 hashkey, size = compute_hash_and_size(reader, self.hash_type)
                 if hashkey != obj_dict["hashkey"] or size != obj_dict["size"]:
                     return False
         return True
+
+    def _set_compresslevel(self, zinfo):
+        # The compression used in the archvie must be the same as that defined by the container
+        if self.compression_algorithm.startswith("zlib"):
+            zinfo.compress_type = zipfile.ZIP_DEFLATED
+            zinfo._compresslevel = int(  # pylint: disable=protected-access
+                self.compression_algorithm.split("+")[1]
+            )
+        else:
+            raise ValueError(
+                "Compression algorithm is in-compatible with pack archiving."
+            )
+
+
+def minimum_length_without_duplication(names, min_length=8):
+    """
+    Find how many characters is needed to ensure there is no conflict among a set of filenames
+    """
+    length = min_length
+    length_ok = False
+    while not length_ok:
+        length += 1
+        trimmed = {name[:length] for name in names}
+        length_ok = len(trimmed) == len(names)
+
+    return length

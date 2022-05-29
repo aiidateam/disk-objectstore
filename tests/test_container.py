@@ -9,6 +9,7 @@ import random
 import shutil
 import stat
 import tempfile
+import zipfile
 
 import psutil
 import pytest
@@ -3329,7 +3330,7 @@ def test_unknown_compressers(temp_container, compression_algorithm):
         )
 
 
-def _test_archive(temp_dir):
+def test_archive(temp_dir):
     """Test the repacking functionality."""
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, pack_size_target=39)
@@ -3377,6 +3378,24 @@ def _test_archive(temp_dir):
 
     # I now archive the pack
     temp_container.archive_pack(1)
+
+    assert temp_container._get_pack_path_from_pack_id(1).endswith("zip")
+
+    # Can still read everything
+    for idx, value in enumerate(data):
+        assert temp_container.get_object_content(hashkeys[idx]) == value
+
+    # Validate the hashes
+    temp_container._validate_hashkeys_pack(1)
+
+    size = temp_container.get_total_size()
+    # Due to the overhead, packs on the disk now takes more space....
+    assert size["total_size_packfiles_on_disk"] > 10 * len(data)
+
+    # Check that the Zipfile generated is valid
+    with zipfile.ZipFile(temp_container._get_pack_path_from_pack_id(1)) as zfile:
+        assert len(zfile.infolist()) == 4
+        zfile.testzip()
 
     # Important before exiting from the tests
     temp_container.close()
