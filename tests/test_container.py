@@ -1073,7 +1073,7 @@ def test_sizes(
 def test_get_objects_stream_closes(temp_container, generate_random_data):
     """Test that get_objects_stream_and_meta closes intermediate streams.
 
-    I also check that at most one additional file is open at any given time.
+    I also check that at most two additional file is open at any given time.
 
     .. note: apparently, at least on my Mac, even if I forget to close a file, this is automatically closed
        when it goes out of scope - so I add also the test that, inside the loop, at most one more file is open.
@@ -1096,7 +1096,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
         obj_md5s.keys(), skip_if_missing=True
     ):
         # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
+        assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1106,7 +1106,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1117,7 +1117,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
             stream.read()
 
     # Check that at the end nothing is left open
@@ -1134,7 +1134,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
 
     with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
         # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
+        assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1142,7 +1142,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1153,7 +1153,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files

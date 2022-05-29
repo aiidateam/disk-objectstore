@@ -59,6 +59,7 @@ from .utils import (
     get_stream_decompresser,
     is_known_hash,
     merge_sorted,
+    minimum_length_without_duplication,
     nullcontext,
     rename_callback,
     safe_flush_to_disk,
@@ -253,15 +254,8 @@ class Container:  # pylint: disable=too-many-public-methods
         ), f"Invalid pack ID {pack_id}"
 
         # Are we trying to read from an archived pack?
-        session = self._get_session()
-        archived = (
-            session.execute(
-                select(Pack).filter_by(pack_id=pack_id, state=PackState.ARCHIVED.value)
-            )
-            .scalars()
-            .first()
-        )
-        if archived is not None:
+        archived = self.get_archived_pack_ids()
+        if pack_id in archived:
             return self._get_archive_path_from_pack_id(pack_id)
 
         return os.path.join(self._get_pack_folder(), pack_id)
@@ -2748,8 +2742,15 @@ class Container:  # pylint: disable=too-many-public-methods
         This is accepted as a slow operation.
         The destination may not be on the same file system, e.g. the archive folder may be on a
         different (networked) file system.
+
+        :param pack_id: ID of the pack to be archived
+        :param run_read_test: Test reading the archive file before committing changes.
+        :trim_filenames: Trim the filenames in the ZIP archive created so it only contains the first
+          few characters of the hash.
+
         """
 
+        pack_id = str(pack_id)
         session = self._get_cached_session()
         one_object_in_pack = session.execute(
             select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
@@ -2868,7 +2869,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We can now delete the original pack file
         os.unlink(original_pack_path)
 
-    def _get_archive_path_from_pack_id(self, pack_id) -> str:
+    def _get_archive_path_from_pack_id(self, pack_id: Union[str, int]) -> str:
         """
         Return the path to the archived pack.
 
@@ -2896,12 +2897,21 @@ class Container:  # pylint: disable=too-many-public-methods
             )
         return pack.location
 
-    def _get_archive_folder(self):
-        """Return folder of the archive"""
+    def _get_archive_folder(self) -> str:
+        """Return folder of the default `archive` folder"""
         return os.path.join(self._folder, "archives")
 
-    def _validate_archvie_file(self, fpath, obj_dicts: List[Dict[str, Any]]) -> bool:
-        """Test reading from an archive file"""
+    def _validate_archvie_file(
+        self, fpath: Union[Path, str], obj_dicts: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Test reading from an archive file using the interface in this package.
+
+        :param fpath: Path to the archive file
+        :obj_dicts: A list of dictionary containing the information of each objects to be read
+
+        :returns: True if everything is OK, False if mismatch in hash is found.
+        """
         if len(obj_dicts) < 1:
             return False
         with open(fpath, "rb") as fhandle:
@@ -2954,17 +2964,3 @@ class Container:  # pylint: disable=too-many-public-methods
                 Path(new_filename).parent.mkdir(exist_ok=True)
                 # Rename the files
                 os.rename(fullname, os.path.join(dirname, new_filename))
-
-
-def minimum_length_without_duplication(names, min_length=8):
-    """
-    Find how many characters is needed to ensure there is no conflict among a set of filenames
-    """
-    length = min_length
-    length_ok = False
-    while not length_ok:
-        length += 1
-        trimmed = {name[:length] for name in names}
-        length_ok = len(trimmed) == len(names)
-
-    return length

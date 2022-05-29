@@ -1680,3 +1680,10 @@ def test_unknown_compressers():
             utils.get_compressobj_instance(invalid)
         with pytest.raises(ValueError):
             utils.get_stream_decompresser(invalid)
+
+
+def test_minimum_length_compute():
+    """Test finding minmum string length without duplication"""
+    assert utils.minimum_length_without_duplication(["a", "b"]) == 8
+    assert utils.minimum_length_without_duplication(["aaaaaaaa", "bbbbbbbb"]) == 8
+    assert utils.minimum_length_without_duplication(["aaaaaaaac", "aaaaaaaab"]) == 9
