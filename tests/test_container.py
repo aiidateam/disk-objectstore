@@ -3397,6 +3397,30 @@ def test_archive(temp_dir):
         assert len(zfile.infolist()) == 4
         zfile.testzip()
 
+    # Test loosen the objects and then import them into a new container
+    temp_container.lossen_archive(
+        temp_container._get_pack_path_from_pack_id(1),
+        os.path.join(temp_dir, "temp_loose"),
+    )
+    temp_container2 = Container(os.path.join(temp_dir, "sub"))
+    temp_container2.init_container()
+
+    shutil.copytree(
+        os.path.join(temp_dir, "temp_loose"),
+        os.path.join(temp_dir, "sub/loose"),
+        dirs_exist_ok=True,
+    )
+    assert temp_container2.count_objects()["loose"] == 4
+    temp_container2.pack_all_loose()
+    temp_container2.clean_storage()
+    assert temp_container2.count_objects()["packed"] == 4
+    assert temp_container2.count_objects()["loose"] == 0
+    size2 = temp_container2.get_total_size()
+    size2["total_size_packfiles_on_disk"] = 10 * 4
+    # Validate that we are all good
+    for value in temp_container2.validate().values():
+        assert not value
+
     # Important before exiting from the tests
     temp_container.close()
 

@@ -2603,6 +2603,14 @@ class Container:  # pylint: disable=too-many-public-methods
             pack_id != self._REPACK_PACK_ID
         ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
 
+        # We cannot repack a packed file since the DEFLATE stream in the ZIP is not the same
+        # as that written by zlib.compress, due to the requirement of WBITS=-15 for those in the
+        # ZIP file, while those written in unpacked file has WBITS=15 (with zlib header/trailers)
+        # This limitation can be lifted if other CompressMode is supported.
+        assert (
+            pack_id not in self.get_archived_pack_ids()
+        ), f"The specified pack_id '{pack_id}' is archived, but repacking archived packs is not currently implemented."
+
         # Check that it does not exist
         assert not os.path.exists(
             self._get_pack_path_from_pack_id(
@@ -2741,18 +2749,12 @@ class Container:  # pylint: disable=too-many-public-methods
         The destination may not be on the same file system, e.g. the archive folder may be on a
         different (networked) file system.
         """
-        # Check that it does not exist
-        assert not os.path.exists(
-            self._get_pack_path_from_pack_id(
-                self._REPACK_PACK_ID, allow_repack_pack=True
-            )
-        ), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
 
         session = self._get_cached_session()
         one_object_in_pack = session.execute(
             select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
         ).all()
-        # No thing to seal
+        # No thing to archive for
         if not one_object_in_pack:
             # No objects. Clean up the pack file, if it exists.
             if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
@@ -2788,6 +2790,8 @@ class Container:  # pylint: disable=too-many-public-methods
         # We now have a list of objects to be stored archived in the ZIP file
 
         # Check if we can trim the filename to save some overhead
+        # NOTE: If the names are trimmed, the archvie files should not be unzipped into the same
+        # folder
         if trim_filenames is True:
             lname = minimum_length_without_duplication(
                 [x["filename"] for x in obj_dicts]
@@ -2795,11 +2799,12 @@ class Container:  # pylint: disable=too-many-public-methods
             for obj_dict in obj_dicts:
                 obj_dict["filename"] = obj_dict["filename"][:lname]
 
-        # Proceed with writing out the file
         assert self.compression_algorithm.startswith(
             "zlib"
         ), "Cannot make archive with compression algorithm other than zlib"
         compress_level = int(self.compression_algorithm.split("+")[1])
+
+        # Proceed with writing out the archive file
         with open(
             self._get_archive_path_from_pack_id(pack_id), "wb"
         ) as write_pack_handle:
@@ -2820,17 +2825,14 @@ class Container:  # pylint: disable=too-many-public-methods
                             obj_dict["hashkey"]
                         ) as source_handle:
                             shutil.copyfileobj(source_handle, zip_write_handle)
-                    # Now the field of the zinfo has been set
+                    # Update the obj_dict according to the zinfo files that have been set
                     obj_dict["length"] = zinfo.compress_size
                     # Offset was the current location minus the size of the compressed stream written
                     obj_dict["offset"] = write_pack_handle.tell() - zinfo.compress_size
                     obj_dict["compressed"] = True
-        # The writing of the zip file is now completed
 
-        # Update the SQLite database so this pack is "archived"
-        for obj_dict in obj_dicts:
-            obj_dict.pop("filename")
-
+        # The writing of the zip file is now completed, now we update the database
+        # but before that we valid the archvie file, just to be sure
         # Validate the archvie file just created
         if run_read_test is True:
             test_result = self._validate_archvie_file(
@@ -2839,13 +2841,13 @@ class Container:  # pylint: disable=too-many-public-methods
             if test_result is False:
                 raise ValueError("Created archive file does not pass read tests")
 
-        # We can now update the database so the Obj table with the new offsets
-
-        # First, record the original "pack" file's path, since it will be changed once
+        # Reading from the archive file works, now update the database
+        # I record the original "pack" file's path, since it will be changed once
         # the archvied pack is active
         original_pack_path = self._get_pack_path_from_pack_id(pack_id)
 
         # Update the pack table such that the pack is "archived"
+
         session.execute(
             update(Pack)
             .where(Pack.pack_id == pack_id)
@@ -2855,14 +2857,18 @@ class Container:  # pylint: disable=too-many-public-methods
             )
         )
 
-        # Commit change in compress, offset, length, for each object in the Obj table
+        # Update the Obj table with new length and compression
+        for obj_dict in obj_dicts:
+            obj_dict.pop("filename")
         session.bulk_update_mappings(Obj, obj_dicts)
+
+        # Commit change in compress, offset, length, for each object in the Obj table
         session.commit()
 
         # We can now delete the original pack file
         os.unlink(original_pack_path)
 
-    def _get_archive_path_from_pack_id(self, pack_id):
+    def _get_archive_path_from_pack_id(self, pack_id) -> str:
         """
         Return the path to the archived pack.
 
@@ -2920,6 +2926,34 @@ class Container:  # pylint: disable=too-many-public-methods
             raise ValueError(
                 "Compression algorithm is in-compatible with pack archiving."
             )
+
+    def lossen_archive(self, archive_file: Union[str, Path], dst: Union[str, Path]):
+        """
+        Extract archived pack into a destination folder as loose objects
+
+        The destination folder must not exist to begin with.
+        This method renames the file names (which may be truncated) to their full hash values.
+        The destination folder can be copied into "loose" folder of a container which effectively
+        imports the data from the archive into that container.
+        """
+        assert not Path(dst).exists(), "Destination folder already exists!"
+        with zipfile.ZipFile(archive_file, "r") as zfile:
+            zfile.extractall(path=dst)
+
+        # Walk the directory and rename files according to the configuration of this container
+        for dirname, _, files in list(os.walk(dst)):
+            for file in files:
+                fullname = os.path.join(dirname, file)
+                with open(fullname, "rb") as fhandle:
+                    hash_value, _ = compute_hash_and_size(
+                        fhandle, hash_type=self.hash_type
+                    )
+                # Rename the file
+                new_filename = hash_value[self.loose_prefix_len :]
+                # Make parent directories if not exist already
+                Path(new_filename).parent.mkdir(exist_ok=True)
+                # Rename the files
+                os.rename(fullname, os.path.join(dirname, new_filename))
 
 
 def minimum_length_without_duplication(names, min_length=8):
