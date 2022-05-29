@@ -251,6 +251,19 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(
             pack_id, allow_repack_pack=allow_repack_pack
         ), f"Invalid pack ID {pack_id}"
+
+        # Are we trying to read from an archived pack?
+        session = self._get_session()
+        archived = (
+            session.execute(
+                select(Pack).filter_by(pack_id=pack_id, state=PackState.ARCHIVED.value)
+            )
+            .scalars()
+            .first()
+        )
+        if archived is not None:
+            return self._get_archive_path_from_pack_id(pack_id)
+
         return os.path.join(self._get_pack_folder(), pack_id)
 
     def _get_pack_index_path(self) -> str:
@@ -269,14 +282,26 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+
+        # Find all archived pack_ids
+        # We do not expect this to change over the concurrent operation, so more efficient to do it in one go
+        session = self._get_cached_session()
+        archived = session.execute(
+            select(Pack.pack_id).filter_by(state=PackState.ARCHIVED.value)
+        ).all()
+        # Convert the string representation back to int
+        all_archived_ids = [int(entry[0]) for entry in archived]
+
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
-            if not os.path.exists(pack_path):
-                # Use this ID - the pack file does not exist yet
-                break
-            if os.path.getsize(pack_path) < self.pack_size_target:
-                # Use this ID - the pack file is not "full" yet
-                break
+            # Check if we are trying to accessing an archive pack
+            if pack_id not in all_archived_ids:
+                if not os.path.exists(pack_path):
+                    # Use this ID - the pack file does not exist yet
+                    break
+                if os.path.getsize(pack_path) < self.pack_size_target:
+                    # Use this ID - the pack file is not "full" yet
+                    break
             # Try the next pack
             pack_id += 1
 
@@ -1149,6 +1174,24 @@ class Container:  # pylint: disable=too-many-public-methods
         :param allow_pack_repack: if True, allow to open the pack file used for repacking
         """
         assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
+
+        # Check that this is not an archived pack
+        session = self._get_cached_session()
+        this_pack = (
+            session.execute(select(Pack).filter(Pack.pack_id == pack_id))
+            .scalars()
+            .first()
+        )
+        if this_pack is not None and this_pack.state == PackState.ARCHIVED.value:
+            raise ValueError(
+                f"Pack {pack_id} is archived, so it cannot be locked for writing!"
+            )
+
+        # This is a new pack, so we update the Pack table in the SQLite database
+        if this_pack is None:
+            this_pack = Pack(state=PackState.ACTIVE.value, pack_id=pack_id)
+            session.add(this_pack)
+            session.commit()
 
         # Open file in exclusive mode
         lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
@@ -2666,7 +2709,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
 
-    def archive_pack(self, pack_id, run_read_test):
+    def archive_pack(self, pack_id, run_read_test=True):
         """
         Archive the pack - transfer the pack into a ZIP archive
 
@@ -2720,8 +2763,8 @@ class Container:  # pylint: disable=too-many-public-methods
         # Proceed with writing out the file
 
         # Createa  temporary pack with id -1
-        with self.lock_pack(
-            str(self._REPACK_PACK_ID), allow_repack_pack=True
+        with open(
+            self._get_archive_path_from_pack_id(pack_id), "wb"
         ) as write_pack_handle:
             with zipfile.ZipFile(write_pack_handle, "w") as archive:
                 # Iterate all objects in the pack to be archived
@@ -2759,7 +2802,7 @@ class Container:  # pylint: disable=too-many-public-methods
             update(Pack)
             .where(Pack.pack_id == pack_id)
             .values(
-                state=PackState.ARCHIVED,
+                state=PackState.ARCHIVED.value,
                 location=self._get_archive_path_from_pack_id(pack_id),
             )
         )
@@ -2776,16 +2819,27 @@ class Container:  # pylint: disable=too-many-public-methods
 
         The name includes the container_id, as the archive fold can be mounted from other
         file systems.
+
+        There are three possible cases:
+
+        1. The pack is not archived, return the default path
+        2. The pack is archived, but not explicity path, return the default one
+        3. The pack is archvied, but ha an explicity path, return the stored path
+
         """
         pack_id = str(pack_id)
         session = self._get_cached_session()
-        pack = session.execute(select(Pack).where(Pack.id == pack_id).limit(1)).all()
+        pack = (
+            session.execute(select(Pack).where(Pack.pack_id == pack_id))
+            .scalars()
+            .first()
+        )
         # No location set - use the default one
-        if not pack or not pack[0].location:
+        if not pack or not pack.location:
             return os.path.join(
                 self._get_archive_folder(), self.container_id + "-" + pack_id + ".zip"
             )
-        return pack[0].location
+        return pack.location
 
     def _get_archive_folder(self):
         """Return folder of the archive"""

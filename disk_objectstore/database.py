@@ -36,7 +36,7 @@ class PackState(enum.Enum):
     """Enum for valid sate of seal packs"""
 
     ARCHIVED = "Archived"
-    UNSEALED = "Unsealed"
+    ACTIVE = "Active"
 
 
 class Pack(Base):  # pylint: disable=too-few-public-methods
@@ -45,9 +45,8 @@ class Pack(Base):  # pylint: disable=too-few-public-methods
     __tablename__ = "db_pack"
 
     id = Column(Integer, primary_key=True)
-    pack_id = Column(Integer, primary_key=False)
+    pack_id = Column(String, primary_key=False)
     state = Column(String, nullable=False, unique=False)
-    md5 = Column(String, unique=True, nullable=False)
     location = Column(String, nullable=True)
 
 

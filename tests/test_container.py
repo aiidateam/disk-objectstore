@@ -15,6 +15,8 @@ import pytest
 
 import disk_objectstore.exceptions as exc
 from disk_objectstore import CompressMode, Container, ObjectType, database, utils
+from disk_objectstore.container import select, update
+from disk_objectstore.database import Pack, PackState
 
 COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
 
@@ -3325,3 +3327,163 @@ def test_unknown_compressers(temp_container, compression_algorithm):
         temp_container.init_container(
             clear=True, compression_algorithm=compression_algorithm
         )
+
+
+def _test_archive(temp_dir):
+    """Test the repacking functionality."""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+
+    # I check which packs exist
+    assert sorted(temp_container._list_packs()) == [
+        "0",
+        "1",
+        "2",
+    ]
+
+    counts = temp_container.count_objects()
+    assert counts["packed"] == len(data)
+    size = temp_container.get_total_size()
+    assert size["total_size_packed"] == 10 * len(data)
+    assert size["total_size_packfiles_on_disk"] == 10 * len(data)
+
+    # I now archive the pack
+    temp_container.archive_pack(1)
+
+    # Important before exiting from the tests
+    temp_container.close()
+
+
+def test_get_archive_path(temp_container):
+    """
+    Test getting archvie path
+    """
+
+    # New pack
+    path = temp_container._get_archive_path_from_pack_id(999)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-999.zip"
+    )
+
+    # Existing active pack
+    session = temp_container._get_cached_session()
+    pack = Pack(pack_id="998", state=PackState.ACTIVE.value)
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(998)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-998.zip"
+    )
+
+    # Existing archive pack
+    pack = Pack(pack_id="997", state=PackState.ARCHIVED.value)
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(997)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-997.zip"
+    )
+
+    pack = Pack(
+        pack_id="996", state=PackState.ARCHIVED.value, location="/tmp/archive.zip"
+    )
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(996)
+    assert path == "/tmp/archive.zip"
+
+
+def test_get_pack_id_with_archive(temp_dir):
+    """Test get_pack_id_to_write_to with archived packs"""
+
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+
+    session = temp_container._get_cached_session()
+    packs = session.execute(select(Pack)).scalars().all()
+    # Check there should be three packs
+    assert len(packs) == 3
+
+    # Three packs should be recorded in the Pack table as well
+    assert (
+        len(
+            session.execute(
+                select(Pack.pack_id).filter_by(state=PackState.ACTIVE.value)
+            ).all()
+        )
+        == 3
+    )
+
+    # Now, the next object should writ to pack 2, since it is not ful
+    assert temp_container._get_pack_id_to_write_to() == 2
+    # Mark the third pack as ARCHIVE
+    session.execute(
+        update(Pack)
+        .where(Pack.id == packs[-1].id)
+        .values(state=PackState.ARCHIVED.value, location="/tmp/2.zip")
+    )
+    session.commit()
+
+    # Writing to pack 2 is not allowed anymore
+    assert temp_container._get_pack_id_to_write_to() == 3
+
+    # Getting the "pack_path" for pack 2 should now point to the custom location
+    assert temp_container._get_pack_path_from_pack_id(2) == "/tmp/2.zip"
