@@ -3458,6 +3458,7 @@ def test_archive_path_settings(container_with_archive):
     temp_container._update_archive_location(1, location)
 
     # This should work
+    os.unlink(new_location)
     location.rename(new_location)
     temp_container._update_archive_location(1, new_location)
     assert temp_container.get_archive_locations()["1"] == str(new_location)
@@ -3505,13 +3506,13 @@ def test_get_archive_path(temp_container):
         + "-997.zip"
     )
 
-    pack = Pack(
-        pack_id="996", state=PackState.ARCHIVED.value, location="/tmp/archive.zip"
-    )
+    temp_dir = temp_container._folder
+    abs_archive = os.path.join(temp_dir, "temp_archive/2.zip")
+    pack = Pack(pack_id="996", state=PackState.ARCHIVED.value, location=abs_archive)
     session.add(pack)
     session.commit()
     path = temp_container._get_archive_path_from_pack_id(996)
-    assert path == "/tmp/archive.zip"
+    assert path == abs_archive
 
     # Relative path is relative to the container base folder
     pack = Pack(
@@ -3521,6 +3522,8 @@ def test_get_archive_path(temp_container):
     session.commit()
     path = temp_container._get_archive_path_from_pack_id(995)
     assert path == os.path.join(temp_container._folder, "archive2/archive.zip")
+
+    temp_container.close()
 
 
 def test_get_pack_id_with_archive(temp_dir):
@@ -3569,7 +3572,10 @@ def test_get_pack_id_with_archive(temp_dir):
     session.execute(
         update(Pack)
         .where(Pack.pack_id == str(to_archive))
-        .values(state=PackState.ARCHIVED.value, location=f"/tmp/{to_archive}.zip")
+        .values(
+            state=PackState.ARCHIVED.value,
+            location=os.path.join(temp_dir, f"{to_archive}.zip"),
+        )
     )
     session.commit()
 
@@ -3577,7 +3583,8 @@ def test_get_pack_id_with_archive(temp_dir):
     assert temp_container._get_pack_id_to_write_to() == 3
 
     # Getting the "pack_path" for pack 2 should now point to the custom location
-    assert (
-        temp_container._get_pack_path_from_pack_id(to_archive)
-        == f"/tmp/{to_archive}.zip"
+    assert temp_container._get_pack_path_from_pack_id(to_archive) == os.path.join(
+        temp_dir, f"{to_archive}.zip"
     )
+
+    temp_container.close()
