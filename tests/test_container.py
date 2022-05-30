@@ -3518,10 +3518,11 @@ def test_get_pack_id_with_archive(temp_dir):
     # Now, the next object should writ to pack 2, since it is not ful
     assert temp_container._get_pack_id_to_write_to() == 2
     # Mark the third pack as ARCHIVE
+    to_archive = packs[-1].pack_id
     session.execute(
         update(Pack)
-        .where(Pack.id == packs[-1].id)
-        .values(state=PackState.ARCHIVED.value, location="/tmp/2.zip")
+        .where(Pack.pack_id == str(to_archive))
+        .values(state=PackState.ARCHIVED.value, location=f"/tmp/{to_archive}.zip")
     )
     session.commit()
 
@@ -3529,4 +3530,7 @@ def test_get_pack_id_with_archive(temp_dir):
     assert temp_container._get_pack_id_to_write_to() == 3
 
     # Getting the "pack_path" for pack 2 should now point to the custom location
-    assert temp_container._get_pack_path_from_pack_id(2) == "/tmp/2.zip"
+    assert (
+        temp_container._get_pack_path_from_pack_id(to_archive)
+        == f"/tmp/{to_archive}.zip"
+    )

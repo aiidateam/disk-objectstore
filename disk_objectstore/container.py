@@ -254,7 +254,7 @@ class Container:  # pylint: disable=too-many-public-methods
         ), f"Invalid pack ID {pack_id}"
 
         # Are we trying to read from an archived pack?
-        archived = self.get_archived_pack_ids()
+        archived = self.get_archived_pack_ids(return_str=True)
         if pack_id in archived:
             return self._get_archive_path_from_pack_id(pack_id)
 
@@ -264,14 +264,16 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the SQLite file containing the index of packed objects."""
         return os.path.join(self._folder, f"packs{self._PACK_INDEX_SUFFIX}")
 
-    def get_archived_pack_ids(self) -> List[int]:
+    def get_archived_pack_ids(self, return_str=False) -> Union[List[int], List[str]]:
         """Return ids of the archived packs"""
         session = self._get_cached_session()
         archived = session.execute(
             select(Pack.pack_id).filter_by(state=PackState.ARCHIVED.value)
         ).all()
         # Convert the string representation back to int
-        return [int(entry[0]) for entry in archived]
+        if return_str is False:
+            return [int(entry[0]) for entry in archived]
+        return [entry[0] for entry in archived]
 
     def _get_pack_id_to_write_to(self) -> int:
         """Return the pack ID to write the next object.
@@ -1252,8 +1254,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Include also archived packs
         if include_archived:
-            for pack_id in self.get_archived_pack_ids():
-                yield str(pack_id)
+            yield from self.get_archived_pack_ids(return_str=True)
 
     def list_all_objects(self) -> Iterator[str]:
         """Iterate of all object hashkeys.
