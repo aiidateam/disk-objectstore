@@ -3513,6 +3513,15 @@ def test_get_archive_path(temp_container):
     path = temp_container._get_archive_path_from_pack_id(996)
     assert path == "/tmp/archive.zip"
 
+    # Relative path is relative to the container base folder
+    pack = Pack(
+        pack_id="995", state=PackState.ARCHIVED.value, location="archive2/archive.zip"
+    )
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(995)
+    assert path == os.path.join(temp_container._folder, "archive2/archive.zip")
+
 
 def test_get_pack_id_with_archive(temp_dir):
     """Test get_pack_id_to_write_to with archived packs"""

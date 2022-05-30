@@ -2855,7 +2855,6 @@ class Container:  # pylint: disable=too-many-public-methods
             .where(Pack.pack_id == pack_id)
             .values(
                 state=PackState.ARCHIVED.value,
-                location=self._get_archive_path_from_pack_id(pack_id),
             )
         )
 
@@ -2896,6 +2895,10 @@ class Container:  # pylint: disable=too-many-public-methods
             return os.path.join(
                 self._get_archive_folder(), self.container_id + "-" + pack_id + ".zip"
             )
+        # We have a location set, it is an relative path we set it relative to the container folder
+        if not Path(pack.location).is_absolute():
+            return os.path.join(self._folder, pack.location)
+
         return pack.location
 
     def _get_archive_folder(self) -> str:
@@ -2972,7 +2975,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         paths = {}
         for pack_id in self.get_archived_pack_ids(return_str=True):
-            paths[str(pack_id)] = self._get_pack_path_from_pack_id(pack_id)
+            paths[str(pack_id)] = self._get_archive_path_from_pack_id(pack_id)
         return paths
 
     def _update_archive_location(self, pack_id, location, force=False):
