@@ -2965,3 +2965,56 @@ class Container:  # pylint: disable=too-many-public-methods
                 Path(new_filename).parent.mkdir(exist_ok=True)
                 # Rename the files
                 os.rename(fullname, os.path.join(dirname, new_filename))
+
+    def get_archive_locations(self) -> Dict[str, str]:
+        """
+        Return the location of each archived packs
+        """
+        paths = {}
+        for pack_id in self.get_archived_pack_ids(return_str=True):
+            paths[str(pack_id)] = self._get_pack_path_from_pack_id(pack_id)
+        return paths
+
+    def _update_archive_location(self, pack_id, location, force=False):
+        """
+        Set the location of archive packs
+        """
+        location = Path(location)
+
+        if str(pack_id) not in self.get_archived_pack_ids(return_str=True):
+            raise ValueError(f"Pack {pack_id} is not an archived pack.")
+
+        if not force and not Path(location).exists():
+            raise ValueError(f"Suppied pack location {location} does not exist!")
+
+        # Update the location and validate the new archive
+
+        session = self._get_cached_session()
+        result = session.execute(
+            update(Pack)
+            .where(Pack.pack_id == str(pack_id))
+            .values(location=str(location))
+        )
+        # Check we have actually updated the content
+        assert result.rowcount == 1  # type: ignore
+
+        if not force:
+            # See if we can read the first few objects from the new archive
+            objs = (
+                session.execute(select(Obj).filter_by(pack_id=int(pack_id)).limit(10))
+                .scalars()
+                .all()
+            )
+            try:
+                for obj in objs:
+                    with self.get_object_stream(obj.hashkey) as stream:
+                        hashkey, _ = compute_hash_and_size(stream, self.hash_type)
+                        assert (
+                            hashkey == obj.hashkey
+                        ), "Error reading object from the new archive location!"
+            except Exception as error:
+                session.rollback()
+                raise error
+
+        # All good - commit the changes
+        session.commit()

@@ -1,5 +1,5 @@
 """Test of the object-store container module."""
-# pylint: disable=too-many-lines,protected-access
+# pylint: disable=too-many-lines,protected-access, redefined-outer-name
 import functools
 import hashlib
 import io
@@ -10,6 +10,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+from pathlib import Path
 
 import psutil
 import pytest
@@ -3330,8 +3331,9 @@ def test_unknown_compressers(temp_container, compression_algorithm):
         )
 
 
-def test_archive(temp_dir):
-    """Test the repacking functionality."""
+@pytest.fixture
+def container_with_archive(temp_dir):
+    """Return an contain with pack 1 archived"""
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, pack_size_target=39)
 
@@ -3375,9 +3377,15 @@ def test_archive(temp_dir):
     size = temp_container.get_total_size()
     assert size["total_size_packed"] == 10 * len(data)
     assert size["total_size_packfiles_on_disk"] == 10 * len(data)
-
-    # I now archive the pack
     temp_container.archive_pack(1)
+
+    yield temp_dir, temp_container, data, hashkeys
+    temp_container.close()
+
+
+def test_archive(container_with_archive):
+    """Test the repacking functionality."""
+    temp_dir, temp_container, data, hashkeys = container_with_archive
 
     assert temp_container._get_pack_path_from_pack_id(1).endswith("zip")
 
@@ -3405,10 +3413,10 @@ def test_archive(temp_dir):
     temp_container2 = Container(os.path.join(temp_dir, "sub"))
     temp_container2.init_container()
 
+    shutil.rmtree(os.path.join(temp_dir, "sub/loose"))
     shutil.copytree(
         os.path.join(temp_dir, "temp_loose"),
         os.path.join(temp_dir, "sub/loose"),
-        dirs_exist_ok=True,
     )
     assert temp_container2.count_objects()["loose"] == 4
     temp_container2.pack_all_loose()
@@ -3421,8 +3429,38 @@ def test_archive(temp_dir):
     for value in temp_container2.validate().values():
         assert not value
 
-    # Important before exiting from the tests
-    temp_container.close()
+
+def test_archive_path_settings(container_with_archive):
+    """Setting getting/setting container paths"""
+    _, temp_container, _, _ = container_with_archive
+
+    assert "1" in temp_container.get_archive_locations()
+    assert temp_container.get_archive_locations()["1"].endswith(
+        f"{temp_container.container_id}-1.zip"
+    )
+
+    location = Path(temp_container.get_archive_locations()["1"])
+    new_location = location.with_name("11.zip")
+    # Update the location
+    with pytest.raises(ValueError):
+        temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(location)
+
+    # New location exists, but contains invalid data
+    Path(new_location).write_text("aa")
+    with pytest.raises(ValueError):
+        temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(location)
+
+    # Not valid, but we forced it
+    temp_container._update_archive_location(1, new_location, force=True)
+    assert temp_container.get_archive_locations()["1"] == str(new_location)
+    temp_container._update_archive_location(1, location)
+
+    # This should work
+    location.rename(new_location)
+    temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(new_location)
 
 
 def test_get_archive_path(temp_container):

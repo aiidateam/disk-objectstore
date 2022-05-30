@@ -122,3 +122,86 @@ def optimize(
         container.clean_storage(vacuum=vacuum)
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
     click.echo(f"Final container size: {round(size/1000, 2)} Mb")
+
+
+@main.group("archive")
+def archive():
+    """
+    Interface for managing archived packs.
+
+    An archived pack is essentially an ZIP file and will no longer be considered for writing new
+    data. Once an pack is archived, it can be moved to other locations, for example, networked storages.
+    """
+
+
+@archive.command("list")
+@pass_dostore
+def archive_list(dosstore: ContainerContext):
+    """List all archives in the container"""
+
+    with dosstore.container as container:
+        location = container.get_archive_locations()
+        click.echo(json.dumps(location, indent=2))
+
+
+@archive.command("update-location")
+@click.argument("pack_id")
+@click.argument("new_location")
+@click.option("--force", help="Skip checks if passed", is_flag=True, default=False)
+@pass_dostore
+def archive_update_location(
+    dosstore: ContainerContext, pack_id: str, new_location: str, force: bool
+):
+    """Update the location of archive files"""
+
+    with dosstore.container as container:
+        container._update_archive_location(  # pylint: disable=protected-access
+            pack_id, new_location, force
+        )
+        click.echo(f"Updated location of pack {pack_id} to {new_location}")
+
+
+@archive.command("create")
+@click.argument("--pack_id")
+@click.option(
+    "--validate/--no-validate",
+    show_default=True,
+    help="Validate the created archive or not.",
+)
+@click.option(
+    "--trim-names/--no-trim-names",
+    show_default=True,
+    help="Trim the filenames in the archive, reduce storage overheads.",
+)
+@pass_dostore
+def archive_create(
+    dosstore: ContainerContext, pack_id: str, validate: bool, trim_names: bool
+):
+    """Turn the pack_id into an archive pack"""
+    with dosstore.container as container:
+        archives = container.get_archived_pack_ids(return_str=True)
+        if pack_id in archives:
+            raise click.Abort(f"Pack {pack_id} is already archived!")
+        container.archive_pack(
+            pack_id, run_read_test=validate, trim_filenames=trim_names
+        )
+        location = container.get_archive_locations()[pack_id]
+        click.echo(f"Successfully archvied pack {pack_id} at {location}")
+
+
+@archive.command("extract")
+@click.argument("archive_path")
+@click.argument("destination", type=click.Path(exists=False))
+def archive_extract(
+    dosstore: ContainerContext,
+    archive_path: str,
+    destination: str,
+):
+    """
+    Extract an existing archive and renames the files in the destination folder
+    the same that used for the loose objects, so that they can be imported into a another container.
+    """
+
+    with dosstore.container as container:
+        container.lossen_archive(archive_path, destination)
+        click.echo(f"Objects from {archive_path} have been extracted to {destination}")
