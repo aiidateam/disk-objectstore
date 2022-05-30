@@ -162,7 +162,7 @@ def archive_update_location(
 
 
 @archive.command("create")
-@click.argument("--pack_id")
+@click.argument("pack_id")
 @click.option(
     "--validate/--no-validate",
     show_default=True,
@@ -192,6 +192,7 @@ def archive_create(
 @archive.command("extract")
 @click.argument("archive_path")
 @click.argument("destination", type=click.Path(exists=False))
+@pass_dostore
 def archive_extract(
     dosstore: ContainerContext,
     archive_path: str,
