@@ -152,7 +152,11 @@ def archive_list(dosstore: ContainerContext):
 def archive_update_location(
     dosstore: ContainerContext, pack_id: str, new_location: str, force: bool
 ):
-    """Update the location of archive files"""
+    """
+    Update the location of archive files
+
+    NOTE: relative path is interpreted as relative to the root folder of the container.
+    """
 
     with dosstore.container as container:
         container._update_archive_location(  # pylint: disable=protected-access
