@@ -3270,6 +3270,85 @@ def test_repack(temp_dir):
     temp_container.close()
 
 
+def test_repack_compress_modes(temp_dir):
+    """
+    Test the repacking functionality and handling of CompressMode.
+    """
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+    compress_flags = [False, True, True, False, False, False, True, True, False]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum, compress in zip(data, compress_flags):
+        hashkeys.append(
+            temp_container.add_objects_to_pack([datum], compress=compress)[0]
+        )
+
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+
+    # I check which packs exist
+    assert sorted(temp_container._list_packs()) == [
+        "0",
+        "1",
+        "2",
+    ]
+
+    # I now repack
+    temp_container.repack_pack(0, compress_mode=CompressMode.NO)
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[0])["pack_compressed"] is False
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_compressed"] is False
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_compressed"] is False
+
+    temp_container.repack_pack(1, compress_mode=CompressMode.YES)
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[3])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[4])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_compressed"] is True
+
+    temp_container.repack_pack(1, compress_mode=CompressMode.KEEP)
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[7])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[8])["pack_compressed"] is False
+
+    # Check that the content is still correct
+    # Should not raise
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Important before exiting from the tests
+    temp_container.close()
+
+
 def test_not_implemented_repacks(temp_container):
     """Check the error for not implemented repack methods."""
     # We need to have at least one pack

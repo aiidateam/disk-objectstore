@@ -2578,7 +2578,7 @@ class Container:  # pylint: disable=too-many-public-methods
             self.repack_pack(pack_id, compress_mode=compress_mode)
         self._vacuum()
 
-    def repack_pack(
+    def repack_pack(  # pylint: disable=too-many-branches, too-many-statements
         self, pack_id: str, compress_mode: CompressMode = CompressMode.KEEP
     ) -> None:
         """Perform a repack of a given pack object.
@@ -2586,13 +2586,9 @@ class Container:  # pylint: disable=too-many-public-methods
         This is a maintenance operation.
 
         :param compress_mode: must be a valid CompressMode enum type.
-            Currently, the only implemented mode is KEEP, meaning that it
-            preserves the same compression (this means that repacking is *much* faster
-            as it can simply transfer the bytes without decompressing everything first,
-            and recompressing it back again).
         """
-        if compress_mode != CompressMode.KEEP:
-            raise NotImplementedError("Only keep method currently implemented")
+        # if compress_mode != CompressMode.KEEP:
+        #     raise NotImplementedError("Only keep method currently implemented")
 
         assert (
             pack_id != self._REPACK_PACK_ID
@@ -2649,26 +2645,53 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Since I am assuming above that the method is `KEEP`, I will just transfer
                     # the bytes. Otherwise I have to properly take into account compression in the
                     # source and in the destination.
+                    read_handle: Union[PackedObjectReader, ZlibStreamDecompresser]
                     read_handle = PackedObjectReader(read_pack, offset, length)
 
                     obj_dict = {}
                     obj_dict["id"] = rowid
                     obj_dict["hashkey"] = hashkey
                     obj_dict["pack_id"] = self._REPACK_PACK_ID
-                    obj_dict["compressed"] = compressed
                     obj_dict["size"] = size
                     obj_dict["offset"] = write_pack_handle.tell()
+                    if compress_mode == CompressMode.KEEP:
+                        obj_dict["compressed"] = compressed
+                    elif compress_mode == CompressMode.YES:
+                        obj_dict["compressed"] = True
+                    elif compress_mode == CompressMode.NO:
+                        obj_dict["compressed"] = False
 
                     # Transfer data in chunks.
                     # No need to rehash - it's the same container so the same hash.
-                    # Not checking the compression on source or destination - we are assuming
-                    # for now that the mode is KEEP.
+                    # Compression cases
+                    #    Original    Mode      Action
+                    #      -         KEEP      Copy in chunks
+                    #      yes       KEEP      Copy in chunks
+                    #      no        KEEP      Copy in chunks
+                    #      yes        NO       Copy in chunks, decompress the stream
+                    #      no         NO       Copy in chunks
+                    #      yes       YES       Copy in chunks
+                    #      no        YES       Copy in chunks, compress when writing
+                    if compress_mode == CompressMode.YES and not compressed:
+                        compressobj = self._get_compressobj_instance()
+                    else:
+                        compressobj = None
+
+                    # Read compressed, but write uncompressed
+                    if compressed is True and compress_mode == CompressMode.NO:
+                        read_handle = self._get_stream_decompresser()(read_handle)
+
                     while True:
                         chunk = read_handle.read(self._CHUNKSIZE)
                         if chunk == b"":
                             # Returns an empty bytes object on EOF.
                             break
-                        write_pack_handle.write(chunk)
+                        if compressobj is not None:
+                            write_pack_handle.write(compressobj.compress(chunk))
+                        else:
+                            write_pack_handle.write(chunk)
+                    if compressobj is not None:
+                        write_pack_handle.write(compressobj.flush())
                     obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
 
                     # Appending for later bulk commit
