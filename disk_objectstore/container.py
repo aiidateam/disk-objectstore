@@ -654,7 +654,9 @@ class Container:  # pylint: disable=too-many-public-methods
                             length=metadata.length,
                         )
                         if metadata.compressed:
-                            obj_reader = self._get_stream_decompresser()(obj_reader)
+                            obj_reader = self._get_stream_decompresser()(
+                                obj_reader, container=self, hashkey=metadata.hashkey
+                            )
                         yield metadata.hashkey, obj_reader, meta
                     else:
                         yield metadata.hashkey, meta
@@ -794,7 +796,9 @@ class Container:  # pylint: disable=too-many-public-methods
                                 length=metadata.length,
                             )
                             if metadata.compressed:
-                                obj_reader = self._get_stream_decompresser()(obj_reader)
+                                obj_reader = self._get_stream_decompresser()(
+                                    obj_reader, container=self, hashkey=metadata.hashkey
+                                )
                             yield metadata.hashkey, obj_reader, meta
                         else:
                             yield metadata.hashkey, meta
@@ -1839,6 +1843,28 @@ class Container:  # pylint: disable=too-many-public-methods
             do_fsync=do_fsync,
             do_commit=do_commit,
         )
+
+    def _lossen_object(self, hashkey):
+        """
+        Write a specific object to the loose directory, return the path to the loose file
+        """
+        _read_chunk_size = 524288
+
+        # Here I just use a new object writer that writes the stream as loose file
+        writer = self._new_object_writer()
+
+        with self.get_object_stream(hashkey) as stream:
+            with writer as fhandle:
+                while True:
+                    chunk = stream.read(_read_chunk_size)
+                    if not chunk:
+                        break
+                    fhandle.write(chunk)
+            written_hashkey = writer.get_hashkey()
+            assert (
+                written_hashkey == hashkey
+            ), "Mismatch in the hashkey - something is seriously wrong"
+        return self._get_loose_path_from_hashkey(hashkey)
 
     def _vacuum(self) -> None:
         """Perform a `VACUUM` operation on the SQLite operation.
