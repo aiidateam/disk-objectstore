@@ -417,23 +417,28 @@ class PackedObjectReader:
 
         :raises NotImplementedError: if ``whence`` is not 0 or 1.
         """
-        if whence not in [0, 1]:
+        if whence not in [0, 1, 2]:
             raise NotImplementedError(
-                "Invalid value for `whence`: only 0 and 1 are currently implemented."
+                "Invalid value for `whence`: only 0, 1 and 2 are currently implemented."
             )
 
-        if whence == 1:
-            target = self.tell() + target
+        if whence in [0, 1]:
+            if whence == 1:
+                target = self.tell() + target
 
-        if target < 0:
-            raise ValueError(
-                "specified target would exceed the lower boundary of bytes that are accessible."
-            )
-        if target > self._length:
-            raise ValueError(
-                "specified target would exceed the upper boundary of bytes that are accessible."
-            )
-        new_pos = self._offset + target
+            if target < 0:
+                raise ValueError(
+                    "specified target would exceed the lower boundary of bytes that are accessible."
+                )
+            if target > self._length:
+                raise ValueError(
+                    "specified target would exceed the upper boundary of bytes that are accessible."
+                )
+            new_pos = self._offset + target
+        else:
+            # Seek relative to the end
+            new_pos = self._offset + self._length + target
+
         self._fhandle.seek(new_pos)
         # Next function MUST be called every time we move into the _fhandle file, to update the position
         self._update_pos()
@@ -642,22 +647,36 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     _CHUNKSIZE = 524288
 
-    def __init__(self, compressed_stream: StreamSeekBytesType) -> None:
+    def __init__(
+        self, compressed_stream: StreamSeekBytesType, container=None, hashkey=None
+    ) -> None:
         """Create the class from a given compressed bytestream.
 
         :param compressed_stream: an open bytes stream that supports the .read() method,
           returning a valid compressed stream.
+        :param whence_callback: A callback that should return a new handler of the uncompressed stream.
         """
         self._compressed_stream = compressed_stream
         self._decompressor = self.decompressobj_class()
         self._internal_buffer = b""
         self._pos = 0
+        self._container = container
+        self._hashkey = hashkey
+        self._uncompressed_stream: Union[None, BinaryIO] = None
 
     @property
     def mode(self) -> str:
         return getattr(self._compressed_stream, "mode", "rb")
 
     def read(self, size: int = -1) -> bytes:
+        """
+        Read and return up to n bytes.
+        """
+        if self._uncompressed_stream is not None:
+            return self._uncompressed_stream.read(size)
+        return self._read(size)
+
+    def _read(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes.
 
@@ -729,6 +748,8 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     def __exit__(self, exc_type, value, traceback) -> None:
         """Close context manager."""
+        if self._uncompressed_stream is not None:
+            self._uncompressed_stream.close()
 
     @property
     @abc.abstractmethod
@@ -753,9 +774,17 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     def tell(self) -> int:
         """Return current position in file."""
+        if self._uncompressed_stream is not None:
+            return self._uncompressed_stream.tell()
         return self._pos
 
     def seek(self, target: int, whence: int = 0) -> int:
+        """Seek the stream"""
+        if self._uncompressed_stream is not None:
+            return self._uncompressed_stream.seek(target, whence)
+        return self._seek_compressed(target, whence)
+
+    def _seek_compressed(self, target: int, whence: int = 0) -> int:
         """Change stream position.
 
         ..note:: This is particularly inefficient if `target > 0` since it will have
@@ -766,9 +795,17 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         read_chunk_size = 256 * 1024
 
         if whence not in [0, 1]:
-            raise NotImplementedError(
-                "Invalid value for `whence`: only 0 and 1 are currently implemented."
-            )
+            if self._container is None:
+                raise NotImplementedError(
+                    "Invalid value for `whence`: only 1 and 0 are currently implemented without container support."
+                )
+            # I have a container backing me up - so I can try if I can get the uncompressed stream
+            # instead so whence = 2 can be used with it
+            stream = self._get_uncompressed_stream()
+            # Seek the new stream to the current location
+            stream.seek(self._pos, 0)
+            # Seek to the desired location as requested
+            return self.seek(target, whence)
 
         if whence == 1:
             target = self.tell() + target
@@ -796,6 +833,26 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
                 break
         # Differently than files, I return here the actual position
         return self._pos
+
+    def _get_uncompressed_stream(self):
+        """Obtain a uncompressed stream with extended support of `seek`"""
+        # Obtain the path to the loose file
+        object_path = self._container._get_loose_path_from_hashkey(  # pylint: disable=protected-access
+            hashkey=self._hashkey
+        )
+        try:
+            self._uncompressed_stream = open(object_path, "rb")
+        except FileNotFoundError:
+            # The loose file is not found, hence we loosen the object here
+            object_path = (
+                self._container._lossen_object(  # pylint: disable=protected-access
+                    self._hashkey
+                )
+            )
+            self._uncompressed_stream = open(  # pylint: disable=consider-using-with
+                object_path, "rb"
+            )
+        return self._uncompressed_stream
 
 
 class ZlibStreamDecompresser(ZlibLikeBaseStreamDecompresser):

@@ -293,6 +293,14 @@ def test_stream_seek(temp_container, use_compression, use_packing):
         stream.seek(offset, 1)
         assert stream.read() == content[(10 + 3) :]
 
+        # Test whence=2, by first seeking to the tenth byte, seeking 3 from the end
+        stream.seek(10)
+        offset = -3
+        stream.seek(offset, 2)
+        assert stream.read() == content[offset:]
+        # Check that we have lossen the file
+        assert os.path.isfile(temp_container._get_loose_path_from_hashkey(hashkey))
+
 
 def test_num_packs_with_target_size(temp_dir, generate_random_data):
     """Add a number of objects directly to packs, with a small pack_size_target.

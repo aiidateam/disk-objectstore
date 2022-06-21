@@ -980,9 +980,9 @@ def test_packed_object_reader_seek(tmp_path):
         # Check that it is properly marked as seekable
         assert packed_reader.seekable()
 
-        # Check that whence==2 is not implemented
-        with pytest.raises(NotImplementedError):
-            packed_reader.seek(0, 2)
+        # Check that whence==2 is implemented
+        packed_reader.seek(-2, 2)
+        assert packed_reader.read() == bytestream[offset + length - 2 : offset + length]
 
         # Check that negative values and values > length are not valid
         with pytest.raises(ValueError):
