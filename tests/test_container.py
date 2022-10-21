@@ -1,5 +1,5 @@
 """Test of the object-store container module."""
-# pylint: disable=too-many-lines,protected-access
+# pylint: disable=too-many-lines,protected-access, redefined-outer-name
 import functools
 import hashlib
 import io
@@ -9,12 +9,16 @@ import random
 import shutil
 import stat
 import tempfile
+import zipfile
+from pathlib import Path
 
 import psutil
 import pytest
 
 import disk_objectstore.exceptions as exc
 from disk_objectstore import CompressMode, Container, ObjectType, database, utils
+from disk_objectstore.container import select, update
+from disk_objectstore.database import Pack, PackState
 
 COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
 
@@ -1070,7 +1074,7 @@ def test_sizes(
 def test_get_objects_stream_closes(temp_container, generate_random_data):
     """Test that get_objects_stream_and_meta closes intermediate streams.
 
-    I also check that at most one additional file is open at any given time.
+    I also check that at most two additional file is open at any given time.
 
     .. note: apparently, at least on my Mac, even if I forget to close a file, this is automatically closed
        when it goes out of scope - so I add also the test that, inside the loop, at most one more file is open.
@@ -1093,7 +1097,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
         obj_md5s.keys(), skip_if_missing=True
     ):
         # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
+        assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1103,7 +1107,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1114,7 +1118,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
             stream.read()
 
     # Check that at the end nothing is left open
@@ -1131,7 +1135,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
 
     with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
         # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
+        assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1139,7 +1143,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
         # I loop over the triplets, but I don't do anything
         for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
 
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -1150,7 +1154,7 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
     ) as triplets:
         # I loop over the triplets, but I don't do anything
         for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+            assert len(current_process.open_files()) <= start_open_files + 2
             stream.read()
     # Check that at the end nothing is left open
     assert len(current_process.open_files()) == start_open_files
@@ -3266,6 +3270,85 @@ def test_repack(temp_dir):
     temp_container.close()
 
 
+def test_repack_compress_modes(temp_dir):
+    """
+    Test the repacking functionality and handling of CompressMode.
+    """
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+    compress_flags = [False, True, True, False, False, False, True, True, False]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum, compress in zip(data, compress_flags):
+        hashkeys.append(
+            temp_container.add_objects_to_pack([datum], compress=compress)[0]
+        )
+
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+
+    # I check which packs exist
+    assert sorted(temp_container._list_packs()) == [
+        "0",
+        "1",
+        "2",
+    ]
+
+    # I now repack
+    temp_container.repack_pack(0, compress_mode=CompressMode.NO)
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[0])["pack_compressed"] is False
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_compressed"] is False
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_compressed"] is False
+
+    temp_container.repack_pack(1, compress_mode=CompressMode.YES)
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[3])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[4])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_compressed"] is True
+
+    temp_container.repack_pack(1, compress_mode=CompressMode.KEEP)
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[7])["pack_compressed"] is True
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+    assert temp_container.get_object_meta(hashkeys[8])["pack_compressed"] is False
+
+    # Check that the content is still correct
+    # Should not raise
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # Important before exiting from the tests
+    temp_container.close()
+
+
 def test_not_implemented_repacks(temp_container):
     """Check the error for not implemented repack methods."""
     # We need to have at least one pack
@@ -3325,3 +3408,262 @@ def test_unknown_compressers(temp_container, compression_algorithm):
         temp_container.init_container(
             clear=True, compression_algorithm=compression_algorithm
         )
+
+
+@pytest.fixture
+def container_with_archive(temp_dir):
+    """Return an contain with pack 1 archived"""
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+
+    assert temp_container.get_object_meta(hashkeys[0])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[1])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[2])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[3])["pack_id"] == 0
+    assert temp_container.get_object_meta(hashkeys[4])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[5])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[6])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[7])["pack_id"] == 1
+    assert temp_container.get_object_meta(hashkeys[8])["pack_id"] == 2
+
+    # I check which packs exist
+    assert sorted(temp_container._list_packs()) == [
+        "0",
+        "1",
+        "2",
+    ]
+
+    counts = temp_container.count_objects()
+    assert counts["packed"] == len(data)
+    size = temp_container.get_total_size()
+    assert size["total_size_packed"] == 10 * len(data)
+    assert size["total_size_packfiles_on_disk"] == 10 * len(data)
+    temp_container.archive_pack(1)
+
+    yield temp_dir, temp_container, data, hashkeys
+    temp_container.close()
+
+
+def test_archive(container_with_archive):
+    """Test the repacking functionality."""
+    temp_dir, temp_container, data, hashkeys = container_with_archive
+
+    assert temp_container._get_pack_path_from_pack_id(1).endswith("zip")
+
+    # Can still read everything
+    for idx, value in enumerate(data):
+        assert temp_container.get_object_content(hashkeys[idx]) == value
+
+    # Validate the hashes
+    temp_container._validate_hashkeys_pack(1)
+
+    size = temp_container.get_total_size()
+    # Due to the overhead, packs on the disk now takes more space....
+    assert size["total_size_packfiles_on_disk"] > 10 * len(data)
+
+    # Check that the Zipfile generated is valid
+    with zipfile.ZipFile(temp_container._get_pack_path_from_pack_id(1)) as zfile:
+        assert len(zfile.infolist()) == 4
+        zfile.testzip()
+
+    # Test loosen the objects and then import them into a new container
+    temp_container.lossen_archive(
+        temp_container._get_pack_path_from_pack_id(1),
+        os.path.join(temp_dir, "temp_loose"),
+    )
+    temp_container2 = Container(os.path.join(temp_dir, "sub"))
+    temp_container2.init_container()
+
+    shutil.rmtree(os.path.join(temp_dir, "sub/loose"))
+    shutil.copytree(
+        os.path.join(temp_dir, "temp_loose"),
+        os.path.join(temp_dir, "sub/loose"),
+    )
+    assert temp_container2.count_objects()["loose"] == 4
+    temp_container2.pack_all_loose()
+    temp_container2.clean_storage()
+    assert temp_container2.count_objects()["packed"] == 4
+    assert temp_container2.count_objects()["loose"] == 0
+    size2 = temp_container2.get_total_size()
+    size2["total_size_packfiles_on_disk"] = 10 * 4
+    # Validate that we are all good
+    for value in temp_container2.validate().values():
+        assert not value
+
+
+def test_archive_path_settings(container_with_archive):
+    """Setting getting/setting container paths"""
+    _, temp_container, _, _ = container_with_archive
+
+    assert "1" in temp_container.get_archive_locations()
+    assert temp_container.get_archive_locations()["1"].endswith(
+        f"{temp_container.container_id}-1.zip"
+    )
+
+    location = Path(temp_container.get_archive_locations()["1"])
+    new_location = location.with_name("11.zip")
+    # Update the location
+    with pytest.raises(ValueError):
+        temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(location)
+
+    # New location exists, but contains invalid data
+    Path(new_location).write_text("aa")
+    with pytest.raises(ValueError):
+        temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(location)
+
+    # Not valid, but we forced it
+    temp_container._update_archive_location(1, new_location, force=True)
+    assert temp_container.get_archive_locations()["1"] == str(new_location)
+    temp_container._update_archive_location(1, location)
+
+    # This should work
+    os.unlink(new_location)
+    location.rename(new_location)
+    temp_container._update_archive_location(1, new_location)
+    assert temp_container.get_archive_locations()["1"] == str(new_location)
+
+
+def test_get_archive_path(temp_container):
+    """
+    Test getting archvie path
+    """
+
+    # New pack
+    path = temp_container._get_archive_path_from_pack_id(999)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-999.zip"
+    )
+
+    # Existing active pack
+    session = temp_container._get_cached_session()
+    pack = Pack(pack_id="998", state=PackState.ACTIVE.value)
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(998)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-998.zip"
+    )
+
+    # Existing archive pack
+    pack = Pack(pack_id="997", state=PackState.ARCHIVED.value)
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(997)
+    assert (
+        path
+        == os.path.join(
+            temp_container._get_archive_folder(), temp_container.container_id
+        )
+        + "-997.zip"
+    )
+
+    temp_dir = temp_container._folder
+    abs_archive = os.path.join(temp_dir, "temp_archive/2.zip")
+    pack = Pack(pack_id="996", state=PackState.ARCHIVED.value, location=abs_archive)
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(996)
+    assert path == abs_archive
+
+    # Relative path is relative to the container base folder
+    pack = Pack(
+        pack_id="995", state=PackState.ARCHIVED.value, location="archive2/archive.zip"
+    )
+    session.add(pack)
+    session.commit()
+    path = temp_container._get_archive_path_from_pack_id(995)
+    assert path == os.path.join(temp_container._folder, "archive2/archive.zip")
+
+    temp_container.close()
+
+
+def test_get_pack_id_with_archive(temp_dir):
+    """Test get_pack_id_to_write_to with archived packs"""
+
+    temp_container = Container(temp_dir)
+    temp_container.init_container(clear=True, pack_size_target=39)
+
+    # data of 10 bytes each. Will fill two packs.
+    data = [
+        b"-123456789",
+        b"a123456789",
+        b"b123456789",
+        b"c123456789",
+        b"d123456789",
+        b"e123456789",
+        b"f123456789",
+        b"g123456789",
+        b"h123456789",
+    ]
+
+    hashkeys = []
+    # Add them one by one, so I am sure in wich pack they go
+    for datum in data:
+        hashkeys.append(temp_container.add_objects_to_pack([datum])[0])
+
+    session = temp_container._get_cached_session()
+    packs = session.execute(select(Pack)).scalars().all()
+    # Check there should be three packs
+    assert len(packs) == 3
+
+    # Three packs should be recorded in the Pack table as well
+    assert (
+        len(
+            session.execute(
+                select(Pack.pack_id).filter_by(state=PackState.ACTIVE.value)
+            ).all()
+        )
+        == 3
+    )
+
+    # Now, the next object should writ to pack 2, since it is not ful
+    assert temp_container._get_pack_id_to_write_to() == 2
+    # Mark the third pack as ARCHIVE
+    to_archive = packs[-1].pack_id
+    session.execute(
+        update(Pack)
+        .where(Pack.pack_id == str(to_archive))
+        .values(
+            state=PackState.ARCHIVED.value,
+            location=os.path.join(temp_dir, f"{to_archive}.zip"),
+        )
+    )
+    session.commit()
+
+    # Writing to pack 2 is not allowed anymore
+    assert temp_container._get_pack_id_to_write_to() == 3
+
+    # Getting the "pack_path" for pack 2 should now point to the custom location
+    assert temp_container._get_pack_path_from_pack_id(to_archive) == os.path.join(
+        temp_dir, f"{to_archive}.zip"
+    )
+
+    temp_container.close()

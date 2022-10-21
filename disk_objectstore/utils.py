@@ -653,6 +653,14 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._internal_buffer = b""
         self._pos = 0
 
+    def set_zip_mode(self):
+        """Switch to ZIP mode - decompresss with WBITS=-15"""
+        self._decompressor = self.decompressobj_class(-15)
+
+    def set_zlib_mode(self):
+        """Switch to normal operation mode"""
+        self._decompressor = self.decompressobj_class()
+
     @property
     def mode(self) -> str:
         return getattr(self._compressed_stream, "mode", "rb")
@@ -1272,3 +1280,17 @@ def merge_sorted(iterator1: Iterable[Any], iterator2: Iterable[Any]) -> Iterator
     for item, _ in detect_where_sorted(iterator1, iterator2):
         # Whereever it is (only left, only right, on both) I return the object.
         yield item
+
+
+def minimum_length_without_duplication(names, min_length=8):
+    """
+    Find how many characters is needed to ensure there is no conflict among a set of filenames
+    """
+    length = min_length - 1
+    length_ok = False
+    while not length_ok:
+        length += 1
+        trimmed = {name[:length] for name in names}
+        length_ok = len(trimmed) == len(names)
+
+    return length

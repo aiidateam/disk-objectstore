@@ -1,15 +1,17 @@
 """
 The main implementation of the ``Container`` class of the object store.
 """
-# pylint: disable=too-many-lines
 import io
 import json
 import os
 import shutil
 import uuid
 import warnings
+import zipfile
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
+
+# pylint: disable=too-many-lines
 from enum import Enum
 from pathlib import Path
 from typing import (
@@ -37,7 +39,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update
 
-from .database import Obj, get_session
+from .database import Obj, Pack, PackState, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
@@ -57,6 +59,7 @@ from .utils import (
     get_stream_decompresser,
     is_known_hash,
     merge_sorted,
+    minimum_length_without_duplication,
     nullcontext,
     rename_callback,
     safe_flush_to_disk,
@@ -249,11 +252,28 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(
             pack_id, allow_repack_pack=allow_repack_pack
         ), f"Invalid pack ID {pack_id}"
+
+        # Are we trying to read from an archived pack?
+        archived = self.get_archived_pack_ids(return_str=True)
+        if pack_id in archived:
+            return self._get_archive_path_from_pack_id(pack_id)
+
         return os.path.join(self._get_pack_folder(), pack_id)
 
     def _get_pack_index_path(self) -> str:
         """Return the path to the SQLite file containing the index of packed objects."""
         return os.path.join(self._folder, f"packs{self._PACK_INDEX_SUFFIX}")
+
+    def get_archived_pack_ids(self, return_str=False) -> Union[List[int], List[str]]:
+        """Return ids of the archived packs"""
+        session = self._get_cached_session()
+        archived = session.execute(
+            select(Pack.pack_id).filter_by(state=PackState.ARCHIVED.value)
+        ).all()
+        # Convert the string representation back to int
+        if return_str is False:
+            return [int(entry[0]) for entry in archived]
+        return [entry[0] for entry in archived]
 
     def _get_pack_id_to_write_to(self) -> int:
         """Return the pack ID to write the next object.
@@ -267,14 +287,20 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+
+        # Find all archived pack_ids
+        # We do not expect this to change over the concurrent operation, so more efficient to do it in one go
+        archived_int_ids = self.get_archived_pack_ids()
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
-            if not os.path.exists(pack_path):
-                # Use this ID - the pack file does not exist yet
-                break
-            if os.path.getsize(pack_path) < self.pack_size_target:
-                # Use this ID - the pack file is not "full" yet
-                break
+            # Check if we are trying to accessing an archive pack
+            if pack_id not in archived_int_ids:
+                if not os.path.exists(pack_path):
+                    # Use this ID - the pack file does not exist yet
+                    break
+                if os.path.getsize(pack_path) < self.pack_size_target:
+                    # Use this ID - the pack file is not "full" yet
+                    break
             # Try the next pack
             pack_id += 1
 
@@ -391,6 +417,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         for folder in [
             self._get_pack_folder(),
+            self._get_archive_folder(),
             self._get_loose_folder(),
             self._get_duplicates_folder(),
             self._get_sandbox_folder(),
@@ -597,6 +624,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         obj_reader: StreamReadBytesType
 
+        archived_pack_int_ids = self.get_archived_pack_ids()
+
         if len(hashkeys_set) <= self._MAX_CHUNK_ITERATE_LENGTH:
             # Operate in chunks, due to the SQLite limits
             # (see comment above the definition of self._IN_SQL_MAX_LENGTH)
@@ -660,6 +689,8 @@ class Container:  # pylint: disable=too-many-public-methods
                         )
                         if metadata.compressed:
                             obj_reader = self._get_stream_decompresser()(obj_reader)
+                            if pack_int_id in archived_pack_int_ids:
+                                obj_reader.set_zip_mode()
                         yield metadata.hashkey, obj_reader, meta
                     else:
                         yield metadata.hashkey, meta
@@ -799,7 +830,12 @@ class Container:  # pylint: disable=too-many-public-methods
                                 length=metadata.length,
                             )
                             if metadata.compressed:
+                                # We reading from  archived pack we need to set it to ZIP mode.
+                                # This is because the stream in the ZIP file does not contain zlib
+                                # header/trailer (WBITS=-15)
                                 obj_reader = self._get_stream_decompresser()(obj_reader)
+                                if pack_int_id in archived_pack_int_ids:
+                                    obj_reader.set_zip_mode()
                             yield metadata.hashkey, obj_reader, meta
                         else:
                             yield metadata.hashkey, meta
@@ -1147,6 +1183,24 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
 
+        # Check that this is not an archived pack
+        session = self._get_cached_session()
+        this_pack = (
+            session.execute(select(Pack).filter(Pack.pack_id == pack_id))
+            .scalars()
+            .first()
+        )
+        if this_pack is not None and this_pack.state == PackState.ARCHIVED.value:
+            raise ValueError(
+                f"Pack {pack_id} is archived, so it cannot be locked for writing!"
+            )
+
+        # This is a new pack, so we update the Pack table in the SQLite database
+        if this_pack is None:
+            this_pack = Pack(state=PackState.ACTIVE.value, pack_id=pack_id)
+            session.add(this_pack)
+            session.commit()
+
         # Open file in exclusive mode
         lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
         pack_file = self._get_pack_path_from_pack_id(
@@ -1185,7 +1239,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     continue
                 yield first_level
 
-    def _list_packs(self) -> Iterator[str]:
+    def _list_packs(self, include_archived=True) -> Iterator[str]:
         """Iterate over packs.
 
         .. note:: this returns a generator of the pack IDs.
@@ -1197,6 +1251,10 @@ class Container:  # pylint: disable=too-many-public-methods
             # pack_id = fname[:-len(self._PACK_INDEX_SUFFIX)]
             if self._is_valid_pack_id(fname):
                 yield fname
+
+        # Include also archived packs
+        if include_archived:
+            yield from self.get_archived_pack_ids(return_str=True)
 
     def list_all_objects(self) -> Iterator[str]:
         """Iterate of all object hashkeys.
@@ -2309,6 +2367,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         session = self._get_cached_session()
 
+        is_archived = pack_id in self.get_archived_pack_ids()
+
         if callback:
             # If we have a callback, compute the total count of objects in this pack
             total = session.scalar(
@@ -2338,7 +2398,10 @@ class Container:  # pylint: disable=too-many-public-methods
                     fhandle=pack_handle, offset=offset, length=length
                 )
                 if compressed:
+
                     obj_reader = self._get_stream_decompresser()(obj_reader)
+                    if is_archived:
+                        obj_reader.set_zip_mode()
 
                 computed_hash, computed_size = compute_hash_and_size(
                     obj_reader, self.hash_type
@@ -2514,7 +2577,7 @@ class Container:  # pylint: disable=too-many-public-methods
             self.repack_pack(pack_id, compress_mode=compress_mode)
         self._vacuum()
 
-    def repack_pack(
+    def repack_pack(  # pylint: disable=too-many-branches, too-many-statements
         self, pack_id: str, compress_mode: CompressMode = CompressMode.KEEP
     ) -> None:
         """Perform a repack of a given pack object.
@@ -2522,17 +2585,21 @@ class Container:  # pylint: disable=too-many-public-methods
         This is a maintenance operation.
 
         :param compress_mode: must be a valid CompressMode enum type.
-            Currently, the only implemented mode is KEEP, meaning that it
-            preserves the same compression (this means that repacking is *much* faster
-            as it can simply transfer the bytes without decompressing everything first,
-            and recompressing it back again).
         """
-        if compress_mode != CompressMode.KEEP:
-            raise NotImplementedError("Only keep method currently implemented")
+        # if compress_mode != CompressMode.KEEP:
+        #     raise NotImplementedError("Only keep method currently implemented")
 
         assert (
             pack_id != self._REPACK_PACK_ID
         ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
+
+        # We cannot repack a packed file since the DEFLATE stream in the ZIP is not the same
+        # as that written by zlib.compress, due to the requirement of WBITS=-15 for those in the
+        # ZIP file, while those written in unpacked file has WBITS=15 (with zlib header/trailers)
+        # This limitation can be lifted if other CompressMode is supported.
+        assert (
+            pack_id not in self.get_archived_pack_ids()
+        ), f"The specified pack_id '{pack_id}' is archived, but repacking archived packs is not currently implemented."
 
         # Check that it does not exist
         assert not os.path.exists(
@@ -2577,26 +2644,53 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Since I am assuming above that the method is `KEEP`, I will just transfer
                     # the bytes. Otherwise I have to properly take into account compression in the
                     # source and in the destination.
+                    read_handle: Union[PackedObjectReader, ZlibStreamDecompresser]
                     read_handle = PackedObjectReader(read_pack, offset, length)
 
                     obj_dict = {}
                     obj_dict["id"] = rowid
                     obj_dict["hashkey"] = hashkey
                     obj_dict["pack_id"] = self._REPACK_PACK_ID
-                    obj_dict["compressed"] = compressed
                     obj_dict["size"] = size
                     obj_dict["offset"] = write_pack_handle.tell()
+                    if compress_mode == CompressMode.KEEP:
+                        obj_dict["compressed"] = compressed
+                    elif compress_mode == CompressMode.YES:
+                        obj_dict["compressed"] = True
+                    elif compress_mode == CompressMode.NO:
+                        obj_dict["compressed"] = False
 
                     # Transfer data in chunks.
                     # No need to rehash - it's the same container so the same hash.
-                    # Not checking the compression on source or destination - we are assuming
-                    # for now that the mode is KEEP.
+                    # Compression cases
+                    #    Original    Mode      Action
+                    #      -         KEEP      Copy in chunks
+                    #      yes       KEEP      Copy in chunks
+                    #      no        KEEP      Copy in chunks
+                    #      yes        NO       Copy in chunks, decompress the stream
+                    #      no         NO       Copy in chunks
+                    #      yes       YES       Copy in chunks
+                    #      no        YES       Copy in chunks, compress when writing
+                    if compress_mode == CompressMode.YES and not compressed:
+                        compressobj = self._get_compressobj_instance()
+                    else:
+                        compressobj = None
+
+                    # Read compressed, but write uncompressed
+                    if compressed is True and compress_mode == CompressMode.NO:
+                        read_handle = self._get_stream_decompresser()(read_handle)
+
                     while True:
                         chunk = read_handle.read(self._CHUNKSIZE)
                         if chunk == b"":
                             # Returns an empty bytes object on EOF.
                             break
-                        write_pack_handle.write(chunk)
+                        if compressobj is not None:
+                            write_pack_handle.write(compressobj.compress(chunk))
+                        else:
+                            write_pack_handle.write(chunk)
+                    if compressobj is not None:
+                        write_pack_handle.write(compressobj.flush())
                     obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
 
                     # Appending for later bulk commit
@@ -2620,7 +2714,7 @@ class Container:  # pylint: disable=too-many-public-methods
         obj_dicts = []
 
         # Now we can safely delete the old object. I just check that there is no object still
-        # refencing the old pack, to be sure.
+        # referencing the old pack, to be sure.
         one_object_in_pack = session.execute(
             select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
         ).all()
@@ -2661,3 +2755,291 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # We are now done. The temporary pack is gone, and the old `pack_id`
         # has now been replaced with an udpated, repacked pack.
+
+    def archive_pack(
+        self, pack_id, run_read_test=True, trim_filenames=True
+    ):  # pylint: disable=too-many-locals
+        """
+        Archive the pack - transfer the pack into a ZIP archive
+
+        This is accepted as a slow operation.
+        The destination may not be on the same file system, e.g. the archive folder may be on a
+        different (networked) file system.
+
+        :param pack_id: ID of the pack to be archived
+        :param run_read_test: Test reading the archive file before committing changes.
+        :trim_filenames: Trim the filenames in the ZIP archive created so it only contains the first
+          few characters of the hash.
+
+        """
+
+        pack_id = str(pack_id)
+        session = self._get_cached_session()
+        one_object_in_pack = session.execute(
+            select(Obj.id).where(Obj.pack_id == pack_id).limit(1)
+        ).all()
+        # No thing to archive for
+        if not one_object_in_pack:
+            # No objects. Clean up the pack file, if it exists.
+            if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
+                os.remove(self._get_pack_path_from_pack_id(pack_id))
+            return
+        # Gather all information of the objects to be stored
+        stmt = (
+            select(
+                Obj.id, Obj.hashkey, Obj.size, Obj.offset, Obj.length, Obj.compressed
+            )
+            .where(Obj.pack_id == pack_id)
+            .order_by(Obj.offset)
+        )
+        obj_dicts = []
+        for rowid, hashkey, size, offset, length, compressed in session.execute(stmt):
+            obj_dict = {}
+            obj_dict["id"] = rowid
+            obj_dict["hashkey"] = hashkey
+            obj_dict["size"] = size
+            obj_dict["compressed"] = compressed
+            obj_dict["length"] = length
+            obj_dict["offset"] = offset
+
+            # Process the file name of the zipped files
+            if self.loose_prefix_len:
+                obj_dict["filename"] = os.path.join(
+                    hashkey[: self.loose_prefix_len],
+                    hashkey[self.loose_prefix_len :],
+                )
+            else:
+                obj_dict["filename"] = hashkey
+            obj_dicts.append(obj_dict)
+        # We now have a list of objects to be stored archived in the ZIP file
+
+        # Check if we can trim the filename to save some overhead
+        # NOTE: If the names are trimmed, the archvie files should not be unzipped into the same
+        # folder
+        if trim_filenames is True:
+            lname = minimum_length_without_duplication(
+                [x["filename"] for x in obj_dicts]
+            )
+            for obj_dict in obj_dicts:
+                obj_dict["filename"] = obj_dict["filename"][:lname]
+
+        assert self.compression_algorithm.startswith(
+            "zlib"
+        ), "Cannot make archive with compression algorithm other than zlib"
+        compress_level = int(self.compression_algorithm.split("+")[1])
+
+        # Proceed with writing out the archive file
+        with open(
+            self._get_archive_path_from_pack_id(pack_id), "wb"
+        ) as write_pack_handle:
+            with zipfile.ZipFile(
+                write_pack_handle,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=compress_level,
+            ) as archive:
+                # Iterate all objects in the pack to be archived
+                for obj_dict in obj_dicts:
+                    zinfo = zipfile.ZipInfo(filename=obj_dict["filename"])
+                    zinfo.file_size = obj_dict["size"]
+                    # Set the correct compresslevel
+                    self._set_compresslevel(zinfo)
+                    with archive.open(zinfo, "w") as zip_write_handle:
+                        with self.get_object_stream(
+                            obj_dict["hashkey"]
+                        ) as source_handle:
+                            shutil.copyfileobj(source_handle, zip_write_handle)
+                    # Update the obj_dict according to the zinfo files that have been set
+                    obj_dict["length"] = zinfo.compress_size
+                    # Offset was the current location minus the size of the compressed stream written
+                    obj_dict["offset"] = write_pack_handle.tell() - zinfo.compress_size
+                    obj_dict["compressed"] = True
+
+        # The writing of the zip file is now completed, now we update the database
+        # but before that we valid the archvie file, just to be sure
+        # Validate the archvie file just created
+        if run_read_test is True:
+            test_result = self._validate_archvie_file(
+                self._get_archive_path_from_pack_id(pack_id), obj_dicts
+            )
+            if test_result is False:
+                raise ValueError("Created archive file does not pass read tests")
+
+        # Reading from the archive file works, now update the database
+        # I record the original "pack" file's path, since it will be changed once
+        # the archvied pack is active
+        original_pack_path = self._get_pack_path_from_pack_id(pack_id)
+
+        # Update the pack table such that the pack is "archived"
+
+        session.execute(
+            update(Pack)
+            .where(Pack.pack_id == pack_id)
+            .values(
+                state=PackState.ARCHIVED.value,
+            )
+        )
+
+        # Update the Obj table with new length and compression
+        for obj_dict in obj_dicts:
+            obj_dict.pop("filename")
+        session.bulk_update_mappings(Obj, obj_dicts)
+
+        # Commit change in compress, offset, length, for each object in the Obj table
+        session.commit()
+
+        # We can now delete the original pack file
+        os.unlink(original_pack_path)
+
+    def _get_archive_path_from_pack_id(self, pack_id: Union[str, int]) -> str:
+        """
+        Return the path to the archived pack.
+
+        The name includes the container_id, as the archive fold can be mounted from other
+        file systems.
+
+        There are three possible cases:
+
+        1. The pack is not archived, return the default path
+        2. The pack is archived, but not explicity path, return the default one
+        3. The pack is archvied, but ha an explicity path, return the stored path
+
+        """
+        pack_id = str(pack_id)
+        session = self._get_cached_session()
+        pack = (
+            session.execute(select(Pack).where(Pack.pack_id == pack_id))
+            .scalars()
+            .first()
+        )
+        # No location set - use the default one
+        if not pack or not pack.location:
+            return os.path.join(
+                self._get_archive_folder(), self.container_id + "-" + pack_id + ".zip"
+            )
+        # We have a location set, it is an relative path we set it relative to the container folder
+        if not Path(pack.location).is_absolute():
+            return os.path.join(self._folder, pack.location)
+
+        return pack.location
+
+    def _get_archive_folder(self) -> str:
+        """Return folder of the default `archive` folder"""
+        return os.path.join(self._folder, "archives")
+
+    def _validate_archvie_file(
+        self, fpath: Union[Path, str], obj_dicts: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Test reading from an archive file using the interface in this package.
+
+        :param fpath: Path to the archive file
+        :obj_dicts: A list of dictionary containing the information of each objects to be read
+
+        :returns: True if everything is OK, False if mismatch in hash is found.
+        """
+        if len(obj_dicts) < 1:
+            return False
+        with open(fpath, "rb") as fhandle:
+            for obj_dict in obj_dicts:
+                reader = get_stream_decompresser(self.compression_algorithm)(
+                    PackedObjectReader(fhandle, obj_dict["offset"], obj_dict["length"])
+                )
+                reader.set_zip_mode()
+                hashkey, size = compute_hash_and_size(reader, self.hash_type)
+                if hashkey != obj_dict["hashkey"] or size != obj_dict["size"]:
+                    return False
+        return True
+
+    def _set_compresslevel(self, zinfo):
+        # The compression used in the archvie must be the same as that defined by the container
+        if self.compression_algorithm.startswith("zlib"):
+            zinfo.compress_type = zipfile.ZIP_DEFLATED
+            zinfo._compresslevel = int(  # pylint: disable=protected-access
+                self.compression_algorithm.split("+")[1]
+            )
+        else:
+            raise ValueError(
+                "Compression algorithm is in-compatible with pack archiving."
+            )
+
+    def lossen_archive(self, archive_file: Union[str, Path], dst: Union[str, Path]):
+        """
+        Extract archived pack into a destination folder as loose objects
+
+        The destination folder must not exist to begin with.
+        This method renames the file names (which may be truncated) to their full hash values.
+        The destination folder can be copied into "loose" folder of a container which effectively
+        imports the data from the archive into that container.
+        """
+        assert not Path(dst).exists(), "Destination folder already exists!"
+        with zipfile.ZipFile(archive_file, "r") as zfile:
+            zfile.extractall(path=dst)
+
+        # Walk the directory and rename files according to the configuration of this container
+        for dirname, _, files in list(os.walk(dst)):
+            for file in files:
+                fullname = os.path.join(dirname, file)
+                with open(fullname, "rb") as fhandle:
+                    hash_value, _ = compute_hash_and_size(
+                        fhandle, hash_type=self.hash_type
+                    )
+                # Rename the file
+                new_filename = hash_value[self.loose_prefix_len :]
+                # Make parent directories if not exist already
+                Path(new_filename).parent.mkdir(exist_ok=True)
+                # Rename the files
+                os.rename(fullname, os.path.join(dirname, new_filename))
+
+    def get_archive_locations(self) -> Dict[str, str]:
+        """
+        Return the location of each archived packs
+        """
+        paths = {}
+        for pack_id in self.get_archived_pack_ids(return_str=True):
+            paths[str(pack_id)] = self._get_archive_path_from_pack_id(pack_id)
+        return paths
+
+    def _update_archive_location(self, pack_id, location, force=False):
+        """
+        Set the location of archive packs
+        """
+        location = Path(location)
+
+        if str(pack_id) not in self.get_archived_pack_ids(return_str=True):
+            raise ValueError(f"Pack {pack_id} is not an archived pack.")
+
+        if not force and not Path(location).exists():
+            raise ValueError(f"Suppied pack location {location} does not exist!")
+
+        # Update the location and validate the new archive
+
+        session = self._get_cached_session()
+        result = session.execute(
+            update(Pack)
+            .where(Pack.pack_id == str(pack_id))
+            .values(location=str(location))
+        )
+        # Check we have actually updated the content
+        assert result.rowcount == 1  # type: ignore
+
+        if not force:
+            # See if we can read the first few objects from the new archive
+            objs = (
+                session.execute(select(Obj).filter_by(pack_id=int(pack_id)).limit(10))
+                .scalars()
+                .all()
+            )
+            try:
+                for obj in objs:
+                    with self.get_object_stream(obj.hashkey) as stream:
+                        hashkey, _ = compute_hash_and_size(stream, self.hash_type)
+                        assert (
+                            hashkey == obj.hashkey
+                        ), "Error reading object from the new archive location!"
+            except Exception as error:
+                session.rollback()
+                raise error
+
+        # All good - commit the changes
+        session.commit()
