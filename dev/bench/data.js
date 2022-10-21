@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1641925764448,
+  "lastUpdate": 1666377254169,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -3953,6 +3953,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.2880375872295246e-8",
             "extra": "mean: 355.89468570226177 nsec\nrounds: 126583"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mail@sphuber.net",
+            "name": "Sebastiaan Huber",
+            "username": "sphuber"
+          },
+          "committer": {
+            "email": "mail@sphuber.net",
+            "name": "Sebastiaan Huber",
+            "username": "sphuber"
+          },
+          "distinct": true,
+          "id": "f1809d416fbb481944c1e89d3e1f59b532b85a46",
+          "message": "DevOps: update pre-commit dependency requirements\n\nAlso add a pin for `jinja2`. Versions 3.1 and above break the docs\nbuild.",
+          "timestamp": "2022-10-21T20:32:54+02:00",
+          "tree_id": "c48810f1f095d25f903884fbb3ef41b430be0327",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/f1809d416fbb481944c1e89d3e1f59b532b85a46"
+        },
+        "date": 1666377252866,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.3312295582290488,
+            "unit": "iter/sec",
+            "range": "stddev: 0.014088371785747917",
+            "extra": "mean: 300.18945933333424 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.0380997508763412,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0668041054545141",
+            "extra": "mean: 963.2985646666631 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 7.847123570595875,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009237117936698697",
+            "extra": "mean: 127.43523037500282 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 36.3028084150804,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00034326388617862046",
+            "extra": "mean: 27.54607821428477 msec\nrounds: 28"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 5.760300973422398,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008380539358216068",
+            "extra": "mean: 173.6020399999802 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1771142.3549188478,
+            "unit": "iter/sec",
+            "range": "stddev: 3.5918051128741556e-7",
+            "extra": "mean: 564.6073548084842 nsec\nrounds: 147059"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2683451.4589254702,
+            "unit": "iter/sec",
+            "range": "stddev: 5.221507971417768e-8",
+            "extra": "mean: 372.6544024765762 nsec\nrounds: 133334"
           }
         ]
       }
