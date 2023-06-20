@@ -57,6 +57,9 @@ examples = [
     'psutil',
     'pywin32;platform_system == "Windows"',
 ]
+progressbar = [
+    'tqdm',
+]
 
 [project.scripts]
 dostore = 'disk_objectstore.cli:main'

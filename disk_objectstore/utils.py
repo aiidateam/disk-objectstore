@@ -4,6 +4,8 @@ Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
 #  pylint: disable= too-many-lines
+from __future__ import annotations
+
 import abc
 import hashlib
 import itertools
@@ -13,21 +15,22 @@ import zlib
 from contextlib import contextmanager
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
     Iterable,
     Iterator,
     Literal,
-    Optional,
     Sequence,
-    Tuple,
-    Type,
     Union,
 )
 from zlib import error
 
 from .exceptions import ClosingNotAllowed, ModificationNotAllowed
+
+if TYPE_CHECKING:
+    from .container import Container
 
 F_FULLFSYNC: int
 
@@ -87,7 +90,7 @@ class LazyOpener:
         File will be opened only when entering the context manager.
         """
         self._path = path
-        self._fhandle: Optional[BinaryIO] = None
+        self._fhandle: BinaryIO | None = None
 
     @property
     def path(self) -> str:
@@ -125,6 +128,129 @@ class LazyOpener:
             if not self._fhandle.closed:
                 self._fhandle.close()
         self._fhandle = None
+
+
+class LazyLooseStream:
+    """A class to point to a loose stream that is created lazily.
+
+    The main usage is to pass to a decompresser, to allow for fully decompressing a packed
+    object back as a loose object, and getting an open stream to it.
+
+    The idea is that when the class is instantiated, nothing actually happens.
+    The difference with the `utils.LazyOpener` is that this class knows about the container
+    and will take care of uncompressing the object to a loose object automatically
+    (and doing it "correctly", e.g. with respect to race conditions and not creating
+    partial objects in the loose folder), automatically creating the object from the
+    corresponding packed object.
+    """
+
+    def __init__(self, container, hashkey):
+        self._container: Container = container
+        self._hashkey = hashkey
+        self._stream = None
+
+    @property
+    def mode(self) -> str:
+        return "rb"
+
+    @staticmethod
+    def seekable() -> bool:
+        """Return whether object supports random access."""
+        return True
+
+    def seek(self, target: int, whence: int = 0) -> int:
+        """Change stream position.
+
+        Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
+        """
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
+        assert self._stream is not None, (
+            "LazyLooseStream has an open stream, but the stream is None! "
+            "This should not happen"
+        )
+
+        return self._stream.seek(target, whence)
+
+    def tell(self) -> int:
+        """Return current stream position, relative to the internal offset."""
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
+        assert self._stream is not None, (
+            "LazyLooseStream has an open stream, but the stream is None! "
+            "This should not happen"
+        )
+        return self._stream.tell()
+
+    def read(self, size: int = -1) -> bytes:
+        """
+        Read and return up to n bytes.
+
+        If the argument is omitted, None, or negative, reads and
+        returns all data until EOF (that corresponds to the length specified
+        in the __init__ method).
+
+        Returns an empty bytes object on EOF.
+        """
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
+        assert self._stream is not None, (
+            "LazyLooseStream has an open stream, but the stream is None! "
+            "This should not happen"
+        )
+        return self._stream.read(size)
+
+    def __enter__(self) -> LazyLooseStream:
+        """Use as context manager. Opens the underlying stream, possibly uncompressing to a loose object."""
+        self.open_stream()
+        return self
+
+    def __exit__(self, exc_type, value, traceback) -> None:
+        """Close context manager."""
+        self.close_stream()
+
+    def open_stream(self) -> None:
+        """Open the underlying stream, uncompressing the file if needed.
+
+        Note that when called this might uncompress the whole file, if not already done.
+        """
+        MAX_RETRIES = 3  # pylint: disable=invalid-name
+        if not self.closed:
+            # Already open, just return
+            return
+
+        counter: int = 0
+        while True:
+            loose_path = self._container.loosen_object(self._hashkey)
+            try:
+                self._stream = open(  # pylint: disable=consider-using-with
+                    loose_path, mode="rb"
+                )
+                # I could open the stream, exit the infinite loop
+                break
+            except FileNotFoundError as exc:
+                # Probably a concurrent packing was called and
+                # it removed the loose object! Retry. I pass and
+                # stay in the while True loop.
+                counter += 1
+                if counter > MAX_RETRIES:
+                    raise RuntimeError(
+                        "Unable to open the loose object! I tried multiple "
+                        "times but I never find the file. Ensure that you are "
+                        "not running many concurrent cleaning of the container "
+                        "storage."
+                    ) from exc
+
+    def close_stream(self) -> None:
+        """Close the underlying stream (if open)."""
+        if self._stream is not None and not self.closed:
+            self._stream.close()
+            self._stream = None
+
+    @property
+    def closed(self) -> bool:
+        """Return True if the underlying stream is closed, False otherwise."""
+        return self._stream is None or self._stream.closed
 
 
 @contextmanager
@@ -167,11 +293,11 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
         self._loose_folder = loose_folder
         self._duplicates_folder = duplicates_folder
         self._hash_type = hash_type
-        self._hashkey: Optional[str] = None
+        self._hashkey: str | None = None
         self._loose_prefix_len = loose_prefix_len
         self._stored = False
-        self._obj_path: Optional[str] = None
-        self._filehandle: Optional[HashWriterWrapper] = None
+        self._obj_path: str | None = None
+        self._filehandle: HashWriterWrapper | None = None
         self._trust_existing = trust_existing
 
     @property
@@ -179,11 +305,11 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
         """Return the currently used hash type."""
         return self._hash_type
 
-    def get_hashkey(self) -> Optional[str]:
+    def get_hashkey(self) -> str | None:
         """Return the object hash key. Return None if the stream wasn't opened yet."""
         return self._hashkey
 
-    def __enter__(self) -> "HashWriterWrapper":
+    def __enter__(self) -> HashWriterWrapper:
         """Start creating a new object in a context manager.
 
         You will get access access to a file-like object.
@@ -421,7 +547,7 @@ class PackedObjectReader:
         :raises NotImplementedError: if ``whence`` is not 0 or 1.
         """
         if whence not in [0, 1, 2]:
-            raise NotImplementedError(
+            raise ValueError(
                 "Invalid value for `whence`: only 0, 1 and 2 are currently implemented."
             )
 
@@ -493,7 +619,7 @@ class PackedObjectReader:
         self._update_pos()
         return stream
 
-    def __enter__(self) -> "PackedObjectReader":
+    def __enter__(self) -> PackedObjectReader:
         """Use as context manager."""
         return self
 
@@ -510,7 +636,7 @@ class CallbackStreamWrapper:
     def __init__(
         self,
         stream: StreamSeekBytesType,
-        callback: Optional[Callable],
+        callback: Callable | None,
         total_length: int = 0,
         description: str = "Streamed object",
     ) -> None:
@@ -595,7 +721,7 @@ class CallbackStreamWrapper:
 
         return data
 
-    def __enter__(self) -> "CallbackStreamWrapper":
+    def __enter__(self) -> CallbackStreamWrapper:
         """Use as context manager."""
         return self
 
@@ -616,9 +742,7 @@ class CallbackStreamWrapper:
             self._callback(action="close", value=None)
 
 
-def rename_callback(
-    callback: Optional[Callable], new_description: str
-) -> Optional[Callable]:
+def rename_callback(callback: Callable | None, new_description: str) -> Callable | None:
     """Given a callback, return a new one where the description will be changed to `new_name`.
 
     Works even if `callback` is None (in this case, it returns None).
@@ -651,21 +775,32 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
     _CHUNKSIZE = 524288
 
     def __init__(
-        self, compressed_stream: StreamSeekBytesType, container=None, hashkey=None
+        self,
+        compressed_stream: StreamSeekBytesType,
+        lazy_uncompressed_stream: LazyLooseStream | None = None,
     ) -> None:
         """Create the class from a given compressed bytestream.
 
-        :param compressed_stream: an open bytes stream that supports the .read() method,
-          returning a valid compressed stream.
-        :param whence_callback: A callback that should return a new handler of the uncompressed stream.
+        :param compressed_stream: an open bytes stream that supports the
+            .read() method,
+            returning a valid compressed stream.
+        :param lazy_uncompressed_stream: A LazyLooseStream object, that points
+            to the same data, but uncompressed.
+            If not passed, some functionality will not be avaiable (e.g.
+            seeking backward from the bottom of a file with `whence=2`).
+            It is the responsibility of the caller to create and
+            pass it, and to close it if it was ever opened by this class.
         """
         self._compressed_stream = compressed_stream
         self._decompressor = self.decompressobj_class()
         self._internal_buffer = b""
         self._pos = 0
-        self._container = container
-        self._hashkey = hashkey
-        self._uncompressed_stream: Union[None, BinaryIO] = None
+        self._lazy_uncompressed_stream: None | (
+            LazyLooseStream
+        ) = lazy_uncompressed_stream
+        # If True, this class just proxies request to the underlying
+        # uncompressed stream
+        self._use_uncompressed_stream: bool = False
 
     @property
     def mode(self) -> str:
@@ -675,11 +810,17 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         """
         Read and return up to n bytes.
         """
-        if self._uncompressed_stream is not None:
-            return self._uncompressed_stream.read(size)
-        return self._read(size)
+        # Once an uncompressed_stream is set, this is used and we
+        # don't use anymore the compressed one.
+        if self._use_uncompressed_stream:
+            assert self._lazy_uncompressed_stream is not None, (
+                "Using internally an uncompressed stream, but it is None! "
+                "This should not happen"
+            )
+            return self._lazy_uncompressed_stream.read(size)
+        return self._read_compressed(size)
 
-    def _read(self, size: int = -1) -> bytes:
+    def _read_compressed(self, size: int = -1) -> bytes:
         """
         Read and return up to n bytes.
 
@@ -688,6 +829,14 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         in the __init__ method).
 
         Returns an empty bytes object on EOF.
+
+        Note that this should be used only internally, as this function
+        always reads from the compressed stream, but the position
+        (seek) in the compressed stream will be wrong/outdated once
+        an uncompressed stream is set!
+
+        TODO: add method to reset the uncompressed stream (close it if not
+        closed, set internally variable to False, seek back to zero)
         """
         if size is None or size < 0:
             # Read all the rest: we call ourselves but with a length,
@@ -745,14 +894,12 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
         return to_return
 
-    def __enter__(self) -> "ZlibLikeBaseStreamDecompresser":
+    def __enter__(self) -> ZlibLikeBaseStreamDecompresser:
         """Use as context manager."""
         return self
 
     def __exit__(self, exc_type, value, traceback) -> None:
         """Close context manager."""
-        if self._uncompressed_stream is not None:
-            self._uncompressed_stream.close()
 
     @property
     @abc.abstractmethod
@@ -777,41 +924,97 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     def tell(self) -> int:
         """Return current position in file."""
-        if self._uncompressed_stream is not None:
-            return self._uncompressed_stream.tell()
+        if self._use_uncompressed_stream:
+            assert self._lazy_uncompressed_stream is not None, (
+                "Using internally an uncompressed stream, but it is None! "
+                "This should not happen"
+            )
+            return self._lazy_uncompressed_stream.tell()
         return self._pos
 
     def seek(self, target: int, whence: int = 0) -> int:
-        """Seek the stream"""
-        if self._uncompressed_stream is not None:
-            return self._uncompressed_stream.seek(target, whence)
-        return self._seek_compressed(target, whence)
-
-    def _seek_compressed(self, target: int, whence: int = 0) -> int:
         """Change stream position.
 
-        ..note:: This is particularly inefficient if `target > 0` since it will have
-           to decompress again from the beginning. So use with care!
+        This will internally try to uncompress the whole file if certain conditions are met,
+        typically when you are not accessing a file in a sequential order (e.g. with whence=1 or whence=2).
+        """
+        # First, assess if it's worth uncompressing.
+        # Note that this is only possible when there is a container
+        # attached to this decompresser. Otherwise, always resort
+        # to the slow option or re-decompressing everything from
+        # the very start.
+        if whence not in [0, 1, 2]:
+            raise ValueError(
+                "Invalid value for `whence`: only 0, 1 and 2 are valid values."
+            )
+        # If we didn't switch to the uncompressed stream
+        # but we are asking for a potential random-access position
+        # we ask to materialize/open the uncompressed stream, and switch to it.
+        # The conditions are:
+        # - whence = 0 (seek from start of file) and looking for a previous position
+        # - whence = 1 (seek relative to current position) and looking for a previous
+        #   position (target < 0)
+        # - whence = 2 (seek from the end of the file - in this case most probably we
+        #   would have anyway to uncompress it all, so I trigger the creation of
+        #   the loose uncompressed version)
+        # Note that if there is no _lazy_uncompressed_stream specified, I just
+        # do nothing; the _seek_internal method will decide if there are situations
+        # it cannot deal with (e.g. whence = 2) and raise, or accept that in this
+        # case some operations will be (much) slower, potentially requiring to
+        # re-decompress the file when seeking backwards.
+        should_uncompress = (
+            whence == 2
+            or (whence == 1 and target < 0)
+            or (whence == 1 and target < self._pos)
+        )
+        if (
+            not self._use_uncompressed_stream
+            and self._lazy_uncompressed_stream is not None
+            and should_uncompress
+        ):
+            # Request to open the uncompressed stream.
+            # From now on, this class will directly proxy
+            # tell/seek requests to the uncompressed stream
+            self._lazy_uncompressed_stream.open_stream()
+            # I move to the current position in the uncompressed stream
+            self._lazy_uncompressed_stream.seek(self._pos, 0)
+            self._use_uncompressed_stream = True
 
-        :raises NotImplementedError: if ``whence`` is not 0 or 1.
+        return self._seek_internal(target, whence)
+
+    def _seek_internal(self, target: int, whence: int = 0) -> int:
+        """Change stream position.
+
+        This should only be called internally.
+        This uses the uncompressed stream if available, otherwise
+        resorts to the compressed one that might be very slow
+        when seeking backwards! Moreover, without uncompressed stream,
+        it will not be possible to search from the end (whence=2).
         """
         read_chunk_size = 256 * 1024
 
-        if whence not in [0, 1]:
-            if self._container is None:
-                raise NotImplementedError(
-                    "Invalid value for `whence`: only 1 and 0 are currently implemented without container support."
-                )
-            # I have a container backing me up - so I can try if I can get the uncompressed stream
-            # instead so whence = 2 can be used with it
-            stream = self._get_uncompressed_stream()
-            # Seek the new stream to the current location
-            stream.seek(self._pos, 0)
-            # Seek to the desired location as requested
-            return self.seek(target, whence)
+        # NOTE: once the uncompressed stream has been materialized,
+        # this will always be used and the seek position refers only
+        # to it. So do NOT set back self._lazy_uncompressed_stream to None
+        # as the underlying compressed stream might not be pointing
+        # anymore to the correct position!
 
+        # Seek to the desired location as requested
+        # If we are using the uncompressed stream, I just proxy the request
+        if self._use_uncompressed_stream:
+            assert self._lazy_uncompressed_stream is not None, (
+                "Using internally an uncompressed stream, but it is None! "
+                "This should not happen"
+            )
+            return self._lazy_uncompressed_stream.seek(target, whence)
+
+        # Here I implement the slow version without uncompressed stream
         if whence == 1:
             target = self.tell() + target
+        if whence == 2:
+            raise NotImplementedError(
+                "Cannot seek backwards for a compressed stream without container support"
+            )
 
         if target < 0:
             raise ValueError(f"negative seek position {target}")
@@ -837,26 +1040,6 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # Differently than files, I return here the actual position
         return self._pos
 
-    def _get_uncompressed_stream(self):
-        """Obtain a uncompressed stream with extended support of `seek`"""
-        # Obtain the path to the loose file
-        object_path = self._container._get_loose_path_from_hashkey(  # pylint: disable=protected-access
-            hashkey=self._hashkey
-        )
-        try:
-            self._uncompressed_stream = open(object_path, "rb")
-        except FileNotFoundError:
-            # The loose file is not found, hence we loosen the object here
-            object_path = (
-                self._container._lossen_object(  # pylint: disable=protected-access
-                    self._hashkey
-                )
-            )
-            self._uncompressed_stream = open(  # pylint: disable=consider-using-with
-                object_path, "rb"
-            )
-        return self._uncompressed_stream
-
 
 class ZlibStreamDecompresser(ZlibLikeBaseStreamDecompresser):
     """A class that gets a stream of compressed bytes using ZLIB, and returns the corresponding
@@ -868,7 +1051,7 @@ class ZlibStreamDecompresser(ZlibLikeBaseStreamDecompresser):
         return zlib.decompressobj
 
     @property
-    def decompress_error(self) -> Type[error]:
+    def decompress_error(self) -> type[error]:
         """Return the zlib error raised when there is an error."""
         return zlib.error
 
@@ -919,7 +1102,7 @@ def get_compressobj_instance(algorithm: str):
     return _get_compression_algorithm_info(algorithm)[0]
 
 
-def get_stream_decompresser(algorithm: str) -> Type[ZlibStreamDecompresser]:
+def get_stream_decompresser(algorithm: str) -> type[ZlibStreamDecompresser]:
     """Return a StreamDecompresser class with a given algorithm.
 
     :param algorithm: a compression algorithm (see `get_compressionobj_instance` for a description).
@@ -990,7 +1173,7 @@ def get_hash(hash_type: str) -> Callable:
         raise ValueError(f"Unknown or unsupported hash type '{hash_type}'")
 
 
-def _compute_hash_for_filename(filename: str, hash_type: str) -> Optional[str]:
+def _compute_hash_for_filename(filename: str, hash_type: str) -> str | None:
     """Return the hash for the given file.
 
     Will read the file in chunks.
@@ -1108,7 +1291,7 @@ def chunk_iterator(iterator, size):
 
 
 def safe_flush_to_disk(
-    fhandle: Union[StreamWriteBytesType, HashWriterWrapper],
+    fhandle: StreamWriteBytesType | HashWriterWrapper,
     real_path: str,
     use_fullsync: bool = False,
 ) -> None:
@@ -1172,7 +1355,7 @@ def safe_flush_to_disk(
 def compute_hash_and_size(
     stream: StreamReadBytesType,
     hash_type: str,
-) -> Tuple[str, int]:
+) -> tuple[str, int]:
     """Given a stream and a hash type, return the hash key (hexdigest) and the total size.
 
     :param stream: an open stream
@@ -1198,8 +1381,8 @@ def compute_hash_and_size(
 def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statements
     left_iterator: Iterable[Any],
     right_iterator: Iterable[Any],
-    left_key: Optional[Callable] = None,
-) -> Iterator[Tuple[Any, Location]]:
+    left_key: Callable | None = None,
+) -> Iterator[tuple[Any, Location]]:
     """Generator that loops in alternation (but only once each) the two iterators and yields an element, specifying if
     it's only on the left, only on the right, or in both.
 
