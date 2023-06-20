@@ -1,8 +1,9 @@
 """A small CLI tool for managing stores."""
 import json
 import os
+import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import click
 
@@ -74,6 +75,71 @@ def status(dostore: ContainerContext):
         data["count"] = container.count_objects()
         data["size"] = container.get_total_size()
         click.echo(json.dumps(data, indent=2))
+
+
+@main.command("validate")
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    help="Print the full list of errors with respective hashkeys",
+)
+@pass_dostore
+def validate(dostore: ContainerContext, verbose: bool):
+    """Validate the container"""
+
+    try:
+        # Import here so I don't have to depend on this library
+        import tqdm  # pylint: disable=import-outside-toplevel
+
+        class CallbackTqdm:
+            """Provides a callback to show a progress bar with TQDM."""
+
+            def __init__(self):
+                self.progress_bar: Optional[tqdm.tqdm] = None
+
+            def callback(self, action, value):
+                """Callback method called periodically to update the progress bar."""
+                if action == "init":
+                    if self.progress_bar is not None:
+                        self.progress_bar.close()  # pragma: no cover
+                    self.progress_bar = tqdm.tqdm(
+                        total=value["total"], desc=value["description"]
+                    )
+                elif action == "update":
+                    value = value or 1  # If 0 or None
+                    if self.progress_bar is None:
+                        # Update without every initializing it?
+                        return  # pragma: no cover
+                    self.progress_bar.update(n=value)
+                elif action == "close":
+                    if self.progress_bar is not None:  # If not already closed
+                        self.progress_bar.close()
+                        self.progress_bar = None
+
+        callback_tqdm = CallbackTqdm()
+        callback = callback_tqdm.callback
+    except ImportError:
+        callback = None
+        click.echo(
+            "INFO: no `tqdm` package found. If you want to show a progress bar, install `pip tqdm` first.",
+            err=True,
+        )
+
+    with dostore.container as container:
+        results = container.validate(callback=callback)
+
+    errors_found = False
+    for key, value in results.items():
+        if value:
+            errors_found = True
+            click.echo(f"Error! {len(value)} objects with error '{key}'")
+    if not errors_found:
+        click.echo("No errors found, the container is valid.")
+    if verbose and errors_found:
+        click.echo(json.dumps(results, indent=2))
+    if errors_found:
+        sys.exit(1)
 
 
 @main.command("add-files")
