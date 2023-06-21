@@ -18,6 +18,7 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Set,
@@ -26,12 +27,6 @@ from typing import (
     Union,
     overload,
 )
-
-try:
-    from typing import Literal
-except ImportError:
-    # Python <3.8 backport
-    from typing_extensions import Literal  # type: ignore
 
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
@@ -1220,7 +1215,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # after this call was called. It would be bad instead to miss an object that has always existed
         last_pk = -1
         while True:
-
             stmt = (
                 select(Obj.id, Obj.hashkey)
                 .where(Obj.id > last_pk)
@@ -1579,7 +1573,6 @@ class Container:  # pylint: disable=too-many-public-methods
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
             last_pk = -1
             while True:
-
                 stmt = (
                     select(Obj.id, Obj.hashkey)
                     .where(Obj.id > last_pk)
@@ -2246,7 +2239,7 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
     # Let us also compute the hash
-    def _validate_hashkeys_pack(
+    def _validate_hashkeys_pack(  # pylint: disable=too-many-locals
         self, pack_id: int, callback: Optional[Callable] = None
     ) -> Dict[str, Union[List[Union[str, Any]], List[Any]]]:
         """Validate all hashkeys and returns a dictionary of problematic entries.
