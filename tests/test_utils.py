@@ -631,7 +631,6 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         fhandle.write(content)
 
     if os.name == "nt" and not trust_existing and dest_is_open:
-
         # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open),
         # then we store a duplicate copy.
         duplicates_files = os.listdir(duplicates_folder)

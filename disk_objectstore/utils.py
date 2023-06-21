@@ -18,6 +18,7 @@ from typing import (
     Callable,
     Iterable,
     Iterator,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -28,17 +29,19 @@ from zlib import error
 
 from .exceptions import ClosingNotAllowed, ModificationNotAllowed
 
-try:
-    from typing import Literal  # pylint: disable=ungrouped-imports
-except ImportError:
-    # Python <3.8 backport
-    from typing_extensions import Literal  # type: ignore
+F_FULLFSYNC: int
 
 try:
     import fcntl
+
+    # Next line exists only on Mac, will be 0 otherwise
+    # (Just to have an int, will never be used not on Mac)
+    F_FULLFSYNC = getattr(fcntl, "F_FULLFSYNC", 0)
 except ImportError:
     # Not available on Windows
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None  # type: ignore
+    F_FULLFSYNC = 0
+
 
 # requires read method only
 StreamReadBytesType = Union[
@@ -1076,7 +1079,9 @@ def safe_flush_to_disk(
     )
 
     # Flush to disk
-    if hasattr(fcntl, "F_FULLFSYNC") and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
+    if hasattr(fcntl, "F_FULLFSYNC") is not None and (
+        _MACOS_ALWAYS_USE_FULLSYNC or use_fullsync
+    ):
         # This exists only on Mac OS X; See e.g. (link split on two lines, put them together):
         # https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/
         #          man2/fsync.2.html
@@ -1088,9 +1093,11 @@ def safe_flush_to_disk(
         # > should use F_FULLFSYNC to ensure that their data is written in the order
         # > they expect.  Please see fcntl(2) for more detail.
         # Replace the _fsync_function
-        _fsync_function = lambda fileno: fcntl.fcntl(
-            fileno,
-            fcntl.F_FULLFSYNC,  # type: ignore[attr-defined] # pylint: disable=no-member,useless-suppression
+        _fsync_function = (
+            lambda fileno: fcntl.fcntl(  # pylint: disable=unnecessary-lambda-assignment
+                fileno,
+                F_FULLFSYNC,
+            )
         )
     else:
         # In general this is the function to call
@@ -1161,7 +1168,7 @@ def detect_where_sorted(  # pylint: disable=too-many-branches, too-many-statemen
     right_exhausted = False
 
     if left_key is None:
-        left_key = lambda x: x
+        left_key = lambda x: x  # pylint: disable=unnecessary-lambda-assignment
 
     # Convert first in iterators (in case they are, e.g., lists)
     left_iterator = iter(left_iterator)

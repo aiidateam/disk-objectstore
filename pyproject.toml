@@ -19,18 +19,17 @@ classifiers = [
     'Operating System :: Microsoft :: Windows',
     'Operating System :: POSIX :: Linux',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: Implementation :: CPython',
     'Topic :: Software Development :: Libraries :: Python Modules',
 ]
 keywords = ['object store', 'repository', 'file store', 'key-value store']
-requires-python = '>=3.7'
+requires-python = '>=3.8'
 dependencies = [
     'click',
     'sqlalchemy~=1.4.22',
-    'typing-extensions;python_version < "3.8"',
 ]
 
 [project.urls]
@@ -86,7 +85,6 @@ src_paths = ['disk_objectstore', 'tests']
 show_error_codes = true
 check_untyped_defs = true
 scripts_are_modules = true
-warn_unused_ignores = true
 warn_redundant_casts = true
 plugins = ['sqlalchemy.ext.mypy.plugin']
 
@@ -108,7 +106,6 @@ docstring-min-length = 5
 [tool.pylint.design]
 max-locals = 20
 
-
 [tool.tox]
 legacy_tox_ini = """
 [tox]
@@ -117,7 +114,7 @@ envlist = py38
 [testenv]
 usedevelop = true
 
-[testenv:py{37,38,39}]
+[testenv:py{38,39,310}]
 description = Run unit tests with this Python version
 extras =
     examples

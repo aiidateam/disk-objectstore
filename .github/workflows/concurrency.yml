@@ -18,8 +18,8 @@ jobs:
       matrix:
         # Check all OSs (this is important!)
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # Testing extensively but only on two recent python versions
-        python-version: [3.7, 3.8]
+        # Testing extensively but only on two python versions, typically first and last supported
+        python-version: [3.8, 3.10]
 
     # Do not run on forks
     if: github.repository_owner == 'aiidateam'
