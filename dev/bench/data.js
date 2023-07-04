@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1688487548386,
+  "lastUpdate": 1688487569967,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -8054,6 +8054,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000012533518571739345",
             "extra": "mean: 455.81956742438626 nsec\nrounds: 132997"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "gio.piz@gmail.com",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "10edd6395455d7c59361e608396b672289d8de58",
+          "message": "Refactoring the code to enable efficient access to packed compressed objects\n\nI started to work on top of Bonan's work.\nI kept the same core idea: upon certain conditions (now well defined, i.e.\nwhen seeking with the following conditions):\n- whence=0 and seeking in a previous location\n- whence=1 and seeking in a previous location (i.e. negative offset)\n- whence=2\nwe assume that we will need to do random access, so we just uncompress\nthe whole file back into the loose folder and then proxy all requests\n(tell, seek, read) to the loose file.\n\nI now define a LazyLooseStream class that allows to define which loose\nfile to open, delaying the opening to a later point, and in this way\nenabling code that ensures that always closes any open file.\n\nI also added code to ensure that there should not be race conditions\nif a clean_storage is running at the same time.\n\nI also cleaned up a bit the code and added various tests to increased coverage,\nsince it had dropped over time. It didn't go back to 100% but we are close\n(for the core library files).\n\nFurthermore, I used the occasion to a new `validate` CLI command\nthat also uses tqdm (if installed) to show progress.",
+          "timestamp": "2023-07-04T18:18:04+02:00",
+          "tree_id": "da00366d84a73df7c018aa051c5fe6efd06ec0b3",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/10edd6395455d7c59361e608396b672289d8de58"
+        },
+        "date": 1688487568832,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.8637376373040753,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010441736392451053",
+            "extra": "mean: 536.5562083333334 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.5780004410858393,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004477975933724952",
+            "extra": "mean: 633.7133843333334 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 7.129704690153842,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007951353341033291",
+            "extra": "mean: 140.2582636250005 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.068417665144509,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004727787327840146",
+            "extra": "mean: 71.08119930769259 msec\nrounds: 13"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.2459619386685805,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001412637707590061",
+            "extra": "mean: 235.51789074999886 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2715897.6983025596,
+            "unit": "iter/sec",
+            "range": "stddev: 2.2214000930297978e-7",
+            "extra": "mean: 368.2023813433774 nsec\nrounds: 153023"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4442609.66251884,
+            "unit": "iter/sec",
+            "range": "stddev: 3.52248238691652e-8",
+            "extra": "mean: 225.09292419650168 nsec\nrounds: 192419"
           }
         ]
       }
