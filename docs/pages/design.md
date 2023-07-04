@@ -2,6 +2,8 @@
 
 Here we list a number of design considerations that were taken into account while implementing the `disk-objectstore`.
 
+A detailed discussion of the design considerations are also summarized in the [AiiDA enhancement proposal AEP#006](https://github.com/aiidateam/AEP/blob/master/006_efficient_object_store_for_repository/readme.md) - you can refer to that page for additional details, describing the original motivations (from some requirements in the [AiiDA](https://www.aiida.net) code).
+
 ## Implementation considerations
 
 This implementation, in particular, addresses the following aspects:
