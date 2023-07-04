@@ -229,7 +229,8 @@ def test_directly_to_pack_content(
 ):
     """Add a number of objects directly to packs.
 
-    Then retrieve them and check the content is correct (always bulk retrieve for simplicity)."""
+    Then retrieve them and check the content is correct (always bulk retrieve for simplicity).
+    """
     _assert_empty_repo(temp_container)
 
     data = generate_random_data()
@@ -379,7 +380,8 @@ def test_directly_to_pack_streamed(
 ):  # pylint: disable=too-many-locals
     """Add a number of objects directly to packs, using streams.
 
-    Then retrieve them and check the content is correct (always bulk retrieve for simplicity)."""
+    Then retrieve them and check the content is correct (always bulk retrieve for simplicity).
+    """
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, pack_size_target=pack_size_target)
 

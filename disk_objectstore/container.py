@@ -1220,7 +1220,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # after this call was called. It would be bad instead to miss an object that has always existed
         last_pk = -1
         while True:
-
             stmt = (
                 select(Obj.id, Obj.hashkey)
                 .where(Obj.id > last_pk)
@@ -1579,7 +1578,6 @@ class Container:  # pylint: disable=too-many-public-methods
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
             last_pk = -1
             while True:
-
                 stmt = (
                     select(Obj.id, Obj.hashkey)
                     .where(Obj.id > last_pk)

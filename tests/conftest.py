@@ -23,7 +23,8 @@ def pytest_addoption(parser):
 def pytest_generate_tests(metafunc):
     """Define a new fixture `concurrency_repetition_index` with the index of the repetition for concurrency tests.
 
-    The number of repetitions can be specified on the command line with ``--concurrency-repetitions=3``."""
+    The number of repetitions can be specified on the command line with ``--concurrency-repetitions=3``.
+    """
     if "concurrency_repetition_index" in metafunc.fixturenames:
         metafunc.parametrize(
             "concurrency_repetition_index",
