@@ -18,6 +18,7 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Set,
@@ -27,12 +28,6 @@ from typing import (
     overload,
 )
 
-try:
-    from typing import Literal
-except ImportError:
-    # Python <3.8 backport
-    from typing_extensions import Literal  # type: ignore
-
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update
@@ -41,6 +36,7 @@ from .database import Obj, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
+    LazyLooseStream,
     LazyOpener,
     Location,
     ObjectWriter,
@@ -583,6 +579,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # open at a given time.
         # The try/finally block makes sure we close it at the end, if any was open.
         last_open_file = None
+        lazy_loose_stream: Optional[LazyLooseStream] = None
 
         # Operate on a set - only return once per required hashkey, even if required more than once
         hashkeys_set = set(hashkeys)
@@ -658,9 +655,26 @@ class Container:  # pylint: disable=too-many-public-methods
                             offset=metadata.offset,
                             length=metadata.length,
                         )
+                        lazy_loose_stream = None
                         if metadata.compressed:
-                            obj_reader = self._get_stream_decompresser()(obj_reader)
+                            # I create a LazyLooseStream. It is the
+                            # responsibility of the stream decompresser to open
+                            # the stream if it feels it needs it.
+                            lazy_loose_stream = self.get_lazy_loose_stream(
+                                hashkey=metadata.hashkey
+                            )
+                            obj_reader = self._get_stream_decompresser()(
+                                obj_reader, lazy_uncompressed_stream=lazy_loose_stream
+                            )
                         yield metadata.hashkey, obj_reader, meta
+                        # Here I check if the LazyLooseStream that I passed has
+                        # been openeed - if so, I close it so I don't leave
+                        # open file streams around
+                        if (
+                            lazy_loose_stream is not None
+                            and not lazy_loose_stream.closed
+                        ):
+                            lazy_loose_stream.close_stream()
                     else:
                         yield metadata.hashkey, meta
             finally:
@@ -798,9 +812,28 @@ class Container:  # pylint: disable=too-many-public-methods
                                 offset=metadata.offset,
                                 length=metadata.length,
                             )
+
+                            lazy_loose_stream = None
                             if metadata.compressed:
-                                obj_reader = self._get_stream_decompresser()(obj_reader)
+                                # I create a LazyLooseStream.
+                                # It is the responsibility of the stream decompresser to open the stream if it feels it
+                                # needs it.
+                                lazy_loose_stream = self.get_lazy_loose_stream(
+                                    hashkey=metadata.hashkey
+                                )
+                                obj_reader = self._get_stream_decompresser()(
+                                    obj_reader,
+                                    lazy_uncompressed_stream=lazy_loose_stream,
+                                )
                             yield metadata.hashkey, obj_reader, meta
+                            # Here I check if the LazyLooseStream that I passed has
+                            # been openeed - if so, I close it so I don't leave
+                            # open file streams around
+                            if (
+                                lazy_loose_stream is not None
+                                and not lazy_loose_stream.closed
+                            ):
+                                lazy_loose_stream.close_stream()
                         else:
                             yield metadata.hashkey, meta
                 finally:
@@ -869,6 +902,15 @@ class Container:  # pylint: disable=too-many-public-methods
             hashkeys=hashkeys, skip_if_missing=skip_if_missing, with_streams=True
         )
 
+    def get_lazy_loose_stream(self, hashkey: str) -> LazyLooseStream:
+        """Return a LazyLooseStream pointing to the given hashkey.
+
+        As explained in the docsring of LazyLooseStream, the goal is to return a stream that needs to be explicitly
+        opened and points to a "cached copy" of an already existing packed object, that is made loose again
+        in order to have an uncompressed version of it.
+        """
+        return LazyLooseStream(container=self, hashkey=hashkey)
+
     def get_objects_meta(
         self, hashkeys: Sequence[str], skip_if_missing: bool = True
     ) -> Iterator[Tuple[str, Dict[str, Any]]]:
@@ -930,11 +972,12 @@ class Container:  # pylint: disable=too-many-public-methods
             ), "There is more than one item returned by get_objects_stream_and_meta"
             assert obj_hashkey == hashkey
 
-            if meta["type"] == ObjectType.MISSING:
-                raise NotExistent(f"No object with hash key {hashkey}")
+            if meta["type"] != ObjectType.MISSING:
+                return meta
 
-            return meta
-
+        assert (
+            counter == 1
+        ), "No object found, this should never happen since I pass skip_if_missing=False!"
         raise NotExistent(f"No object with hash key {hashkey}")
 
     def has_objects(self, hashkeys: Union[List[str], Tuple[str, ...]]) -> List[bool]:
@@ -1220,7 +1263,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # after this call was called. It would be bad instead to miss an object that has always existed
         last_pk = -1
         while True:
-
             stmt = (
                 select(Obj.id, Obj.hashkey)
                 .where(Obj.id > last_pk)
@@ -1579,7 +1621,6 @@ class Container:  # pylint: disable=too-many-public-methods
             # As this is expensive, I will do it only if it is needed, i.e. when no_holes is True
             last_pk = -1
             while True:
-
                 stmt = (
                     select(Obj.id, Obj.hashkey)
                     .where(Obj.id > last_pk)
@@ -1846,6 +1887,46 @@ class Container:  # pylint: disable=too-many-public-methods
             do_fsync=do_fsync,
             do_commit=do_commit,
         )
+
+    def loosen_object(self, hashkey):
+        """
+        Takes a specific object and makes it also available in the loose directory.
+
+        Return the path to the loose file.
+
+        **Important note**: this function cannot guarantee that later code
+        will find the loose object. If a concurrent packing/clean_storage
+        operation is running, the loose object might be deleted.
+        So it's the responsibility of the caller to check the file
+        and possibly re-call this method to re-loosen it.
+
+        This is used when reading a packed file that was compressed and is accessed with seek
+        (especially when whence=1 or 2). Then, we just uncompress it fully in the loose folder.
+        This will allow very efficient random access to the file, without the need to re-decompress
+        the file at every seek (at a previous position than the current one).
+
+        See also https://github.com/aiidateam/disk-objectstore/issues/136#issuecomment-1599337449
+        for a discussion of why this is better than trying to keep a cache in memory of the
+        decompresser at specific positions in the file, to reduce the amount of bytes to decompress.
+        """
+        # If the object already exists, I just return the path and
+        # avoid to re-create it. As mentioned in the docstring, this is
+        # OK as I'm not giving a guarantee that the file will be there later
+        # (I cannot do it - even if I put more complex logic here, once the
+        # function returns another concurrent clean_storage call could
+        # remove the file.
+        loose_path = self._get_loose_path_from_hashkey(hashkey)
+        if os.path.exists(loose_path):
+            return loose_path
+
+        with self.get_object_stream(hashkey) as stream:
+            # This always rewrites it as loose
+            written_hashkey = self.add_streamed_object(stream)
+
+        assert (
+            written_hashkey == hashkey
+        ), "Mismatch in the hashkey when rewriting an existing object as loose! {written_hashkey} vs {hashkey}"
+        return self._get_loose_path_from_hashkey(hashkey)
 
     def _vacuum(self) -> None:
         """Perform a `VACUUM` operation on the SQLite operation.
@@ -2246,7 +2327,7 @@ class Container:  # pylint: disable=too-many-public-methods
         )
 
     # Let us also compute the hash
-    def _validate_hashkeys_pack(
+    def _validate_hashkeys_pack(  # pylint: disable=too-many-locals
         self, pack_id: int, callback: Optional[Callable] = None
     ) -> Dict[str, Union[List[Union[str, Any]], List[Any]]]:
         """Validate all hashkeys and returns a dictionary of problematic entries.
@@ -2338,6 +2419,10 @@ class Container:  # pylint: disable=too-many-public-methods
                     fhandle=pack_handle, offset=offset, length=length
                 )
                 if compressed:
+                    # I don't pass a LazyLooseStream: in the validate
+                    # I should only ever read linearly, so it should not be needed
+                    # to have the possibility to get a loose uncompressed version
+                    # of the object.
                     obj_reader = self._get_stream_decompresser()(obj_reader)
 
                 computed_hash, computed_size = compute_hash_and_size(

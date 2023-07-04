@@ -11,7 +11,7 @@ exclude: &exclude_files >
 repos:
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.2.0
+    rev: v4.4.0
     hooks:
     - id: check-json
     - id: check-yaml
@@ -19,12 +19,12 @@ repos:
     - id: trailing-whitespace
 
   - repo: https://github.com/ikamensh/flynt/
-    rev: '0.76'
+    rev: '0.78'
     hooks:
     - id: flynt
 
   - repo: https://github.com/executablebooks/mdformat
-    rev: '0.7.14'
+    rev: '0.7.16'
     hooks:
     - id: mdformat
       additional_dependencies:
@@ -34,23 +34,23 @@ repos:
       files: (?x)^(README\.md|CHANGELOG\.md)$
 
   - repo: https://github.com/pycqa/isort
-    rev: '5.10.1'
+    rev: '5.12.0'
     hooks:
     - id: isort
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v2.32.0
+    rev: v3.4.0
     hooks:
     - id: pyupgrade
       args: [--py37-plus]
 
   - repo: https://github.com/psf/black
-    rev: '22.3.0'
+    rev: '23.3.0'
     hooks:
     - id: black
 
   - repo: https://github.com/PyCQA/pylint
-    rev: v2.13.8
+    rev: v3.0.0a6
     hooks:
     - id: pylint
       additional_dependencies:
@@ -62,10 +62,9 @@ repos:
       - pytest==6.2.4
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.950
+    rev: v1.3.0
     hooks:
     - id: mypy
       additional_dependencies:
       - "sqlalchemy[mypy]==1.4.29"
-      - typing-extensions
       files: ^(disk_objectstore/.*py)$

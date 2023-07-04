@@ -631,7 +631,6 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         fhandle.write(content)
 
     if os.name == "nt" and not trust_existing and dest_is_open:
-
         # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open),
         # then we store a duplicate copy.
         duplicates_files = os.listdir(duplicates_folder)
@@ -980,9 +979,9 @@ def test_packed_object_reader_seek(tmp_path):
         # Check that it is properly marked as seekable
         assert packed_reader.seekable()
 
-        # Check that whence==2 is not implemented
-        with pytest.raises(NotImplementedError):
-            packed_reader.seek(0, 2)
+        # Check that whence==2 is implemented
+        packed_reader.seek(-2, 2)
+        assert packed_reader.read() == bytestream[offset + length - 2 : offset + length]
 
         # Check that negative values and values > length are not valid
         with pytest.raises(ValueError):
@@ -1011,11 +1010,17 @@ def test_packed_object_reader_seek(tmp_path):
         # Reset the stream
         packed_reader.seek(0)
 
+        # In negative position
         with pytest.raises(ValueError):
             packed_reader.seek(-3, whence=1)
 
+        # Beyond the end of the file
         with pytest.raises(ValueError):
             packed_reader.seek(length + 2, whence=1)
+
+        # Invalid whence value
+        with pytest.raises(ValueError):
+            packed_reader.seek(0, whence=3)
 
         # Seek to a given starting byte and then rewind using whence=1 and a negative offset and read all bytes
         for start in range(length + 1):
@@ -1041,6 +1046,21 @@ def test_packed_object_reader_mode():
 
         assert hasattr(reader, "mode")
         assert reader.mode == handle.mode
+
+
+def test_packed_object_reader_context_man(tmp_path):
+    """Test the use the of the PackedObjectReader with a context  manager.
+
+    Actually, this does not do much, so I'm just testing that it works."""
+    bytestream = b"0123456789abcdef"
+    with open(str(tmp_path / "pack"), mode="wb") as handle:
+        handle.write(bytestream)
+
+    with open(str(tmp_path / "pack"), "rb") as fhandle:
+        with utils.PackedObjectReader(
+            fhandle, offset=0, length=len(bytestream)
+        ) as packed_reader:
+            assert packed_reader.read() == bytestream
 
 
 @pytest.mark.parametrize("open_streams", [True, False])
@@ -1177,7 +1197,7 @@ def test_stream_decompresser_seek(compression_algorithm):
     decompresser.seek(0)
 
     with pytest.raises(ValueError):
-        decompresser.seek(-3, whence=1)
+        decompresser.seek(-3, whence=0)
 
     # Going past the limit should not raise but simple return the current position, which is the last byte, i.e. length
     assert decompresser.seek(length + 10, whence=1) == length
@@ -1224,6 +1244,14 @@ def test_decompresser_corrupt(compression_algorithm):
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
     assert "problem in the incoming buffer" in str(excinfo.value)
+
+
+def test_zero_stream_mode():
+    """Test the ZeroStream mode method."""
+    length = 23523
+    zero_stream = utils.ZeroStream(length=length)
+
+    assert zero_stream.mode == "rb"
 
 
 def test_zero_stream_single_read():
