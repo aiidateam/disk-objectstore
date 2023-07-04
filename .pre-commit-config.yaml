@@ -60,6 +60,8 @@ repos:
       - profilehooks==1.12.0
       - psutil==5.8.0
       - pytest==6.2.4
+      - numpy
+      - h5py
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.3.0
