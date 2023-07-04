@@ -60,6 +60,10 @@ examples = [
 progressbar = [
     'tqdm',
 ]
+optionaltests = [
+    'h5py',
+    'numpy',
+]
 
 [project.scripts]
 dostore = 'disk_objectstore.cli:main'
@@ -122,6 +126,7 @@ description = Run unit tests with this Python version
 extras =
     examples
     dev
+    optionaltests
 deps =
     black
 setenv =

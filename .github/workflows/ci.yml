@@ -40,7 +40,7 @@ jobs:
       # also of the concurrent tests (maybe we can achieve this differently)
       run: |
         python -m pip install --upgrade pip
-        pip install -e .[progressbar]
+        pip install -e .[progressbar,optionaltests]
         pip install -r requirements.lock
     - name: Test with pytest
       # No need to run the benchmarks, they will run in a different workflow
