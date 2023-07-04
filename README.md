@@ -41,7 +41,7 @@ on the design of the library and its performance, you can check [the documentati
 [bench-link]: https://aiidateam.github.io/disk-objectstore/dev/bench/
 [build-badge]: https://github.com/aiidateam/disk-objectstore/workflows/Continuous%20integration/badge.svg
 [build-link]: https://github.com/aiidateam/disk-objectstore/actions
-[codecov-badge]: https://codecov.io/gh/aiidateam/disk-objectstore/branch/develop/graph/badge.svg
+[codecov-badge]: https://codecov.io/gh/aiidateam/disk-objectstore/branch/main/graph/badge.svg
 [codecov-link]: https://codecov.io/gh/aiidateam/disk-objectstore
 [pypi-badge]: https://badge.fury.io/py/disk-objectstore.svg
 [pypi-link]: https://pypi.python.org/pypi/disk-objectstore

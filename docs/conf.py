@@ -54,7 +54,7 @@ html_logo = "_static/disk-objectstore.png"
 html_theme_options = {
     "home_page_in_toc": True,
     "repository_url": "https://github.com/aiidateam/disk-objectstore",
-    "repository_branch": "develop",
+    "repository_branch": "main",
     "use_repository_button": True,
     "use_issues_button": True,
     "path_to_docs": "docs",
