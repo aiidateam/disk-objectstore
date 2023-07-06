@@ -3247,7 +3247,8 @@ def test_packs_read_in_order(temp_dir):
     temp_container.close()
 
 
-def test_repack(temp_dir):
+@pytest.mark.parametrize("compress_mode", list(CompressMode))
+def test_repack(temp_dir, compress_mode):
     """Test the repacking functionality."""
     temp_container = Container(temp_dir)
     temp_container.init_container(clear=True, pack_size_target=39)
@@ -3295,7 +3296,8 @@ def test_repack(temp_dir):
 
     # I delete an object in the middle, an object at the end of a pack, and an object at the beginning.
     # I also delete the only object
-    to_delete = [hashkeys[1], hashkeys[3], hashkeys[4], hashkeys[8]]
+    idx_to_delete = [1, 3, 4, 8]
+    to_delete = [hashkeys[idx] for idx in idx_to_delete]
     temp_container.delete_objects(to_delete)
 
     # I check that all packs are still there
@@ -3314,7 +3316,7 @@ def test_repack(temp_dir):
     assert size["total_size_packfiles_on_disk"] == 10 * len(data)
 
     # I now repack
-    temp_container.repack(compress_mode=CompressMode.KEEP)
+    temp_container.repack(compress_mode=compress_mode)
 
     # I check that all packs are still there, but pack 2 was deleted
     assert sorted(temp_container._list_packs()) == [
@@ -3327,7 +3329,14 @@ def test_repack(temp_dir):
     size = temp_container.get_total_size()
     assert size["total_size_packed"] == 10 * (len(data) - len(to_delete))
     # This time also the size on disk should be adapted (it's the main goal of repacking)
-    assert size["total_size_packfiles_on_disk"] == 10 * (len(data) - len(to_delete))
+    objects_meta = dict(
+        temp_container.get_objects_meta(
+            [hashkeys[idx] for idx in range(len(hashkeys)) if idx not in idx_to_delete]
+        )
+    )
+    assert size["total_size_packfiles_on_disk"] == sum(
+        list(meta["pack_length"] for meta in objects_meta.values())
+    )
 
     # Check that the content is still correct
     # Should not raise
@@ -3338,15 +3347,125 @@ def test_repack(temp_dir):
     temp_container.close()
 
 
-def test_not_implemented_repacks(temp_container):
-    """Check the error for not implemented repack methods."""
-    # We need to have at least one pack
-    temp_container.add_objects_to_pack([b"23r2"])
-    for compress_mode in CompressMode:
-        if compress_mode == CompressMode.KEEP:
-            continue
-        with pytest.raises(NotImplementedError):
-            temp_container.repack(compress_mode=compress_mode)
+@pytest.mark.parametrize("repack_compress_mode", list(CompressMode))
+@pytest.mark.parametrize("compress_pack", [True, False])
+def test_repack_compress_modes(
+    temp_container: Container, compress_pack, repack_compress_mode
+):
+    """Check that repack() uses the correct compression mode."""
+
+    # Write 10*1_000_000 = 10 million bytes, larger than a chunk
+    # this should be quite compressible even with the heuristics
+    content_compr = b"0123456789" * 1_000_000
+    # This instead is 10 million random bytes, probably uncompressible
+    content_uncompr = os.urandom(10_000_000)
+
+    hashkey_compr = temp_container.add_object(content_compr)
+    hashkey_uncompr = temp_container.add_object(content_uncompr)
+
+    temp_container.pack_all_loose(compress=compress_pack)
+    # Both should have the expected compression mode from the variable `compress_mode`
+    assert (
+        temp_container.get_object_meta(hashkey_compr)["pack_compressed"]
+        == compress_pack
+    )
+    assert (
+        temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"]
+        == compress_pack
+    )
+
+    # We now repack, and check if everything is correct
+    temp_container.repack(compress_mode=repack_compress_mode)
+
+    # Let's just check that results are correct after repacking
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # We now check the expected compression mode
+    if repack_compress_mode == CompressMode.NO:
+        # All should be uncompressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is False
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is False
+        )
+    elif repack_compress_mode == CompressMode.YES:
+        # All should be compressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is True
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is True
+        )
+    elif repack_compress_mode == CompressMode.KEEP:
+        # Should not have changed
+        assert (
+            temp_container.get_object_meta(hashkey_compr)["pack_compressed"]
+            == compress_pack
+        )
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"]
+            == compress_pack
+        )
+    elif repack_compress_mode == CompressMode.AUTO:
+        # Only really compressible streams should be compressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is True
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is False
+        )
+    else:
+        raise AssertionError(
+            f"Unknown {repack_compress_mode=}, most probably you added a new CompressMode and need to update the tests"
+        )
+
+
+@pytest.mark.parametrize("compress_mode", [True, False] + list(CompressMode))
+def test_pack_all_loose_compress_modes(temp_container: Container, compress_mode):
+    """Check that pack_all_loose() uses the correct compression mode.
+
+    Note that pack_all_loose accepts also booleans, for backwards-compatibility.
+    """
+    # Write 10*1_000_000 = 10 million bytes, larger than a chunk
+    # this should be quite compressible even with the heuristics
+    content_compr = b"0123456789" * 1_000_000
+    # This instead is 10 million random bytes, probably uncompressible
+    content_uncompr = os.urandom(10_000_000)
+
+    hashkey_compr = temp_container.add_object(content_compr)
+    hashkey_uncompr = temp_container.add_object(content_uncompr)
+
+    temp_container.pack_all_loose(compress=compress_mode)
+
+    # Let's just check that results are correct
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    # We now check the expected compression mode
+    if compress_mode == CompressMode.NO or compress_mode is False:
+        # All should be uncompressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is False
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is False
+        )
+    elif compress_mode == CompressMode.YES or compress_mode is True:
+        # All should be compressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is True
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is True
+        )
+    elif compress_mode == CompressMode.KEEP:
+        # Should not have changed - so it should be False since loose objects are always uncompressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is False
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is False
+        )
+    elif compress_mode == CompressMode.AUTO:
+        # Only really compressible streams should be compressed
+        assert temp_container.get_object_meta(hashkey_compr)["pack_compressed"] is True
+        assert (
+            temp_container.get_object_meta(hashkey_uncompr)["pack_compressed"] is False
+        )
+    else:
+        raise AssertionError(
+            f"Unknown {compress_mode=}, most probably you added a new CompressMode and need to update the tests"
+        )
 
 
 def test_pack_all_loose_many(temp_container):

@@ -1708,3 +1708,90 @@ def test_unknown_compressers():
             utils.get_compressobj_instance(invalid)
         with pytest.raises(ValueError):
             utils.get_stream_decompresser(invalid)
+
+
+@pytest.mark.parametrize("source_compressed", [True, False])
+@pytest.mark.parametrize("compress_mode", list(utils.CompressMode))
+def test_should_compress(compress_mode, source_compressed):
+    """Check if the should_compress method behaves as we expect on typical files.
+
+    E.g. check strings are compressible, random binaries are not.
+    """
+    # Write 10*1_000_000 = 10 million bytes, larger than a chunk
+    # this should be quite compressible even with the heuristics
+    content_compr = b"0123456789" * 1_000_000
+    # This instead is 10 million random bytes, probably uncompressible
+    content_uncompr = os.urandom(10_000_000)
+
+    if source_compressed:
+        compresser = utils.get_compressobj_instance("zlib+1")
+        compressed_compr = compresser.compress(content_compr)
+        compressed_compr += compresser.flush()
+        stream_compr = io.BytesIO(compressed_compr)
+
+        compresser = utils.get_compressobj_instance("zlib+1")
+        compressed_uncompr = compresser.compress(content_uncompr)
+        compressed_uncompr += compresser.flush()
+        stream_uncompr = io.BytesIO(compressed_uncompr)
+
+        len_compr = len(compressed_compr)
+        len_uncompr = len(compressed_uncompr)
+    else:
+        stream_compr = io.BytesIO(content_compr)
+        stream_uncompr = io.BytesIO(content_uncompr)
+
+        len_compr = len(content_compr)
+        len_uncompr = len(content_uncompr)
+
+    for stream, length, size, should_be_compressible in [
+        [stream_compr, len_compr, len(content_compr), True],
+        [stream_uncompr, len_uncompr, len(content_uncompr), False],
+    ]:
+        # Check that everything works even when starting from a random position in the file
+        stream.seek(100)
+        retval = utils.should_compress(
+            source_stream=stream,
+            compress_mode=compress_mode,
+            source_compressed=source_compressed,
+            source_length=length,
+            source_size=size,
+        )
+        if compress_mode == utils.CompressMode.YES:
+            assert retval is True
+        elif compress_mode == utils.CompressMode.NO:
+            assert retval is False
+        elif compress_mode == utils.CompressMode.KEEP:
+            # Should not change
+            assert retval is source_compressed
+        elif compress_mode == utils.CompressMode.AUTO:
+            # The compress mode should be the cleverly chosen (i.e., the "should_be_compressible" variable)
+            assert retval == should_be_compressible
+
+        # Check that it did not move in the stream while checking (or at least that it went back to the start
+        # position, that I moved to 100 before calling should_compress)
+        assert stream.tell() == 100
+
+
+def test_should_compress_invalid_mode():
+    """Check that an invalid compress_mode will raise."""
+    content = b"0123456789"
+    with pytest.raises(NotImplementedError):
+        utils.should_compress(
+            io.BytesIO(content),
+            compress_mode="UNKNOWN_MODE",
+            source_compressed=False,
+            source_length=len(content),
+            source_size=len(content),
+        )
+
+
+def test_should_compress_empty_stream():
+    """Check that it does not recommend to compress an empty stream."""
+    content = b""
+    assert not utils.should_compress(
+        io.BytesIO(content),
+        compress_mode=utils.CompressMode.AUTO,
+        source_compressed=False,
+        source_length=len(content),
+        source_size=len(content),
+    )
