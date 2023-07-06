@@ -1613,11 +1613,9 @@ def estimate_compression(stream: StreamSeekBytesType, size: int) -> float:
         return 1.0
 
     # Set some internal parameters
-    sample_size = (
-        32 * 1024
-    )  # Get this amount of consecutive bytes (to consider the sliding window of gzip)...
+    sample_size = 1 * 1024  # Get this amount of consecutive bytes...
     # Only check a sampled_data of at most `max_sample_data_size` bytes (approximately)
-    max_sampled_data_size = 262_144  # 256kB
+    max_sampled_data_size = 131072  # 128kB
     # Approximately, except for rounding errors, get a small sample of size `sample_size` every so many bytes
     sample_interval = size // (max_sampled_data_size // sample_size)
 
