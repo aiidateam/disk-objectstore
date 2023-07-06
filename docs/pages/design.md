@@ -194,3 +194,131 @@ In addition, the following design choices have been made:
 
   Therefore, caches are per blocks/pages in linux, not per file.
   Concatenating files does not impact performance on cache efficiency.
+
+## Long-term support of the data
+One of the goals of the `disk-objectstore` library is to adopt a relatively simple
+packing mechanism, so that even if this library were to go unmaintained, it is always
+possible to retrieve the data (the objects) with standard tools.
+
+Here we discuss a simple bash script that allows to retrieve any object from a pack using
+relatively standard tools (note: if it's loose, it's very simple: it's just a file in the
+`loose` subfolder, with the filename equal to its hash, except for sharding).
+
+```bash
+#!/bin/bash
+CONTAINER_PATH="$1"
+HASHKEY="$2"
+
+METADATA=`sqlite3 "$CONTAINER_PATH"/packs.idx 'SELECT offset, length, pack_id, compressed FROM db_object WHERE hashkey = "'"$HASHKEY"'"'`
+
+if [ -z "$METADATA" ]
+then
+    echo "No object '" $HASHKEY "' found in container."
+    exit 1
+fi
+
+IFS='|' read -ra METADATA_ARR <<< "$METADATA"
+OFFSET=${METADATA_ARR[0]}
+LENGTH=${METADATA_ARR[1]}
+PACK_ID=${METADATA_ARR[2]}
+COMPRESSED=${METADATA_ARR[3]}
+
+let OFFSET_PLUS_ONE=OFFSET+1
+
+if [ "$COMPRESSED" == "0" ]
+then
+    tail -c+$OFFSET_PLUS_ONE "${CONTAINER_PATH}/packs/${PACK_ID}" | head -c"${LENGTH}"
+elif [ "$COMPRESSED" == "1" ]
+then
+    tail -c+${OFFSET_PLUS_ONE} "${CONTAINER_PATH}/packs/${PACK_ID}" | head -c"${LENGTH}" | zlib-flate -uncompress
+else
+    echo "Unknown compression mode "$COMPRESSED" for object '" $HASHKEY "'"
+    exit 2
+fi
+```
+This script gets two parameters. The first is the path to the container, and the second is the hashkey we want to
+retrieve.
+
+The requirements for this script to run are:
+
+- a [bash shell](https://www.gnu.org/software/bash/), typically available (often by default) on Mac, Unix, and installable
+  on Windows.
+- the [sqlite3 executable](https://www.sqlite.org/index.html): this is typically easily installable in most operating
+ systems and distributions. We also highlight that SQLite makes a strong commitment on long-term support for its
+ format for decades, as documented in the [SQlite long-term support page](https://www.sqlite.org/lts.html).
+- the `zlib-flate` executable: this comes from package `qpdf`, and it easily installable (e.g. on Ubuntu with
+  the command `apt install qpdf`, or on Mac with [HomeBrew](https://brew.sh) using `brew install qpdf`).
+  We note that this cmmand is actually needed only if the data is zlib-compressed (as a note, one cannot simply use
+  the `gzip` command, as it also expects the gzip headers, that however are redundant and not used by the
+  disk-objectstore implementation).
+
+In addition, we highlight that both `zlib` and `sqlite3` are libraries that are part of the standard python libraries,
+therefore one can very easily replace those calls with appropriately written short python scripts (e.g. calling
+`zlib.decompressobj`).
+
+## Performance
+When this library was first implemented, many performance tests were run. These are collected in the folder
+`performance-benchmarks` of the main [GitHub repository](https://github.com/aiidateam/disk-objectstore) of the
+`disk-objectstore` package.
+
+They are organized in appropriately named folders, with text files (README.txt or similar) discussing the results
+of that specific performance test. Feel free to navigate that folder if you are curious of the tests that have been
+performed.
+
+In case you are curious you can also read
+[issue #16 of the disk-objectstore repository](https://github.com/aiidateam/disk-objectstore/issues/16)
+to get more details on the (significant) improvement in backup time when transferring (e.g. via rsync) the whole
+container, with respect to just storing each object as a single file, when you have millions of objects.
+The same issue also discusses the space saving (thanks to deduplication) for a real DB, as well as the cost of
+keeping the index (SQLite DB).
+
+
+## Concurrent usage of the disk-objectstore by multiple processes
+The main goal of disk-objecstore is to allow to store objects efficiently, without a server running, with the
+additional requirement to allow any number of concurrent **readers** (of any object, loose or packed: the reader
+should not know) and **writers** (as long as they are OK to write to loose objects).
+This allows to essentially use the library with any number of "clients".
+
+In addition, a number of performance advantages are obtained only once objects are packed.
+Therefore, another requirement is that some basic packing functionality can be performed while multiple clients are
+reading and writing. Specific tests also stress-test that this is indeed the case, on the various platforms (Windows,
+Mac and Unix) supported by the library.
+
+However, packing **MUST ONLY BE PERFORMED BY ONE PROCESS AT A TIME** (i.e., it is invalid to call the packing methods
+from more than one process at the same time).
+
+Therefore, **the concurrent functionality that are supported include**:
+
+- **any number of readers**, from any object
+- **any number of writers**, to loose objects (no direct write to packs)
+- **one single process to pack loose objects**, that can call the two methods `pack_all_loose()` and `clean_storage()`.
+
+What is **NOT** allowed follows.
+- one **MUST NOT** run two ore more packing number of operations at the same time.
+
+In addition, a number of operations are considered **maintenance operations**. You should need to run them only
+very rarely, to optimize performance. **Only one maintenance operation can run at a given time**, and in addition
+**no other process can access (read or write) the container while a maintenance operation is running**.
+
+This means that, before running a maintenance operation, **you should really stop any process using the container**,
+run the maintenance operation, and then resume normal operation.
+
+Maintenance operations include:
+- deleting objects with `delete_objects()`
+- adding objects directly to a pack with `add_streamed_objects_to_pack()` (or similar functions such as
+  `add_objects_to_pack()`)
+- repacking (to change compression, reclaim unused disk space in the pack files, ...) with `repack()` (and similarly
+  for `repack_pack` to repack a single pack file).
+
+A note: while one could implement guards (e.g. a decorator `@maintenance` for the relevant methods) to prevent
+concurrent access (see e.g. [issue #6](https://github.com/aiidateam/disk-objectstore/issues/6)), this is complex to
+implement (mostly because one needs to record any time a process starts accessing the repository - so a maintenance
+operation can refuse to start - as well as check if any maintenance operation is running at every first access to a
+container and refuse to start using it).
+While not impossible, this is not easy (also to properly clean up if the computer reboots unexpectedly when a
+maintenance operation is running, etc) and also might have performance implications as a check has to be performed
+for every new operation on a Container.
+
+We note that however such logic was [implemented in AiiDA](https://github.com/aiidateam/aiida-core/pull/5270)
+(that uses `disk-objectstore` as a backend). Therefore guards are in place there, and if one needs to do the same
+from a different code, inspiration can be taken from the implementation in AiiDA.

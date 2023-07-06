@@ -7,7 +7,7 @@ Here we show a minimal example of how to use the API of the `disk-objectstore` t
 Let us run a quick demo of how to store and retrieve objects in a container:
 
 ```python
-from disk_objectstore import Container
+from disk_objectstore import Container, CompressMode
 
 # Let's create a new container in the local folder `temp_container`, and initialise it
 container = Container("temp_container")
@@ -36,8 +36,15 @@ assert hash1bis == hash1
 
 # Let's pack all objects: instead of having a lot of files, one per object, all objects
 # are written in a few big files (great for performance, e.g. when using rsync) +
-# internally a SQLite database is used to know where each object is in the pack files
-container.pack_all_loose()
+# internally a SQLite database is used to know where each object is in the pack files.
+# In addition, we can also ask to compress files. `CompresMode.AUTO` will perform
+# fast heuristics to decide, object by object, if it's worth compressing the object or not.
+container.pack_all_loose(compress=CompressMode.AUTO)
+
+# The previous operation puts loose objects into packs, but does not delete by default
+# the loose objects. This function removes them (as they are not used anymore), and possibly
+# performs some additional cleanup.
+container.clean_storage()
 
 # After packing, everthing works as before
 container.get_object_content(hash2)

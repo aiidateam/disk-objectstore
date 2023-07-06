@@ -11,6 +11,7 @@ import hashlib
 import itertools
 import os
 import uuid
+import warnings
 import zlib
 from contextlib import contextmanager
 from enum import Enum
@@ -1156,13 +1157,13 @@ class ZeroStream:
 def is_known_hash(hash_type: str) -> bool:
     """Return True if the hash_type is known, False otherwise."""
     try:
-        get_hash(hash_type)
+        get_hash_cls(hash_type)
         return True
     except ValueError:
         return False
 
 
-def get_hash(hash_type: str) -> Callable:
+def get_hash_cls(hash_type: str) -> Callable:
     """Return a hash class with an update method and a hexdigest method."""
     known_hashes = {"sha1": hashlib.sha1, "sha256": hashlib.sha256}
 
@@ -1171,6 +1172,17 @@ def get_hash(hash_type: str) -> Callable:
     except KeyError:
         # pylint: disable=raise-missing-from
         raise ValueError(f"Unknown or unsupported hash type '{hash_type}'")
+
+
+def get_hash(hash_type: str) -> Callable:
+    """Return a hash class with an update method and a hexdigest method.
+
+    .. deprecated:: Deprecated since 1.0. Use `get_hash_cls` instead.
+    """
+    warnings.warn(
+        "`get_hash` is deprecated, use `get_hash_cls` instead", DeprecationWarning
+    )
+    return get_hash_cls(hash_type)
 
 
 def _compute_hash_for_filename(filename: str, hash_type: str) -> str | None:
@@ -1184,7 +1196,7 @@ def _compute_hash_for_filename(filename: str, hash_type: str) -> str | None:
     """
     _chunksize = 524288
 
-    hasher = get_hash(hash_type)()
+    hasher = get_hash_cls(hash_type)()
     try:
         with open(filename, "rb") as fhandle:
             while True:
@@ -1215,7 +1227,7 @@ class HashWriterWrapper:
         assert "b" in self._write_stream.mode
         self._hash_type = hash_type
 
-        self._hash = get_hash(self._hash_type)()
+        self._hash = get_hash_cls(self._hash_type)()
         self._position = self._write_stream.tell()
 
     @property
@@ -1363,7 +1375,7 @@ def compute_hash_and_size(
     :return: a tuple with ``(hash, size)`` where ``hash`` is the hexdigest and ``size`` is the size in bytes
     """
     _hash_chunksize = 524288
-    hasher = get_hash(hash_type)()
+    hasher = get_hash_cls(hash_type)()
 
     # Read and hash all content
     size = 0
