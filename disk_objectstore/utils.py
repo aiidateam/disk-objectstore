@@ -1608,10 +1608,16 @@ def estimate_compression(stream: StreamSeekBytesType, size: int) -> float:
         etc. Note that this is only a quick estimate; actual compression levels might vary, but it is meant as a
         quick heuristics to decide whether we should compress or not, when CompressMode.AUTO is requested.
     """
+    if size == 0:
+        # Return a large value for zero-length files, so they are not even attempted to be compressed.
+        return 1.0
+
     # Set some internal parameters
-    sample_size = 1024  # Get this amount of bytes...
+    sample_size = (
+        32 * 1024
+    )  # Get this amount of consecutive bytes (to consider the sliding window of gzip)...
     # Only check a sampled_data of at most `max_sample_data_size` bytes (approximately)
-    max_sampled_data_size = 131_072  # 128kB
+    max_sampled_data_size = 262_144  # 256kB
     # Approximately, except for rounding errors, get a small sample of size `sample_size` every so many bytes
     sample_interval = size // (max_sampled_data_size // sample_size)
 
@@ -1620,30 +1626,32 @@ def estimate_compression(stream: StreamSeekBytesType, size: int) -> float:
     # Go back to the beginning
     stream.seek(0)
 
-    sampled_data = b""
+    sampled_data = []
+    total_length = 0
     # Only check the first part of the file
-    while len(sampled_data) < max_sampled_data_size:
+    while total_length < max_sampled_data_size:
         chunk = stream.read(sample_size)
         if not chunk:
             # EOF, stop
             break
-        sampled_data += chunk
+        sampled_data.append(chunk)
+        total_length += len(chunk)
         # Advance to the next sample of length SAMPLE_INTERVAL
-        # Never go back!
-        stream.seek(max(0, sample_interval - len(chunk)), 1)
+        max_seek = size - stream.tell()
+        # Never go back, and never go past the end of the file
+        stream.seek(min(max_seek, max(0, sample_interval - len(chunk))), 1)
     # I now have the sample, I compress it and compare the size
 
     # I just want to know if it's compressible, I compress with some cheap ZLIB version,
     # Ideally this gives me a good estimate. Probably I could even do better, e.g. like BTRFS I
     # could estimate Shannon's entropy
     compresser = get_compressobj_instance("zlib+1")
-    compressed = compresser.compress(sampled_data)
+    compressed = compresser.compress(b"".join(sampled_data))
     compressed += compresser.flush()
 
-    if len(sampled_data) == 0:
-        estimated = 1.0
-    else:
-        estimated = len(compressed) / len(sampled_data)
+    # Since I have a guard above for small-size files, I never get here for
+    # a sample of 0 bytes
+    estimated = len(compressed) / total_length
     # Restore the stream to the initial position
     stream.seek(initial_pos)
 
