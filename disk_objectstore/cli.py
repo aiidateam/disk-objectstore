@@ -69,7 +69,7 @@ def create(dostore: ContainerContext, algorithm: str):
 def status(dostore: ContainerContext):
     """Print details about the container"""
     with dostore.container as container:
-        data: dict = {"path": container.get_folder()}
+        data: dict = {"path": str(container.get_folder())}
         data["id"] = container.container_id
         data["compression"] = container.compression_algorithm
         data["count"] = container.count_objects()

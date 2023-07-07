@@ -1,5 +1,5 @@
 """Models for the container index file (SQLite DB)."""
-import os
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import Boolean, Column, Integer, String, create_engine, event
@@ -32,7 +32,7 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
 
 
 def get_session(
-    path: str, create: bool = False, raise_if_missing: bool = False
+    path: Path, create: bool = False, raise_if_missing: bool = False
 ) -> Optional[Session]:
     """Return a new session to connect to the pack-index SQLite DB.
 
@@ -40,7 +40,7 @@ def get_session(
     :param raise_if_missing: ignored if create==True. If create==False, and the index file
         is missing, either raise an exception (FileNotFoundError) if this flag is True, or return None
     """
-    if not create and not os.path.exists(path):
+    if not create and not path.exists():
         if raise_if_missing:
             raise FileNotFoundError("Pack index does not exist")
         return None

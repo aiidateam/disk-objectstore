@@ -17,6 +17,7 @@ import os
 import random
 import tempfile
 import time
+from pathlib import Path
 
 import click
 import psutil
@@ -75,7 +76,7 @@ def main(
 ):
     """Keep writing loose objects, then read all those written by all locusts, and try to read them back."""
     # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches
-    if not os.path.isdir(shared_folder):
+    if not Path(shared_folder).is_dir():
         raise ValueError(f"Create the folder '{shared_folder}' first!")
     container = Container(path)
     # In the tests we pass it already initialised, so this is never called
@@ -129,10 +130,10 @@ def main(
         with tempfile.NamedTemporaryFile(
             mode="w", encoding="utf8", dir=shared_folder, delete=False
         ) as fhandle:
-            fname = fhandle.name
+            fpath = Path(fhandle.name)
             json.dump(checksums, fhandle)
         # Atomic move in place (so other locusts don't try to read partially written files)
-        os.rename(fname, f"{fname}.sha")
+        os.rename(fpath, fpath.parent / f"{fpath.name}.sha")
 
         # Re-read everything, also from other processes
         all_checksums = {}
@@ -146,7 +147,7 @@ def main(
             # This is because renames are atomic, but while renaming the file is completely locked
             for _ in range(MAX_RETRIES_NO_PERM):
                 try:
-                    with open(os.path.join(shared_folder, fname)) as fhandle:
+                    with open(Path(shared_folder) / fname) as fhandle:
                         chunk_checksums = json.load(fhandle)
                     break
                 except PermissionError:
@@ -313,7 +314,7 @@ def main(
                 loose_path = container._get_loose_path_from_hashkey(  # pylint: disable=protected-access
                     key
                 )
-                print(f"Exists Loose: {os.path.exists(loose_path)}")
+                print(f"Exists Loose: {loose_path.exists()}")
                 session = (
                     container._get_cached_session()  # pylint: disable=protected-access
                 )

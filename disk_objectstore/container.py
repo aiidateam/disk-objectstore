@@ -110,7 +110,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         :param folder: the path to a folder that will host this object-store container.
         """
-        self._folder = os.path.realpath(folder)
+        self._folder = Path(folder).resolve()
         # Will be populated by the _get_session function
         self._session: Optional[Session] = None
 
@@ -119,7 +119,7 @@ class Container:  # pylint: disable=too-many-public-methods
         self._current_pack_id: Optional[int] = None
         self._config: Optional[dict] = None
 
-    def get_folder(self) -> str:
+    def get_folder(self) -> Path:
         """Return the path to the folder that will host the object-store container."""
         return self._folder
 
@@ -137,28 +137,28 @@ class Container:  # pylint: disable=too-many-public-methods
         """Close the session when exiting the context."""
         self.close()
 
-    def _get_sandbox_folder(self) -> str:
+    def _get_sandbox_folder(self) -> Path:
         """Return the path to the sandbox folder that is used during a new object creation.
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, "sandbox")
+        return self._folder / "sandbox"
 
-    def _get_loose_folder(self) -> str:
+    def _get_loose_folder(self) -> Path:
         """Return the path to the folder that will host the loose objects.
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, "loose")
+        return self._folder / "loose"
 
-    def _get_pack_folder(self) -> str:
+    def _get_pack_folder(self) -> Path:
         """Return the path to the folder that will host the packed objects.
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, "packs")
+        return self._folder / "packs"
 
-    def _get_duplicates_folder(self) -> str:
+    def _get_duplicates_folder(self) -> Path:
         """Return the path to the folder that will host the duplicate loose objects that couldn't be written.
 
         This should happen only in race conditions on Windows. See `utils.ObjectWriter.__exit__` for its usage, and
@@ -166,11 +166,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
         It is a subfolder of the container folder.
         """
-        return os.path.join(self._folder, "duplicates")
+        return self._folder / "duplicates"
 
-    def _get_config_file(self) -> str:
+    def _get_config_file(self) -> Path:
         """Return the path to the container config file."""
-        return os.path.join(self._folder, "config.json")
+        return self._folder / "config.json"
 
     @overload
     def _get_session(
@@ -209,23 +209,23 @@ class Container:  # pylint: disable=too-many-public-methods
             self._session = self._get_session(create=False, raise_if_missing=True)
         return self._session
 
-    def _get_loose_path_from_hashkey(self, hashkey: str) -> str:
+    def _get_loose_path_from_hashkey(self, hashkey: str) -> Path:
         """Return the path of a loose object on disk containing the data of a given hash key.
 
         :param hashkey: the hashkey of the object to get.
         """
         if self.loose_prefix_len:
-            return os.path.join(
-                self._get_loose_folder(),
-                hashkey[: self.loose_prefix_len],
-                hashkey[self.loose_prefix_len :],
+            return (
+                self._get_loose_folder()
+                / hashkey[: self.loose_prefix_len]
+                / hashkey[self.loose_prefix_len :]
             )
         # if loose_prefix_len is zero, there is no subfolder
-        return os.path.join(self._get_loose_folder(), hashkey)
+        return self._get_loose_folder() / hashkey
 
     def _get_pack_path_from_pack_id(
         self, pack_id: Union[str, int], allow_repack_pack: bool = False
-    ) -> str:
+    ) -> Path:
         """Return the path of the pack file on disk for the given pack ID.
 
         :param pack_id: the pack ID.
@@ -235,11 +235,11 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(
             pack_id, allow_repack_pack=allow_repack_pack
         ), f"Invalid pack ID {pack_id}"
-        return os.path.join(self._get_pack_folder(), pack_id)
+        return self._get_pack_folder() / pack_id
 
-    def _get_pack_index_path(self) -> str:
+    def _get_pack_index_path(self) -> Path:
         """Return the path to the SQLite file containing the index of packed objects."""
-        return os.path.join(self._folder, f"packs{self._PACK_INDEX_SUFFIX}")
+        return self._folder / f"packs{self._PACK_INDEX_SUFFIX}"
 
     def _get_pack_id_to_write_to(self) -> int:
         """Return the pack ID to write the next object.
@@ -255,10 +255,10 @@ class Container:  # pylint: disable=too-many-public-methods
         pack_id = self._current_pack_id or 0
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
-            if not os.path.exists(pack_path):
+            if not pack_path.exists():
                 # Use this ID - the pack file does not exist yet
                 break
-            if os.path.getsize(pack_path) < self.pack_size_target:
+            if pack_path.stat().st_size < self.pack_size_target:
                 # Use this ID - the pack file is not "full" yet
                 break
             # Try the next pack
@@ -285,7 +285,7 @@ class Container:  # pylint: disable=too-many-public-methods
             self._get_sandbox_folder(),
         ]
         for folder in subfolders:
-            if not os.path.exists(folder):
+            if not folder.exists():
                 return False
         return True
 
@@ -324,7 +324,7 @@ class Container:  # pylint: disable=too-many-public-methods
             raise ValueError(f'Unknown hash type "{hash_type}"')
 
         if clear:
-            if os.path.exists(self._folder):
+            if self._folder.exists():
                 shutil.rmtree(self._folder)
 
             # Reinitialize the configuration cache, since this will change
@@ -683,8 +683,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     last_open_file = open(  # pylint: disable=consider-using-with
                         obj_path, mode="rb"
                     )
-                    # I do not use os.path.getsize in case the file has just
-                    # been deleted by a concurrent writer
+                    # I do not use Pathlib to get the size, in case the file has just
+                    # been deleted by a concurrent writer, but I use the lower-level os.fstat
+                    # on the fileno() of the open file
                     meta = {
                         "type": ObjectType.LOOSE,
                         "size": os.fstat(last_open_file.fileno()).st_size,
@@ -697,7 +698,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     yield loose_hashkey, last_open_file, meta
                 else:
                     # This will also raise a FileNotFoundError if the file does not exist
-                    size = os.path.getsize(obj_path)
+                    size = obj_path.stat().st_size
                     meta = {
                         "type": ObjectType.LOOSE,
                         "size": size,
@@ -1148,19 +1149,19 @@ class Container:  # pylint: disable=too-many-public-methods
 
         total_size_packfiles_on_disk = 0
         for pack_id in list(self._list_packs()):
-            total_size_packfiles_on_disk += os.path.getsize(
-                self._get_pack_path_from_pack_id(pack_id)
+            total_size_packfiles_on_disk += (
+                self._get_pack_path_from_pack_id(pack_id).stat().st_size
             )
         retval["total_size_packfiles_on_disk"] = total_size_packfiles_on_disk
 
-        retval["total_size_packindexes_on_disk"] = os.path.getsize(
-            self._get_pack_index_path()
+        retval["total_size_packindexes_on_disk"] = (
+            self._get_pack_index_path().stat().st_size
         )
 
         total_size_loose = 0
         for loose_hashkey in self._list_loose():
             loose_path = self._get_loose_path_from_hashkey(loose_hashkey)
-            total_size_loose += os.path.getsize(loose_path)
+            total_size_loose += loose_path.stat().st_size
         retval["total_size_loose"] = total_size_loose
 
         return retval
@@ -1181,7 +1182,7 @@ class Container:  # pylint: disable=too-many-public-methods
         assert self._is_valid_pack_id(pack_id, allow_repack_pack=allow_repack_pack)
 
         # Open file in exclusive mode
-        lock_file = os.path.join(self._get_pack_folder(), f"{pack_id}.lock")
+        lock_file = self._get_pack_folder() / f"{pack_id}.lock"
         pack_file = self._get_pack_path_from_pack_id(
             pack_id, allow_repack_pack=allow_repack_pack
         )
@@ -1191,7 +1192,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     yield pack_handle
         finally:
             # Release resource (I check if it exists in case there was an exception)
-            if os.path.exists(lock_file):
+            if lock_file.exists():
                 os.remove(lock_file)
 
     def _list_loose(self) -> Iterator[str]:
@@ -1205,9 +1206,7 @@ class Container:  # pylint: disable=too-many-public-methods
             if self.loose_prefix_len:
                 if not self._is_valid_loose_prefix(first_level):
                     continue
-                for second_level in os.listdir(
-                    os.path.join(self._get_loose_folder(), first_level)
-                ):
+                for second_level in os.listdir(self._get_loose_folder() / first_level):
                     hashkey = f"{first_level}{second_level}"
                     if not self._is_valid_hashkey(hashkey):
                         continue
@@ -1506,7 +1505,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 if do_fsync:
                     safe_flush_to_disk(
                         pack_handle,
-                        os.path.realpath(pack_handle.name),
+                        Path(pack_handle.name).resolve(),
                         use_fullsync=True,
                     )
 
@@ -1843,7 +1842,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 if do_fsync:
                     safe_flush_to_disk(
                         pack_handle,
-                        os.path.realpath(pack_handle.name),
+                        Path(pack_handle.name).resolve(),
                         use_fullsync=True,
                     )
 
@@ -1942,7 +1941,7 @@ class Container:  # pylint: disable=too-many-public-methods
         # function returns another concurrent clean_storage call could
         # remove the file.
         loose_path = self._get_loose_path_from_hashkey(hashkey)
-        if os.path.exists(loose_path):
+        if loose_path.exists():
             return loose_path
 
         with self.get_object_stream(hashkey) as stream:
@@ -2022,12 +2021,12 @@ class Container:  # pylint: disable=too-many-public-methods
             if computed_hash == reference_obj_hashkey:
                 # The object is in the repo and has the correct hashkey: we just remove all duplicates
                 for duplicate in duplicates_mapping[reference_obj_hashkey]:
-                    os.remove(os.path.join(self._get_duplicates_folder(), duplicate))
+                    os.remove(self._get_duplicates_folder() / duplicate)
             else:
                 good_duplicate = None
                 for duplicate in duplicates_mapping[reference_obj_hashkey]:
                     with open(
-                        os.path.join(self._get_duplicates_folder(), duplicate), "rb"
+                        self._get_duplicates_folder() / duplicate, "rb"
                     ) as fhandle:
                         computed_hash, _ = compute_hash_and_size(
                             fhandle, self.hash_type
@@ -2045,7 +2044,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 # It should not be None, I should have raised!
                 assert good_duplicate is not None
                 os.replace(
-                    os.path.join(self._get_duplicates_folder(), good_duplicate),
+                    self._get_duplicates_folder() / good_duplicate,
                     self._get_loose_path_from_hashkey(reference_obj_hashkey),
                 )
                 # Let's remove all other duplicates
@@ -2053,7 +2052,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     if duplicate == good_duplicate:
                         # Let's skip the one I already moved
                         continue
-                    os.remove(os.path.join(self._get_duplicates_folder(), duplicate))
+                    os.remove(self._get_duplicates_folder() / duplicate)
 
         loose_objects = set(self._list_loose())
         # Force reload of the session to get the most up-to-date packed objects
@@ -2588,7 +2587,7 @@ class Container:  # pylint: disable=too-many-public-methods
             for duplicate_fname in duplicates_this_object:
                 # For now I don't put checks - I should be the only one accessing the container, so I should not
                 # get PermissionError or similar exceptionss
-                os.remove(os.path.join(self._get_duplicates_folder(), duplicate_fname))
+                os.remove(self._get_duplicates_folder() / duplicate_fname)
             try:
                 os.remove(self._get_loose_path_from_hashkey(hashkey))
                 deleted_loose.add(hashkey)
@@ -2656,11 +2655,9 @@ class Container:  # pylint: disable=too-many-public-methods
         ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
 
         # Check that it does not exist
-        assert not os.path.exists(
-            self._get_pack_path_from_pack_id(
-                self._REPACK_PACK_ID, allow_repack_pack=True
-            )
-        ), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
+        assert not self._get_pack_path_from_pack_id(
+            self._REPACK_PACK_ID, allow_repack_pack=True
+        ).exists(), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
 
         session = self._get_cached_session()
 
@@ -2669,7 +2666,7 @@ class Container:  # pylint: disable=too-many-public-methods
         ).all()
         if not one_object_in_pack:
             # No objects. Clean up the pack file, if it exists.
-            if os.path.exists(self._get_pack_path_from_pack_id(pack_id)):
+            if self._get_pack_path_from_pack_id(pack_id).exists():
                 os.remove(self._get_pack_path_from_pack_id(pack_id))
             return
 

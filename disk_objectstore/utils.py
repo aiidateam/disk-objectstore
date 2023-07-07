@@ -15,6 +15,7 @@ import warnings
 import zlib
 from contextlib import contextmanager
 from enum import Enum
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -102,7 +103,7 @@ class LazyOpener:
     when opening the stream.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: Path) -> None:
         """Lazily store file path and mode, but do not open now.
 
         File will be opened only when entering the context manager.
@@ -111,7 +112,7 @@ class LazyOpener:
         self._fhandle: BinaryIO | None = None
 
     @property
-    def path(self) -> str:
+    def path(self) -> Path:
         """The file path."""
         return self._path
 
@@ -285,10 +286,10 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
-        sandbox_folder: str,
-        loose_folder: str,
+        sandbox_folder: Path,
+        loose_folder: Path,
         loose_prefix_len: int,
-        duplicates_folder: str,
+        duplicates_folder: Path,
         hash_type: str,
         trust_existing: bool = False,
     ) -> None:
@@ -314,7 +315,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
         self._hashkey: str | None = None
         self._loose_prefix_len = loose_prefix_len
         self._stored = False
-        self._obj_path: str | None = None
+        self._obj_path: Path | None = None
         self._filehandle: HashWriterWrapper | None = None
         self._trust_existing = trust_existing
 
@@ -342,7 +343,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
             )
         # Create a new uniquely-named file in the sandbox.
         # It seems faster than using a NamedTemporaryFile, see benchmarks.
-        self._obj_path = os.path.join(self._sandbox_folder, uuid.uuid4().hex)
+        self._obj_path = self._sandbox_folder / uuid.uuid4().hex
         self._filehandle = HashWriterWrapper(
             open(self._obj_path, "wb"), hash_type=self.hash_type
         )
@@ -371,8 +372,8 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                 self._filehandle = None
 
                 if self._loose_prefix_len:
-                    parent_folder = os.path.join(
-                        self._loose_folder, self._hashkey[: self._loose_prefix_len]
+                    parent_folder = (
+                        self._loose_folder / self._hashkey[: self._loose_prefix_len]
                     )
                     # Create parent folder the first time; done with try/except
                     # rather than with if/else to avoid problems at the beginning, for concurrent writing
@@ -382,19 +383,19 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                         # The folder already exists, great! No work to do
                         pass
 
-                    dest_loose_object = os.path.join(
-                        self._loose_folder,
-                        self._hashkey[: self._loose_prefix_len],
-                        self._hashkey[self._loose_prefix_len :],
+                    dest_loose_object = (
+                        self._loose_folder
+                        / self._hashkey[: self._loose_prefix_len]
+                        / self._hashkey[self._loose_prefix_len :]
                     )
                 else:  # prefix_len == 0
-                    dest_loose_object = os.path.join(self._loose_folder, self._hashkey)
+                    dest_loose_object = self._loose_folder / self._hashkey
 
-                dest_parent_folder = os.path.dirname(dest_loose_object)
+                dest_parent_folder = dest_loose_object.parent
                 exists_wrong_checksum = False
                 # At this point, if the destination exists, it means someone already put an object
                 # with the same content/hash key
-                if os.path.exists(dest_loose_object):
+                if dest_loose_object.exists():
                     if self._trust_existing:
                         # I trust that the object is correct: I just return
                         # Note: if another process is deleting the file at the same time (right after),
@@ -408,8 +409,8 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                     # be wrong. But this is very difficult to catch, and in general
                     # the situation in which a process writes a corrupt node is really an error
                     try:
-                        existing_checksum = _compute_hash_for_filename(
-                            filename=dest_loose_object, hash_type=self.hash_type
+                        existing_checksum = _compute_hash_for_file(
+                            filepath=dest_loose_object, hash_type=self.hash_type
                         )
                     except PermissionError:
                         # On Windows I might get a PermissionError. I store a copy and return.
@@ -475,8 +476,8 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                         # that the file is being still locked for reading, so I need to take care of checking for those
                         # error
                         try:
-                            existing_checksum = _compute_hash_for_filename(
-                                filename=dest_loose_object, hash_type=self.hash_type
+                            existing_checksum = _compute_hash_for_file(
+                                filepath=dest_loose_object, hash_type=self.hash_type
                             )
                             if existing_checksum == self._hashkey:
                                 # The existing object has the correct hash, I just return.
@@ -496,7 +497,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                 # I do not call safe_flush_to_disk as I need to flush only the folder metadata (I think)
                 # Otherwise I should open again the file
                 if os.name == "posix":
-                    dirfd = os.open(os.path.dirname(dest_parent_folder), os.O_DIRECTORY)
+                    dirfd = os.open(dest_parent_folder.parent, os.O_DIRECTORY)
                     os.fsync(dirfd)
                     os.close(dirfd)
         finally:
@@ -505,19 +506,17 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
 
             if self._filehandle is not None and not self._filehandle.closed:
                 self._filehandle.close()
-            if self._obj_path and os.path.exists(self._obj_path):
+            if self._obj_path is not None and self._obj_path.exists():
                 os.remove(self._obj_path)
 
-    def _store_duplicate_copy(self, source_file: str, hashkey: str) -> None:
+    def _store_duplicate_copy(self, source_file: Path, hashkey: str) -> None:
         """This function is called (on Windows) when trying to store a file that already exists.
 
         In the `clean_storage` I will clean up old copies if the hash matches.
         """
         # Destination file starts with the hashkey, then has an dot as a separator, and is
         # followed by un UUID to make sure there is never a collision
-        dest_file = os.path.join(
-            self._duplicates_folder, f"{hashkey}.{uuid.uuid4().hex}"
-        )
+        dest_file = self._duplicates_folder / f"{hashkey}.{uuid.uuid4().hex}"
         os.rename(source_file, dest_file)
 
 
@@ -1200,7 +1199,7 @@ def get_hash(hash_type: str) -> Callable:
     return get_hash_cls(hash_type)
 
 
-def _compute_hash_for_filename(filename: str, hash_type: str) -> str | None:
+def _compute_hash_for_file(filepath: Path, hash_type: str) -> str | None:
     """Return the hash for the given file.
 
     Will read the file in chunks.
@@ -1213,7 +1212,7 @@ def _compute_hash_for_filename(filename: str, hash_type: str) -> str | None:
 
     hasher = get_hash_cls(hash_type)()
     try:
-        with open(filename, "rb") as fhandle:
+        with open(filepath, "rb") as fhandle:
             while True:
                 chunk = fhandle.read(_chunksize)
                 hasher.update(chunk)
@@ -1319,7 +1318,7 @@ def chunk_iterator(iterator, size):
 
 def safe_flush_to_disk(
     fhandle: StreamWriteBytesType | HashWriterWrapper,
-    real_path: str,
+    real_path: Path,
     use_fullsync: bool = False,
 ) -> None:
     """Tries to to its best to safely commit to disk.
@@ -1373,7 +1372,7 @@ def safe_flush_to_disk(
     # Flush also the parent directory on posix, see e.g.
     # https://blog.gocept.com/2013/07/15/reliable-file-updates-with-python/
     if os.name == "posix":
-        dirfd = os.open(os.path.dirname(real_path), os.O_DIRECTORY)
+        dirfd = os.open(real_path.parent, os.O_DIRECTORY)
         # Also here call the correct fsync function
         _fsync_function(dirfd)
         os.close(dirfd)

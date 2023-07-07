@@ -32,10 +32,11 @@ Now you can exploit the `LazyOpener` wrapper to lazily create handles to files, 
 Let's now add their content to the `Container`, in a way that works even for TB files without filling up all your RAM:
 
 ```python
+from pathlib import Path
 from disk_objectstore.utils import LazyOpener
 
 container.add_streamed_objects_to_pack(
-    [LazyOpener("file1.txt"), LazyOpener("file2.txt")], open_streams=True
+    [LazyOpener(Path("file1.txt")), LazyOpener(Path("file2.txt"))], open_streams=True
 )
 ```
 

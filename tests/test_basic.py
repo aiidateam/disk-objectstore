@@ -13,20 +13,20 @@ import pytest
 
 def test_concurrent_append_read(temp_dir):
     """Check what happens when reading a file that is being written in append mode in the meantime."""
-    fname = os.path.join(temp_dir, "test_file")
+    fpath = temp_dir / "test_file"
 
     first_part = b"v92jgwkf"
     intermediate = b"fbd9pjv2klmwg"
     second_part = b"2flemawlefm"
 
-    with open(fname, "ab") as write_handle:
+    with open(fpath, "ab") as write_handle:
         write_handle.write(first_part)
         # Flush to make sure everything is out of the buffer and visible to other processes
         write_handle.flush()
 
         # Verify that I can open in read mode and that I already find the content,
         # even if the write_handle is not closed
-        with open(fname, "rb") as read_handle:
+        with open(fpath, "rb") as read_handle:
             # Read the first part, check it's correct
             read_chunk = read_handle.read(len(first_part))
             assert read_chunk == first_part
@@ -37,7 +37,7 @@ def test_concurrent_append_read(temp_dir):
             write_handle.flush()
 
             # Check that the file size on disk is the expected one
-            assert os.path.getsize(fname) == len(first_part) + len(intermediate) + len(
+            assert fpath.stat().st_size == len(first_part) + len(intermediate) + len(
                 second_part
             )
 
@@ -49,13 +49,13 @@ def test_concurrent_append_read(temp_dir):
 
 def test_concurrent_append_read_multiprocess(temp_dir):
     """Check what happens when reading a file that is being written in append mode in the meantime."""
-    fname = os.path.join(temp_dir, "test_file")
+    fpath = temp_dir / "test_file"
 
     first_part = b"v92jgwkf"
     intermediate = b"fbd9pjv2klmwg"
     second_part = b"2flemawlefm"
 
-    with open(fname, "ab") as write_handle:
+    with open(fpath, "ab") as write_handle:
         write_handle.write(first_part)
         # Flush to make sure everything is out of the buffer and visible to other processes
         write_handle.flush()
@@ -66,7 +66,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                f'fhandle=open(r"{os.path.realpath(fname)}"); print(fhandle.read(), end=""); fhandle.close()',
+                f'fhandle=open(r"{fpath.resolve()}"); print(fhandle.read(), end=""); fhandle.close()',
             ]
         )
         assert read_chunk == first_part
@@ -81,7 +81,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                f'import os; print(os.path.getsize(r"{os.path.realpath(fname)}"), end="")',
+                f'import pathlib; print(pathlib.Path(r"{str(fpath)}").resolve().stat().st_size, end="")',
             ]
         )
 
@@ -94,7 +94,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             [
                 sys.executable,
                 "-c",
-                f'fhandle=open(r"{os.path.realpath(fname)}"); '
+                f'fhandle=open(r"{fpath.resolve()}"); '
                 f"fhandle.seek({len(first_part) + len(intermediate)}); "
                 'print(fhandle.read(), end=""); fhandle.close()',
             ]
@@ -113,17 +113,17 @@ def test_concurrent_append_write_buffer_size(temp_dir):
 
     If the file is read as a buffer, I would expect that it might not notice immediately that content has been appended.
     """
-    fname = os.path.join(temp_dir, "test_file")
+    fpath = temp_dir / "test_file"
 
     first_part = b"v92"
     intermediate = b"efwefdf"
     second_part = b"2flemawlefm"
 
     # Let's write 2 bytes in the file
-    with open(fname, "wb") as write_handle:
+    with open(fpath, "wb") as write_handle:
         write_handle.write(first_part)
 
-    with open(fname, "rb") as read_handle:
+    with open(fpath, "rb") as read_handle:
         # Read only 1 byte
         beginning = read_handle.read(1)
         assert beginning == first_part[:1]
@@ -133,7 +133,7 @@ def test_concurrent_append_write_buffer_size(temp_dir):
             [
                 sys.executable,
                 "-c",
-                f'fhandle=open(r"{os.path.realpath(fname)}", "ab"); '
+                f'fhandle=open(r"{fpath.resolve()}", "ab"); '
                 f'fhandle.write(b"{intermediate.decode("ascii")}"); fhandle.close()',
             ]
         )
@@ -151,7 +151,7 @@ def test_concurrent_append_write_buffer_size(temp_dir):
             [
                 sys.executable,
                 "-c",
-                f'fhandle=open(r"{os.path.realpath(fname)}", "ab"); '
+                f'fhandle=open(r"{fpath.resolve()}", "ab"); '
                 f'fhandle.write(b"{second_part.decode("ascii")}"); fhandle.close()',
             ]
         )
@@ -173,17 +173,17 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
 
     :param bytes_read_pre: an integer stating how many bytes to read before (trying to) delete the open file.
     """
-    fname = os.path.join(temp_dir, "test_file")
+    fpath = temp_dir / "test_file"
 
     content = b"rfr23ewv3wg4w"
     assert len(content) >= bytes_read_pre
 
     # Write something to the file
-    with open(fname, "wb") as fhandle:
+    with open(fpath, "wb") as fhandle:
         fhandle.write(content)
 
     # Now open again the file
-    with open(fname, "rb") as fhandle:
+    with open(fpath, "rb") as fhandle:
         if bytes_read_pre:
             read_content_pre = fhandle.read(bytes_read_pre)
         else:
@@ -191,12 +191,12 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
 
         # I (try to) delete the file in a different subprocess
         try:
-            # I assume here that the fname does not contain double quotes
+            # I assume here that the fpath does not contain double quotes
             subprocess.check_output(
                 [
                     sys.executable,
                     "-c",
-                    f'import os; os.remove(r"{os.path.realpath(fname)}")',
+                    f'import os; os.remove(r"{fpath.resolve()}")',
                 ],
                 stderr=subprocess.STDOUT,
             )
@@ -211,15 +211,15 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
             # - os.streerror(exc.errno) == 'Permission denied'
             output = exc.output or b""  # It could be none
             assert b"PermissionError" in output
-            assert os.path.isfile(
-                fname
+            assert (
+                fpath.is_file()
             ), "The file was actually deleted on Windows, unexpected!"
         else:
             assert (
                 os.name == "posix"
             ), "I should be able to delete a file while it's still open only on POSIX!"
-            assert not os.path.isfile(
-                fname
+            assert (
+                not fpath.is_file()
             ), "The file wasn't really deleted in POSIX, unexpected!"
 
         # In either case (I got an exception on Windows, I could delete the file on POSIX)
@@ -237,10 +237,10 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
     # Let me try to delete it also on Windows.
     if os.name == "nt":
         # Now that the file is closed, I should be able to remove it
-        os.remove(fname)
+        os.remove(fpath)
 
     # The file should not be there on any platform, now
-    assert not os.path.isfile(fname)
+    assert not fpath.is_file()
 
 
 def test_rename_when_existing(temp_dir):
@@ -249,8 +249,8 @@ def test_rename_when_existing(temp_dir):
     On POSIX: I can delete silently rename even if open.
     On Windows: I cannot rename a file to a location where a file already exists.
     """
-    fname = os.path.join(temp_dir, "test_file")
-    fname_replacement = os.path.join(temp_dir, "test_file_repl")
+    fpath = temp_dir / "test_file"
+    fpath_replacement = temp_dir / "test_file_repl"
 
     content = b"rfr23ewv3wg4w"
     first_part_len = 4
@@ -258,26 +258,26 @@ def test_rename_when_existing(temp_dir):
     new_content = b"NEWFILECONTENT"
 
     # Write something to the file
-    with open(fname, "wb") as fhandle:
+    with open(fpath, "wb") as fhandle:
         fhandle.write(content)
 
     # Write something to the file
-    with open(fname_replacement, "wb") as fhandle:
+    with open(fpath_replacement, "wb") as fhandle:
         fhandle.write(new_content)
 
     # Now open again the file
-    with open(fname, "rb") as fhandle:
+    with open(fpath, "rb") as fhandle:
         read_content_pre = fhandle.read(first_part_len)
 
         # I (try to) rename the file where the dest is the file that is open
         try:
-            os.rename(fname_replacement, fname)
+            os.rename(fpath_replacement, fpath)
         except FileExistsError:
             # This should happen only on Windows
             assert os.name == "nt", "I should get a FileExistsError only on Windows!"
 
             # The source should still be there
-            assert os.path.exists(fname_replacement)
+            assert fpath_replacement.exists()
             # I continue
         else:
             assert (
@@ -285,7 +285,7 @@ def test_rename_when_existing(temp_dir):
             ), "I should be able to rername a file to an open destination on POSIX!"
 
             # The source should still not be there anymore
-            assert not os.path.exists(fname_replacement)
+            assert not fpath_replacement.exists()
 
         # Read the rest. On Windows, it should still be the original,
         # unreplaced file. On POSIX, it should be replaced, but I should
@@ -294,7 +294,7 @@ def test_rename_when_existing(temp_dir):
         assert read_content == content
 
     # I reopen the file
-    with open(fname, "rb") as fhandle:
+    with open(fpath, "rb") as fhandle:
         read_content = fhandle.read()
         if os.name == "nt":
             # On Windows I should still get the old content
@@ -306,14 +306,14 @@ def test_rename_when_existing(temp_dir):
     # I remove and replace the file on Windows to check that
     # I can indeed replace it
     if os.name == "nt":
-        os.remove(fname)
-        os.rename(fname_replacement, fname)
+        os.remove(fpath)
+        os.rename(fpath_replacement, fpath)
 
     # Old file should not be there on any platform
-    assert not os.path.exists(fname_replacement)
+    assert not fpath_replacement.exists()
 
     # Now I should have the new file on any platform
-    with open(fname, "rb") as fhandle:
+    with open(fpath, "rb") as fhandle:
         read_content = fhandle.read()
         assert read_content == new_content
 
@@ -325,26 +325,26 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
 
     This means someone else cannot even open the file in read mode.
     """
-    fname = os.path.join(temp_dir, "test_file")
+    fpath = temp_dir / "test_file"
     content = b"sfsfdkl;2fd"
 
     # Write something to the file
-    with open(fname, "wb") as fhandle:
+    with open(fpath, "wb") as fhandle:
         fhandle.write(content)
 
     # Now open the file with exclusive locking
     # we need to use os.open
-    fd = os.open(fname, os.O_RDONLY)
+    fd = os.open(fpath, os.O_RDONLY)
     lock_file_on_windows(fd)
 
     # I (try to) read the file in a different subprocess
     try:
-        # I assume here that the fname does not contain double quotes
+        # I assume here that the fpath does not contain double quotes
         output = subprocess.check_output(
             [
                 sys.executable,
                 "-c",
-                f'f=open(r"{os.path.realpath(fname)}", "rb"); print(f.read()); f.close()',
+                f'f=open(r"{fpath.resolve()}", "rb"); print(f.read()); f.close()',
             ],
             stderr=subprocess.STDOUT,
         )
