@@ -50,7 +50,7 @@ from .utils import (
     compute_hash_and_size,
     detect_where_sorted,
     get_compressobj_instance,
-    get_hash,
+    get_hash_cls,
     get_stream_decompresser,
     is_known_hash,
     merge_sorted,
@@ -273,7 +273,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return True if the container is already initialised."""
         # If the config file does not exist, the container is not initialised
         try:
-            with open(self._get_config_file()) as fhandle:
+            with open(self._get_config_file(), encoding="utf8") as fhandle:
                 json.load(fhandle)
         except (ValueError, OSError):
             return False
@@ -362,7 +362,7 @@ class Container:  # pylint: disable=too-many-public-methods
         get_stream_decompresser(compression_algorithm)
 
         # Create config file
-        with open(self._get_config_file(), "w") as fhandle:
+        with open(self._get_config_file(), "w", encoding="utf8") as fhandle:
             json.dump(
                 {
                     "container_version": 1,  # For future compatibility, this is the version of the format
@@ -392,7 +392,7 @@ class Container:  # pylint: disable=too-many-public-methods
                 raise NotInitialised(
                     "The container is not initialised yet - use .init_container() first"
                 )
-            with open(self._get_config_file()) as fhandle:
+            with open(self._get_config_file(), encoding="utf8") as fhandle:
                 self._config = json.load(fhandle)
         return self._config
 
@@ -1306,7 +1306,7 @@ class Container:  # pylint: disable=too-many-public-methods
         assert "a" in pack_handle.mode
 
         if hash_type:
-            hasher = get_hash(hash_type=hash_type)()
+            hasher = get_hash_cls(hash_type=hash_type)()
 
         if compress:
             compressobj = self._get_compressobj_instance()
@@ -1342,7 +1342,10 @@ class Container:  # pylint: disable=too-many-public-methods
     ) -> None:
         """Pack all loose objects.
 
-        This is a maintenance operation, needs to be done only by one process.
+        This is an operation that can be run at any time even when the container is being read
+        and written (ony to loose files, though), **BUT it needs to be done only by one
+        process at any given time**.
+
         :param compress: either a boolean or a `CompressMode` objects.
            If True (or `CompressMode.YES`), compress objects before storing them.
            If False (or `CompressMode.NO`), do not compress objects (the default).
@@ -1972,9 +1975,9 @@ class Container:  # pylint: disable=too-many-public-methods
     def clean_storage(  # pylint: disable=too-many-branches,too-many-locals
         self, vacuum: bool = False
     ) -> None:
-        """Perform some maintenance clean-up of the container.
+        """Perform some clean-up of the container.
 
-        .. note:: this is a maintenance operation, must be performed when nobody is using the container!
+        .. note:: this is an operation that should be run only by one process at a given time! Don't call it twice.
 
         In particular:
         - if `vacuum` is True, it first VACUUMs the DB, reclaiming unused space and
@@ -2545,7 +2548,8 @@ class Container:  # pylint: disable=too-many-public-methods
            - The delete might fail because the loose object is open or reading the object might fail with
              a PermissionError because the object is being deleted (on Windows)
            - On MacOS, there is an unexpected race condition for which when reading the object during concurrent delete,
-             one gets an empty handle instead of either FileNotFoundError or the actual content
+             one gets an empty handle instead of either FileNotFoundError or the actual content (even if this seems
+             not to be the case anymore with recent, post-2021 Apple filesystems)
            - Routines might get the list of files before performing operations, and the objects might disappear in the
              meantime
            - Write access to packs is not possible as the DB will be locked (e.g. writing directly to packs, or

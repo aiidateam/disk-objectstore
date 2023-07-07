@@ -136,7 +136,7 @@ print(total, cnt, time.time() - t)
 def _validate_hashkeys_pack(self, pack_id, callback=None):
 
     _CHUNKSIZE = 524288
-    hash_class = get_hash(self.hash_type)
+    hash_class = get_hash_cls(self.hash_type)
 
     total = self._get_cached_session().query(Obj).filter(Obj.pack_id==pack_id).count()
     if callback:
