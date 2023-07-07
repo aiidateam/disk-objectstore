@@ -1,4 +1,5 @@
 """A small CLI tool for managing stores."""
+import dataclasses
 import json
 import os
 import sys
@@ -72,8 +73,8 @@ def status(dostore: ContainerContext):
         data: dict = {"path": str(container.get_folder())}
         data["id"] = container.container_id
         data["compression"] = container.compression_algorithm
-        data["count"] = container.count_objects()
-        data["size"] = container.get_total_size()
+        data["count"] = dataclasses.asdict(container.count_objects())
+        data["size"] = dataclasses.asdict(container.get_total_size())
         click.echo(json.dumps(data, indent=2))
 
 
@@ -127,7 +128,7 @@ def validate(dostore: ContainerContext, verbose: bool):
         )
 
     with dostore.container as container:
-        results = container.validate(callback=callback)
+        results = dataclasses.asdict(container.validate(callback=callback))
 
     errors_found = False
     for key, value in results.items():

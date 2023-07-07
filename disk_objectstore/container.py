@@ -2,6 +2,7 @@
 The main implementation of the ``Container`` class of the object store.
 """
 # pylint: disable=too-many-lines
+import dataclasses
 import io
 import json
 import os
@@ -33,6 +34,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import delete, select, text, update
 
 from .database import Obj, get_session
+from .dataclasses import ObjectCount, ObjectMeta, TotalSize, ValidationIssues
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
@@ -478,7 +480,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @contextmanager
     def get_object_stream_and_meta(
         self, hashkey: str
-    ) -> Iterator[Tuple[StreamReadBytesType, Dict[str, Any]],]:
+    ) -> Iterator[Tuple[StreamReadBytesType, ObjectMeta],]:
         """Return a context manager yielding a stream to get the content of an object, and a metadata dictionary.
 
         To be used as a context manager::
@@ -490,8 +492,7 @@ class Container:  # pylint: disable=too-many-public-methods
         The returned file-handle object supports *at least* the read() method that
         accepts an optional parameter to read the file in chunks, and might
         not be seekable.
-        The schema of the returned metadata `meta` dict is documented in the docstring
-        of `get_objects_stream_and_meta`).
+        The returned metadata is an ObjectMeta dataclass.
 
         :param hashkey: the hashkey of the object to stream.
         """
@@ -521,7 +522,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
-    ) -> Iterator[Tuple[str, Dict[str, Any]]]:
+    ) -> Iterator[Tuple[str, ObjectMeta]]:
         ...
 
     @overload
@@ -530,7 +531,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
-    ) -> Iterator[Tuple[str, Optional[StreamSeekBytesType], Dict[str, Any]]]:
+    ) -> Iterator[Tuple[str, Optional[StreamSeekBytesType], ObjectMeta]]:
         ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
@@ -540,8 +541,8 @@ class Container:  # pylint: disable=too-many-public-methods
         with_streams: bool,
     ) -> Iterator[
         Union[
-            Tuple[str, Dict[str, Any]],
-            Tuple[str, Optional[StreamSeekBytesType], Dict[str, Any]],
+            Tuple[str, ObjectMeta],
+            Tuple[str, Optional[StreamSeekBytesType], ObjectMeta],
         ]
     ]:
         """Return a generator yielding triplets of (hashkey, open stream, size).
@@ -656,7 +657,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             obj_reader = self._get_stream_decompresser()(
                                 obj_reader, lazy_uncompressed_stream=lazy_loose_stream
                             )
-                        yield metadata.hashkey, obj_reader, meta
+                        yield metadata.hashkey, obj_reader, ObjectMeta(**meta)
                         # Here I check if the LazyLooseStream that I passed has
                         # been openeed - if so, I close it so I don't leave
                         # open file streams around
@@ -666,7 +667,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         ):
                             lazy_loose_stream.close_stream()
                     else:
-                        yield metadata.hashkey, meta
+                        yield metadata.hashkey, ObjectMeta(**meta)
             finally:
                 if last_open_file is not None:
                     if not last_open_file.closed:
@@ -695,7 +696,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         "pack_length": None,
                     }
 
-                    yield loose_hashkey, last_open_file, meta
+                    yield loose_hashkey, last_open_file, ObjectMeta(**meta)
                 else:
                     # This will also raise a FileNotFoundError if the file does not exist
                     size = obj_path.stat().st_size
@@ -708,7 +709,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         "pack_length": None,
                     }
 
-                    yield loose_hashkey, meta
+                    yield loose_hashkey, ObjectMeta(**meta)
             except FileNotFoundError:
                 loose_not_found.add(loose_hashkey)
                 continue
@@ -816,7 +817,7 @@ class Container:  # pylint: disable=too-many-public-methods
                                     obj_reader,
                                     lazy_uncompressed_stream=lazy_loose_stream,
                                 )
-                            yield metadata.hashkey, obj_reader, meta
+                            yield metadata.hashkey, obj_reader, ObjectMeta(**meta)
                             # Here I check if the LazyLooseStream that I passed has
                             # been openeed - if so, I close it so I don't leave
                             # open file streams around
@@ -826,7 +827,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             ):
                                 lazy_loose_stream.close_stream()
                         else:
-                            yield metadata.hashkey, meta
+                            yield metadata.hashkey, ObjectMeta(**meta)
                 finally:
                     if last_open_file is not None:
                         if not last_open_file.closed:
@@ -844,14 +845,14 @@ class Container:  # pylint: disable=too-many-public-methods
                         "pack_length": None,
                     }
                     if with_streams:
-                        yield missing_hashkey, None, meta
+                        yield missing_hashkey, None, ObjectMeta(**meta)
                     else:
-                        yield missing_hashkey, meta
+                        yield missing_hashkey, ObjectMeta(**meta)
 
     @contextmanager
     def get_objects_stream_and_meta(
         self, hashkeys: Sequence[str], skip_if_missing: bool = True
-    ) -> Iterator[Iterator[Tuple[str, Optional[StreamSeekBytesType], Dict[str, Any]]]]:
+    ) -> Iterator[Iterator[Tuple[str, Optional[StreamSeekBytesType], ObjectMeta]]]:
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
         :note: the hash keys yielded are often in a *different* order than the original
@@ -870,18 +871,7 @@ class Container:  # pylint: disable=too-many-public-methods
                         # len(stream.read() will be equal to size
                         retrieved[obj_hashkey] = stream.read()
 
-        `meta` is a dictionary containing a number of keys. These include:
-
-        - `type`: always present. It can be one of the following strings: `loose`, `packed`, `missing`, where
-          `missing` is returned for missing objects if `skip_if_missing` is False.
-        - `size`: the size of the object in bytes (i.e., `len(stream.read())`). Always present, set to None if
-          `type` is `missing`.
-        - `pack_id`: the ID of the pack in which this object is stored. Set to `None` if `type` is not `packed`.
-        - `pack_compressed`: a boolean indicating if the object has been stored as compressed on disk or not
-        - `pack_offset`: the offset in the pack file. Set to `None` if `type` is not `packed`.
-        - `pack_length`: the size *on disk* of the object within the pack, in bytes.
-           It is equal to `size` if `pack_compressed` is False, otherwise it can be different (in general smaller,
-           but for small or uncompressible objects, even larger). Set to `None` if `type` is not `packed`.
+        The returned metadata is an ObjectMeta dataclass.
 
         :param hashkeys: a list of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
@@ -904,7 +894,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def get_objects_meta(
         self, hashkeys: Sequence[str], skip_if_missing: bool = True
-    ) -> Iterator[Tuple[str, Dict[str, Any]]]:
+    ) -> Iterator[Tuple[str, ObjectMeta]]:
         """A generator yielding pairs of (hashkey, metadata).
 
         :note: the hash keys yielded are often in a *different* order than the original
@@ -923,8 +913,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         and then you can access the meta of an object via ``metas[hashkey]``.
 
-        ``meta`` is a dictionary containing a number of keys, for the documentation check the
-        ``get_objects_stream_and_meta`` documentation.
+        The returned metadata is an ObjectMeta dataclass.
 
         :param hashkeys: a list of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
@@ -937,7 +926,7 @@ class Container:  # pylint: disable=too-many-public-methods
             hashkeys=hashkeys, skip_if_missing=skip_if_missing, with_streams=False
         )
 
-    def get_object_meta(self, hashkey: str) -> Dict[str, Any]:
+    def get_object_meta(self, hashkey: str) -> ObjectMeta:
         """Return the metadata dictionary for the given hash key.
 
         To be used as follows:
@@ -945,8 +934,7 @@ class Container:  # pylint: disable=too-many-public-methods
           meta = container.get_object_meta(hashkey)
           print(meta['size'])
 
-        The schema of the returned metadata `meta` dict is documented in the docstring
-        of `get_objects_stream_and_meta`).
+        The returned metadata is an ObjectMeta dataclass.
 
         :param hashkey: the hashkey of the object to stream.
         """
@@ -1072,21 +1060,20 @@ class Container:  # pylint: disable=too-many-public-methods
         assert hashkey is not None
         return hashkey
 
-    def count_objects(self) -> Dict[str, int]:
-        """Return a dictionary with the count of objects, keys are 'loose' and 'packed'.
+    def count_objects(self) -> ObjectCount:
+        """Return an ObjectCount object with the count of objects.
 
-        Also return a number of packs under 'pack_files'."""
-        retval = {}
+        In particular, it returns the number of loose objects,
+        of packed objects, and the number of pack files."""
 
         number_packed = self._get_cached_session().scalar(
             select(func.count()).select_from(Obj)
         )
-        retval["packed"] = number_packed
-
-        retval["loose"] = sum(1 for _ in self._list_loose())
-        retval["pack_files"] = sum(1 for _ in self._list_packs())
-
-        return retval
+        return ObjectCount(
+            packed=number_packed,
+            loose=sum(1 for _ in self._list_loose()),
+            pack_files=sum(1 for _ in self._list_packs()),
+        )
 
     @classmethod
     def _is_valid_pack_id(cls, pack_id: str, allow_repack_pack: bool = False) -> bool:
@@ -1125,15 +1112,10 @@ class Container:  # pylint: disable=too-many-public-methods
             return False
         return True
 
-    def get_total_size(self) -> Dict[str, int]:
+    def get_total_size(self) -> TotalSize:
         """Return a dictionary with the total size of objects in the container.
 
-        - total_size_packed: size of the objects (before compressing) in the packs.
-        - total_size_packed_on_disk: size actually occupied on disk by the objects (including optional compression).
-        - total_size_packfiles_on_disk: size of the packs on disk (can be larger if objects are still
-          in the packs but are not referenced anymore).
-        - total_size_packindexes_on_disk: size of the pack indexes on disk.
-        - total_size_loose: size of the loose objects in the packs (always uncompressed).
+        The information returned is a TotalSize dataclass.
         """
         retval = {}
 
@@ -1164,7 +1146,7 @@ class Container:  # pylint: disable=too-many-public-methods
             total_size_loose += loose_path.stat().st_size
         retval["total_size_loose"] = total_size_loose
 
-        return retval
+        return TotalSize(**retval)
 
     @contextmanager
     def lock_pack(
@@ -2206,8 +2188,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
         with source_container.get_objects_stream_and_meta(hashkeys) as triplets:
             for old_obj_hashkey, stream, meta in triplets:
+                # If we are here, these are not None - I check, this is also
+                # useful to help mypy check the types
                 assert stream is not None
-                if meta["size"] > target_memory_bytes:
+                assert meta.size is not None
+                if meta.size > target_memory_bytes:
                     # If the object itself is too big, just write it directly
                     # via streams, bypassing completely the cache. I don't touch the cache in this case,
                     # maybe it's still almost empty.
@@ -2226,7 +2211,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             do_commit=False,  # I will do a final commit
                         )
                     )
-                elif cache_size + meta["size"] > target_memory_bytes:
+                elif cache_size + meta.size > target_memory_bytes:
                     # I were to read the content, I would be filling too much memory - I flush the cache first,
                     # and transfer the data, before acting on this object.
 
@@ -2260,14 +2245,14 @@ class Container:  # pylint: disable=too-many-public-methods
                     # otherwise I would have processed it directly, bypassing the cache).
                     content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
-                    cache_size += meta["size"]
+                    cache_size += meta.size
                 else:
                     # I can add this object to the memory cache, it is not too big.
                     # I store it as a BytesIO so it still provides the stream methods like `.read`.
                     # Key old hash key (in this repo); value: the stream
                     content_cache[old_obj_hashkey] = stream.read()
                     # I update the cache size
-                    cache_size += meta["size"]
+                    cache_size += meta.size
 
                 if callback:
                     since_last_update += 1
@@ -2363,6 +2348,8 @@ class Container:  # pylint: disable=too-many-public-methods
         - ``invalid_hashes_packed``: the (re)computed hash does not match the hash key
         - ``invalid_sizes_packed``: the (re)computed size does not match the object size (this can happen for
           compressed objects)
+        - ``overlapping_packed``: packed object have some
+          overlap
 
         Note that the same hash key can appear in multiple lists.
 
@@ -2370,6 +2357,13 @@ class Container:  # pylint: disable=too-many-public-methods
 
           retdict = _validate_hashkeys_pack(...)
           has_error = any(retdict.values())
+
+        Note however that, as an user, you should *not* do this.
+        This is an internal function that returns
+        a dictionary. But when called internally from `validate()`, then
+        `validate()` will convert the results (enriched with the results)
+        from loose objects into a `ValidationIssues` dataclass.
+        In that case, you can just call the `is_valid()` method of the `ValidationIssues` dataclass.
 
         :param pack_id: the pack ID to check
         :param callback: a callback to be called at every iteration of an object. This is useful to show e.g. a
@@ -2484,23 +2478,20 @@ class Container:  # pylint: disable=too-many-public-methods
             "overlapping_packed": overlapping,
         }
 
-    def validate(
-        self, callback: Optional[Callable] = None
-    ) -> Dict[str, Union[List[Union[str, Any]], List[Any], List[str]]]:
+    def validate(self, callback: Optional[Callable] = None) -> ValidationIssues:
         """Perform a number of validations on the container content, to make sure it is not corrupt.
 
         The callback can be used to show a progress bar (see e.g. its use in the `validate` command of
         the `dostore` command-line interface).
 
-        :return: It always returns a dictionary of lists, where the key is the type of invalid behavior, and
-            the value is a list of hashkeys of problematic objects. Therefore, a "success" result is
-            represented by a dictionary where all values are empty lists. You can check if the container is
-            valid by passing the results to a one-liner:
-
-                errors = container.validate()
-                assert not any(errors.values()), "There are errors in the container!"
+        Return a `ValidationIssues` dataclass.
+        You can call the `is_valid()` method of the returned `ValidationIssues`
+        dataclass to check if there are errors, or check all fields if you
+        prefer and see if all fields are empty lists (which means no error).
         """
-        all_errors = defaultdict(list)
+        all_errors: Dict[str, List[str]] = {
+            field.name: [] for field in dataclasses.fields(ValidationIssues)
+        }
 
         all_loose = set(self._list_loose())
 
@@ -2534,7 +2525,7 @@ class Container:  # pylint: disable=too-many-public-methods
             for error_type, problematic_objects in pack_errors.items():
                 all_errors[error_type] += problematic_objects
 
-        return dict(all_errors)
+        return ValidationIssues(**dict(all_errors))
 
     def delete_objects(self, hashkeys: List[str]) -> List[Union[str, Any]]:
         """Delete the selected objects.

@@ -5,6 +5,7 @@ This checks the performance (can be run with profiling as well) and can be used 
 that in streaming mode, even when dealing with very large data, the memory usage is always
 limited."""
 # pylint: disable=too-many-arguments
+import dataclasses
 import time
 
 import click
@@ -56,7 +57,7 @@ def main_run(container, size_gb, compress_packs):
     # print container size info
     size_info = container.get_total_size()
     print("Object store size info:")
-    for key in sorted(size_info.keys()):
+    for key in sorted(dataclasses.asdict(size_info).keys()):
         print(f"- {key:30s}: {size_info[key]}")
 
     # Retrieve the object (if it's too small (a few KB) it's slow)
