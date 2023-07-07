@@ -1,5 +1,6 @@
 """Test of the object-store container module."""
 # pylint: disable=too-many-lines,protected-access
+import dataclasses
 import functools
 import hashlib
 import io
@@ -16,6 +17,7 @@ import pytest
 
 import disk_objectstore.exceptions as exc
 from disk_objectstore import CompressMode, Container, ObjectType, database, utils
+from disk_objectstore.dataclasses import ObjectMeta
 
 COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
 
@@ -1377,39 +1379,39 @@ def test_stream_meta(  # pylint: disable=too-many-locals
     expected_skip_missing_true = {
         hashkey_packed: {
             "content": content_packed,
-            "meta": {
-                "type": ObjectType.PACKED,
-                "size": len(content_packed),
-                "pack_id": 0,  # First pack, it's a new container
-                "pack_compressed": compress,
-                "pack_offset": 0,  # Only one object in the pack, must start from zero
-                "pack_length": object_pack_length,
-            },
+            "meta": ObjectMeta(
+                type=ObjectType.PACKED,
+                size=len(content_packed),
+                pack_id=0,  # First pack, it's a new container
+                pack_compressed=compress,
+                pack_offset=0,  # Only one object in the pack, must start from zero
+                pack_length=object_pack_length,
+            ),
         },
         hashkey_loose: {
             "content": content_loose,
-            "meta": {
-                "type": ObjectType.LOOSE,
-                "size": len(content_loose),
-                "pack_id": None,
-                "pack_compressed": None,
-                "pack_offset": None,
-                "pack_length": None,
-            },
+            "meta": ObjectMeta(
+                type=ObjectType.LOOSE,
+                size=len(content_loose),
+                pack_id=None,
+                pack_compressed=None,
+                pack_offset=None,
+                pack_length=None,
+            ),
         },
     }
 
     expected_skip_missing_false = expected_skip_missing_true.copy()
     expected_skip_missing_false[hashkey_missing] = {
         "content": None,
-        "meta": {
-            "type": ObjectType.MISSING,
-            "size": None,
-            "pack_id": None,
-            "pack_compressed": None,
-            "pack_offset": None,
-            "pack_length": None,
-        },
+        "meta": ObjectMeta(
+            type=ObjectType.MISSING,
+            size=None,
+            pack_id=None,
+            pack_compressed=None,
+            pack_offset=None,
+            pack_length=None,
+        ),
     }
 
     check_dict = {}
@@ -1421,7 +1423,7 @@ def test_stream_meta(  # pylint: disable=too-many-locals
         for hashkey, stream, meta in triplets:
             retdict = {"meta": meta}
             # In any case I should return all these meta, and no more
-            assert set(meta.keys()) == set(known_meta_keys)
+            assert set(dataclasses.asdict(meta).keys()) == set(known_meta_keys)
             if stream is None:
                 retdict["content"] = None
             else:
@@ -1493,25 +1495,25 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
     expected_skip_missing_true = {
         hashkey_packed: {
             "content": content_packed,
-            "meta": {
-                "type": ObjectType.PACKED,
-                "size": len(content_packed),
-                "pack_id": 0,  # First pack, it's a new container
-                "pack_compressed": compress,
-                "pack_offset": 0,  # Only one object in the pack, must start from zero
-                "pack_length": object_pack_length,
-            },
+            "meta": ObjectMeta(
+                type=ObjectType.PACKED,
+                size=len(content_packed),
+                pack_id=0,  # First pack, it's a new container
+                pack_compressed=compress,
+                pack_offset=0,  # Only one object in the pack, must start from zero
+                pack_length=object_pack_length,
+            ),
         },
         hashkey_loose: {
             "content": content_loose,
-            "meta": {
-                "type": ObjectType.LOOSE,
-                "size": len(content_loose),
-                "pack_id": None,
-                "pack_compressed": None,
-                "pack_offset": None,
-                "pack_length": None,
-            },
+            "meta": ObjectMeta(
+                type=ObjectType.LOOSE,
+                size=len(content_loose),
+                pack_id=None,
+                pack_compressed=None,
+                pack_offset=None,
+                pack_length=None,
+            ),
         },
     }
 
@@ -1521,7 +1523,7 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
         with temp_container.get_object_stream_and_meta(hashkey) as (stream, meta):
             retdict = {"meta": meta}
             # In any case I should return all these meta, and no more
-            assert set(meta.keys()) == set(known_meta_keys)
+            assert set(dataclasses.asdict(meta).keys()) == set(known_meta_keys)
             if stream is None:
                 retdict["content"] = None
             else:
@@ -2209,8 +2211,8 @@ def test_validate(temp_container, compress):
     obj4 = b"jkljkljlk"  # Will be stored directly packed
 
     # An empy container should be valid
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     temp_container.add_object(obj1)
     temp_container.pack_all_loose(compress=compress)
@@ -2218,19 +2220,19 @@ def test_validate(temp_container, compress):
     temp_container.add_objects_to_pack([obj3], compress=compress)
 
     # Should not raise
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Add the same object
     temp_container.add_objects_to_pack([obj3])
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Add a fourth object directly to packs
     temp_container.add_objects_to_pack([obj4], compress=compress)
     temp_container.validate()
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
 
 def test_validate_corrupt_loose(temp_container):
@@ -2241,14 +2243,16 @@ def test_validate_corrupt_loose(temp_container):
 
     # No errors yet
     temp_container.validate()
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Corrupt the object
     with open(temp_container._get_loose_path_from_hashkey(hashkey1), "wb") as fhandle:
         fhandle.write(b"CORRUPT")
 
-    errors = temp_container.validate()
+    # I don't use the dataclass .is_valid() method of ValidationIssues because I want to
+    # pop the error and check that there are no other issues but only the one I'm aware of
+    errors = dataclasses.asdict(temp_container.validate())
     problems = errors.pop("invalid_hashes_loose")
 
     assert set(problems) == {hashkey1}
@@ -2267,8 +2271,8 @@ def test_validate_corrupt_packed(temp_container):
 
     # No errors yet
     temp_container.validate()
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Corrupt the object
     with open(
@@ -2276,7 +2280,9 @@ def test_validate_corrupt_packed(temp_container):
     ) as fhandle:
         fhandle.write(b"CORRU890890890809PT")
 
-    errors = temp_container.validate()
+    # I don't use the dataclass .is_valid() method of ValidationIssues because I want to
+    # pop the error and check that there are no other issues but only the one I'm aware of
+    errors = dataclasses.asdict(temp_container.validate())
     problems = errors.pop("invalid_hashes_packed")
 
     assert set(problems) == {hashkey1}
@@ -2304,15 +2310,15 @@ def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid
 
     # No errors yet
     temp_container.validate()
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Change the offset of the second object so that it's overlapping
     temp_container._get_cached_session().query(database.Obj).filter(
         database.Obj.hashkey == hashkey_second
     ).update({database.Obj.offset: database.Obj.offset - 1})
 
-    errors = temp_container.validate()
+    errors = dataclasses.asdict(temp_container.validate())
     problems = errors.pop("overlapping_packed")
 
     assert set(problems) == {hashkey_second}
@@ -2330,8 +2336,8 @@ def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invali
 
     # No errors yet
     temp_container.validate()
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Corrupt the object
     with open(
@@ -2340,7 +2346,9 @@ def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invali
         # Short corrupted string so also the size is wrong
         fhandle.write(b"COR")
 
-    errors = temp_container.validate()
+    # I don't use the dataclass .is_valid() method of ValidationIssues because I want to
+    # pop the error and check that there are no other issues but only the one I'm aware of
+    errors = dataclasses.asdict(temp_container.validate())
     problems = errors.pop("invalid_hashes_packed")
     assert set(problems) == {hashkey1}
 
@@ -2555,7 +2563,7 @@ def test_delete(
     obj2 = b"jklf2wv"  # Will be loose
     obj3 = b"9z0vx0"  # Will be stored directly packed
 
-    unknown_hashkey = utils.get_hash(temp_container.hash_type)(
+    unknown_hashkey = utils.get_hash_cls(temp_container.hash_type)(
         b"NOT_EXISTING_OBJECT_CONTENT"
     ).hexdigest()
 
@@ -3055,9 +3063,9 @@ def test_packs_no_holes(
     content2 = b"wefvmafsf"
     content3 = b"224f"
 
-    hashkey1 = utils.get_hash(temp_container.hash_type)(content1).hexdigest()
-    hashkey2 = utils.get_hash(temp_container.hash_type)(content2).hexdigest()
-    hashkey3 = utils.get_hash(temp_container.hash_type)(content3).hexdigest()
+    hashkey1 = utils.get_hash_cls(temp_container.hash_type)(content1).hexdigest()
+    hashkey2 = utils.get_hash_cls(temp_container.hash_type)(content2).hexdigest()
+    hashkey3 = utils.get_hash_cls(temp_container.hash_type)(content3).hexdigest()
 
     # Add twice each object, in some order, in the same call, with at least one at the very end (to check truncation)
     contents_to_add = [content1, content1, content2, content3, content2, content3]
@@ -3343,8 +3351,8 @@ def test_repack(temp_dir, compress_mode):
 
     # Check that the content is still correct
     # Should not raise
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # Important before exiting from the tests
     temp_container.close()
@@ -3387,8 +3395,8 @@ def test_repack_compress_modes(
     temp_container.repack(compress_mode=repack_compress_mode)
 
     # Let's just check that results are correct after repacking
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # We now check the expected compression mode
     if repack_compress_mode == CompressMode.NO:
@@ -3427,16 +3435,16 @@ def test_repack_compress_modes(
     # Try to repack to non-compressed, then to compressed, then again to this mode,
     # to see that it all works
     temp_container.repack(compress_mode=CompressMode.NO)
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     temp_container.repack(compress_mode=CompressMode.YES)
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     temp_container.repack(compress_mode=repack_compress_mode)
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
 
 @pytest.mark.parametrize("start_compressed", [True, False])
@@ -3455,8 +3463,8 @@ def test_repack_auto_many_sizes(temp_container: Container, start_compressed):
 
     # We now repack, and check if everything is correct
     temp_container.repack(compress_mode=CompressMode.AUTO)
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
 
 @pytest.mark.parametrize("compress_mode", [True, False] + list(CompressMode))
@@ -3477,8 +3485,8 @@ def test_pack_all_loose_compress_modes(temp_container: Container, compress_mode)
     temp_container.pack_all_loose(compress=compress_mode)
 
     # Let's just check that results are correct
-    errors = temp_container.validate()
-    assert not any(errors.values())
+    issues = temp_container.validate()
+    assert issues.is_valid()
 
     # We now check the expected compression mode
     if compress_mode == CompressMode.NO or compress_mode is False:

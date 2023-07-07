@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """A simple implementation with some testing to showcase the functionality and to run some benchmarks."""
+import dataclasses
 import os
 import random
 import time
@@ -150,7 +151,7 @@ def main(
         # Print container size info (before packing)
         size_info = container.get_total_size()
         print("Object store size info:")
-        for key in sorted(size_info.keys()):
+        for key in sorted(dataclasses.asdict(size_info).keys()):
             print(f"- {key:30s}: {size_info[key]}")
 
         # Pack all loose objects
@@ -176,7 +177,7 @@ def main(
     # print container size info
     size_info = container.get_total_size()
     print("Object store size info:")
-    for key in sorted(size_info.keys()):
+    for key in sorted(dataclasses.asdict(size_info).keys()):
         print(f"- {key:30s}: {size_info[key]}")
 
     # In all cases, retrieve all objects (in shuffled order)

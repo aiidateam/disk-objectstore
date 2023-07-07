@@ -5,6 +5,7 @@ import pytest
 from click.testing import CliRunner
 
 from disk_objectstore import cli
+from disk_objectstore.dataclasses import ObjectCount
 
 
 def test_main_command_missing_command(temp_dir):
@@ -85,20 +86,20 @@ def test_optimize(temp_container):
     """Test optimize command"""
     temp_container.init_container(clear=True)
     temp_container.add_object(b"test")
-    assert temp_container.count_objects() == {
-        "loose": 1,
-        "packed": 0,
-        "pack_files": 0,
-    }
+    assert temp_container.count_objects() == ObjectCount(
+        loose=1,
+        packed=0,
+        pack_files=0,
+    )
     temp_container.close()
     obj = cli.ContainerContext(temp_container.get_folder())
     result = CliRunner().invoke(cli.optimize, ["--non-interactive"], obj=obj)
     assert result.exit_code == 0, result.output
-    assert temp_container.count_objects() == {
-        "loose": 0,
-        "packed": 1,
-        "pack_files": 1,
-    }
+    assert temp_container.count_objects() == ObjectCount(
+        loose=0,
+        packed=1,
+        pack_files=1,
+    )
 
 
 def test_optimize_cancel(temp_container):
@@ -170,7 +171,7 @@ def test_validate_no_progressbar(temp_container, verbose, monkeypatch):
         name, globals, locals, fromlist, level  # pylint: disable=redefined-builtin
     ):
         if name == "tqdm":
-            raise ImportError("No module named 'tqm'")
+            raise ImportError("No module named 'tqdm'")
         return realimport(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", myimport)
