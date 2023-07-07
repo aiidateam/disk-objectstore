@@ -1577,6 +1577,10 @@ def should_compress(
         return source_compressed
     if compress_mode == CompressMode.AUTO:
         if source_compressed:
+            if source_size == 0:
+                # Zero-length: I don't compress, useless and it
+                # actually would occupy more space
+                return False
             # Only compress if it's worth it
             return source_length / source_size < compression_threshold
 
