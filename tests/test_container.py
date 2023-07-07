@@ -3349,16 +3349,22 @@ def test_repack(temp_dir, compress_mode):
 
 @pytest.mark.parametrize("repack_compress_mode", list(CompressMode))
 @pytest.mark.parametrize("compress_pack", [True, False])
+@pytest.mark.parametrize("small_size", [True, False])
 def test_repack_compress_modes(
-    temp_container: Container, compress_pack, repack_compress_mode
+    temp_container: Container, small_size, compress_pack, repack_compress_mode
 ):
     """Check that repack() uses the correct compression mode."""
 
     # Write 10*1_000_000 = 10 million bytes, larger than a chunk
     # this should be quite compressible even with the heuristics
-    content_compr = b"0123456789" * 1_000_000
+    content_compr = b"0123456789" * 100
+    if not small_size:
+        content_compr *= 10_000
     # This instead is 10 million random bytes, probably uncompressible
-    content_uncompr = os.urandom(10_000_000)
+    if small_size:
+        content_uncompr = os.urandom(10_000)
+    else:
+        content_uncompr = os.urandom(10_000_000)
 
     hashkey_compr = temp_container.add_object(content_compr)
     hashkey_uncompr = temp_container.add_object(content_uncompr)
@@ -3414,6 +3420,40 @@ def test_repack_compress_modes(
         raise AssertionError(
             f"Unknown {repack_compress_mode=}, most probably you added a new CompressMode and need to update the tests"
         )
+
+    # Try to repack to non-compressed, then to compressed, then again to this mode,
+    # to see that it all works
+    temp_container.repack(compress_mode=CompressMode.NO)
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    temp_container.repack(compress_mode=CompressMode.YES)
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+    temp_container.repack(compress_mode=repack_compress_mode)
+    errors = temp_container.validate()
+    assert not any(errors.values())
+
+
+@pytest.mark.parametrize("start_compressed", [True, False])
+def test_repack_auto_many_sizes(temp_container: Container, start_compressed):
+    """Check repack()+CompressMode.AUTO with various object sizes."""
+
+    objects = []
+    for length in range(0, 10_000):
+        # All possible small lengths up to 10_000
+        objects.append(b"a" * length)
+    # A few larger lengths - otherwise it takes ages to create all
+    # in memory and compress them!
+    for length in range(10_001, 10_000_000, 300_000):
+        objects.append(b"a" * length)
+    temp_container.add_objects_to_pack(objects, compress=start_compressed)
+
+    # We now repack, and check if everything is correct
+    temp_container.repack(compress_mode=CompressMode.AUTO)
+    errors = temp_container.validate()
+    assert not any(errors.values())
 
 
 @pytest.mark.parametrize("compress_mode", [True, False] + list(CompressMode))
