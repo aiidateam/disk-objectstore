@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1688742546775,
+  "lastUpdate": 1688765238861,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -8419,6 +8419,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.000014701262569005558",
             "extra": "mean: 330.10643794366814 nsec\nrounds: 197239"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ba93162cd49d9b1ca7149c502349bfb06833255",
+          "message": "Various improvements to docs and code (#151)\n\nFirst a number of sections have been added to the docs:\r\n- `clean_storage` is now mentioned in the basic usage\r\n- we also add basic examples of the new CompressMode.AUTO\r\n  functionality\r\n- Maintenance operations are documented and explained\r\n- We discuss the long-term support of data even without this\r\n  library (fixes #100)\r\n- Links to the original performance tests\r\n- Document the new compression modes\r\n- Explain that nowadays `clean_storage` is safe to use concurrently\r\n  on all platforms\r\n- Explain how to reclaim space with `repacking` of packs after deletion\r\n\r\nIn addition, some changes to the code have been performed:\r\n- `utf8` is explicitly specified for the config.json file\r\n- `get_hash` is renamed to `get_hash_cls` (and `get_hash` is\r\n  deprecated`)\r\n-\r\n\r\nSome of these changes address the remaining comments and\r\nthus fix #101, as well as the remaining comments and thus\r\nfix #3.\r\n\r\nExtending the documentation",
+          "timestamp": "2023-07-07T23:24:33+02:00",
+          "tree_id": "ec47eb950892c1e3c8cf09f3e28706830b901384",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/5ba93162cd49d9b1ca7149c502349bfb06833255"
+        },
+        "date": 1688765237966,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.8110554335924403,
+            "unit": "iter/sec",
+            "range": "stddev: 0.032829600988166445",
+            "extra": "mean: 552.1642140000006 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.2793717685529262,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0956481500358172",
+            "extra": "mean: 781.6336303333328 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.795818404630622,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010010493098587762",
+            "extra": "mean: 147.14931159999907 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.566151943190393,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0018315752013673364",
+            "extra": "mean: 68.65231146153843 msec\nrounds: 13"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.170829623849606,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003707588560062722",
+            "extra": "mean: 239.7604529999997 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2530924.846451138,
+            "unit": "iter/sec",
+            "range": "stddev: 4.978528814462394e-7",
+            "extra": "mean: 395.112482854716 nsec\nrounds: 175040"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4331351.3404671885,
+            "unit": "iter/sec",
+            "range": "stddev: 1.6830191149513739e-7",
+            "extra": "mean: 230.87482898399853 nsec\nrounds: 195122"
           }
         ]
       }
