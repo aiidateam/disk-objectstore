@@ -2,13 +2,14 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from disk_objectstore import Container
 
-THIS_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
-CONCURRENT_DIR = os.path.join(THIS_FILE_DIR, "concurrent_tests")
+THIS_FILE_DIR = Path(__file__).parent
+CONCURRENT_DIR = THIS_FILE_DIR / "concurrent_tests"
 
 NUM_WORKERS = 4
 
@@ -36,16 +37,16 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
     ``concurrency_repetition_index`` is an integer looking over the specified repetitions on the pytest command line.
     We don't use this variable, it's just used to repeat the run multiple times.
     """
-    packer_script = os.path.join(CONCURRENT_DIR, "periodic_packer.py")
-    worker_script = os.path.join(CONCURRENT_DIR, "periodic_worker.py")
+    packer_script = CONCURRENT_DIR / "periodic_packer.py"
+    worker_script = CONCURRENT_DIR / "periodic_worker.py"
 
     # Create folder with the container and initialise it
-    container_dir = os.path.join(temp_dir, "container")
+    container_dir = temp_dir / "container"
     Container(container_dir).init_container()
 
     # Create folder where each worker will write the MD5 of the objects it created,
     # so that others will read them.
-    shared_dir = os.path.join(temp_dir, "shared")
+    shared_dir = temp_dir / "shared"
     os.mkdir(shared_dir)
 
     if with_packing:

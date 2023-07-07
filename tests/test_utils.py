@@ -5,6 +5,7 @@ import hashlib
 import io
 import os
 import tempfile
+from pathlib import Path
 
 import psutil
 import pytest
@@ -15,8 +16,8 @@ from disk_objectstore import utils
 # I need these definitions later for the mocked function
 os._actual_replace_function = os.replace  # pylint: disable=protected-access
 os._actual_rename_function = os.rename  # pylint: disable=protected-access
-utils._actual_compute_hash_for_filename = (
-    utils._compute_hash_for_filename
+utils._actual_compute_hash_for_file = (
+    utils._compute_hash_for_file
 )  # pylint: disable=protected-access
 
 # This is used by the mockreplace function to store files that are
@@ -36,9 +37,9 @@ def test_lazy_opener_read():
     try:
         current_process = psutil.Process()
         start_open_files = len(current_process.open_files())
-        lazy = utils.LazyOpener(fhandle.name)
+        lazy = utils.LazyOpener(Path(fhandle.name))
 
-        assert lazy.path == fhandle.name
+        assert lazy.path == Path(fhandle.name)
         assert lazy.mode == "rb"
         with pytest.raises(ValueError):
             # This is not open yet
@@ -77,7 +78,7 @@ def test_lazy_opener_not_twice():
         fhandle.write(content)
 
     try:
-        lazy = utils.LazyOpener(fhandle.name)
+        lazy = utils.LazyOpener(Path(fhandle.name))
 
         # The first open should go through
         with lazy as fhandle:
@@ -102,9 +103,9 @@ def test_nullcontext():
 @pytest.mark.parametrize("loose_prefix_len", [0, 2, 3])
 def test_object_writer(temp_dir, loose_prefix_len):
     """Test the ObjectWriter, directly writing objects (loose, via a sandbox)."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
 
     hash_type = "sha256"
     expected_hash = "9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b"
@@ -151,20 +152,22 @@ def test_object_writer(temp_dir, loose_prefix_len):
     # that the prefix length is the expected one,
     # and that the content is correct
     if loose_prefix_len:
-        loose_filename = os.path.join(
-            loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:]
+        loose_filename = (
+            loose_folder
+            / obj_hashkey[:loose_prefix_len]
+            / obj_hashkey[loose_prefix_len:]
         )
     else:
-        loose_filename = os.path.join(loose_folder, obj_hashkey)
+        loose_filename = loose_folder / obj_hashkey
     with open(loose_filename, "rb") as fhandle:
         assert fhandle.read() == content
 
 
 def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid-name
     """Test that the _store_duplicate_copy function works."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
@@ -183,7 +186,7 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
         hash_type=hash_type,
     )
 
-    temp_path = os.path.join(sandbox_folder, "tmp-file-name")
+    temp_path = sandbox_folder / "tmp-file-name"
     with open(temp_path, "wb") as fhandle:
         fhandle.write(content)
     hashkey = getattr(hashlib, hash_type)(content).hexdigest()
@@ -203,9 +206,9 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
 
 def test_object_writer_with_exc(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
@@ -245,9 +248,9 @@ def test_object_writer_with_exc(temp_dir):
 
 def test_object_writer_manual_close(temp_dir):
     """Test that the ObjectWriter does not allow manually closing the stream."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
@@ -287,9 +290,9 @@ def test_object_writer_manual_close(temp_dir):
 
 def test_object_writer_not_twice(temp_dir):
     """Test that the ObjectWriter cannot be opened twice."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
@@ -318,8 +321,8 @@ def test_object_writer_not_twice(temp_dir):
         fhandle.write(content)
 
     obj_hashkey = object_writer.get_hashkey()
-    loose_filename = os.path.join(
-        loose_folder, obj_hashkey[:loose_prefix_len], obj_hashkey[loose_prefix_len:]
+    loose_filename = (
+        loose_folder / obj_hashkey[:loose_prefix_len] / obj_hashkey[loose_prefix_len:]
     )
     with open(loose_filename, "rb") as fhandle:
         # I have written the content twice
@@ -340,9 +343,9 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     """If I am adding a new loose object, and it exists already, and it's locked, I cannot check its content.
 
     Therefore, I should be creating a copy, unless I am trusting existing files."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     os.mkdir(sandbox_folder)
@@ -354,17 +357,15 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
-    os.mkdir(os.path.dirname(loose_file))
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
+    os.mkdir(loose_file.parent)
     with open(loose_file, "wb") as fhandle:
         fhandle.write(content)
 
     # Check the starting condition
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -393,7 +394,7 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
         assert duplicates_file.startswith(f"{hashkey}.")
-        with open(os.path.join(duplicates_folder, duplicates_file), "rb") as fhandle:
+        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
 
@@ -401,7 +402,7 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     # nothing in the sandbox, nothing new in the loose_folder
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
 
 @pytest.mark.skipif(os.name != "nt", reason="This test only makes sense on Windows")
@@ -425,9 +426,9 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         NOTE: This can only be done on Windows.
     """
     # Needed by the mocked function, but we need as well here to close the files before the test ends
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     os.mkdir(sandbox_folder)
@@ -441,11 +442,9 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
 
     corrupted_content = b"SOME_CORRUPTED_CONTENT"
 
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     # Just prepare the parent folder, but don't put any file
-    os.mkdir(os.path.dirname(loose_file))
+    os.mkdir(loose_file.parent)
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -468,7 +467,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         # Needed to store the files that should be closed outside this mocked function
         global LOCKED_FILES_FD  # pylint: disable=global-statement,global-variable-not-assigned
 
-        if os.path.realpath(dest) == os.path.realpath(mocked_dest):
+        if Path(dest).resolve() == Path(mocked_dest).resolve():
             # Write a file just before calling the rename function, in this case
             # The folder should have been already created
             with open(dest, "wb") as fhandle:
@@ -523,7 +522,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
         assert duplicates_file.startswith(f"{hashkey}.")
-        with open(os.path.join(duplicates_folder, duplicates_file), "rb") as fhandle:
+        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
 
@@ -548,9 +547,9 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     so I should get a duplicate *ONLY* if I don't trust existing objects AND I rewrite a corrupted file AND the file
     is kept open, so I cannot rewrite it.
     """
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     os.mkdir(sandbox_folder)
@@ -565,17 +564,15 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     # Some content that does not match the hash key
     corrupted_content = b"CORRUPTED CONTENT"
 
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
-    os.mkdir(os.path.dirname(loose_file))
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
+    os.mkdir(loose_file.parent)
     with open(loose_file, "wb") as fhandle:
         fhandle.write(corrupted_content)
 
     # Check the starting condition
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -593,7 +590,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
 
         If dest_is_open: call replace while the destinaton is open
         """
-        if os.path.realpath(dest) == os.path.realpath(mocked_dest):
+        if Path(dest).resolve() == Path(mocked_dest).resolve():
             # Write back the file, with possibly a different content
             with open(dest, "wb") as fhandle:
                 fhandle.write(new_bytes_content)
@@ -637,7 +634,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
         assert duplicates_file.startswith(f"{hashkey}.")
-        with open(os.path.join(duplicates_folder, duplicates_file), "rb") as fhandle:
+        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
     else:
@@ -653,7 +650,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     # nothing in the sandbox, nothing new in the loose_folder
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
     with open(loose_file, "rb") as fhandle:
@@ -689,9 +686,9 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     I check both the case in which the object existed, and the one in which it didn't (in which case, the
     mocking shouldn't do anything).
     """
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     trust_existing = False  # This branch is only called in this case
@@ -705,10 +702,8 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     hashkey = hasher.hexdigest()
 
     # I write already the loose destination
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
-    os.mkdir(os.path.dirname(loose_file))
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
+    os.mkdir(loose_file.parent)
 
     # Create the object, if `object_existed` is True (meaning that it existed before calling the ObjectWriter)
     if object_existed:
@@ -718,30 +713,28 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     # Check the starting condition
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == (1 if object_existed else 0)
+    assert len(os.listdir(loose_file.parent)) == (1 if object_existed else 0)
 
-    def mock_compute_hash(filename, hash_type, mocked_filename):
-        """Replace lowelevel_utils._compute_hash_for_filename by first deleting the destination file.
+    def mock_compute_hash(filepath, hash_type, mocked_filename):
+        """Replace lowelevel_utils._compute_hash_for_file by first deleting the destination file.
 
         .. note:: this is performed only for the mocked filename.
 
         This should return `None` but I prefer mocking in case the behavior is changed in the future.
         """
         # Delete the filename before calling through the actual function (if it exists)
-        if os.path.realpath(filename) == os.path.realpath(
-            mocked_filename
-        ) and os.path.exists(filename):
-            os.remove(filename)
+        if (filepath.resolve() == mocked_filename.resolve()) and filepath.exists():
+            os.remove(filepath)
 
         # Now, just pipe through
         # I renamed this at module load to avoid infinite recursion, see above
-        utils._actual_compute_hash_for_filename(  # pylint: disable=protected-access
-            filename, hash_type
+        utils._actual_compute_hash_for_file(  # pylint: disable=protected-access
+            filepath, hash_type
         )
 
     monkeypatch.setattr(
         utils,
-        "_compute_hash_for_filename",
+        "_compute_hash_for_file",
         functools.partial(mock_compute_hash, mocked_filename=loose_file),
     )
 
@@ -766,7 +759,7 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     # - a file if the file wasn't there from the beginning
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == (0 if object_existed else 1)
+    assert len(os.listdir(loose_file.parent)) == (0 if object_existed else 1)
 
 
 @pytest.mark.parametrize("trust_existing", [True, False])
@@ -774,9 +767,9 @@ def test_object_writer_existing_OK(
     temp_dir, trust_existing
 ):  # pylint: disable=invalid-name
     """Test that the ObjectWriter works if the loose object already exists (with the correct content)."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     os.mkdir(sandbox_folder)
@@ -789,17 +782,15 @@ def test_object_writer_existing_OK(
     hashkey = hasher.hexdigest()
 
     # Write already the content in place
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
-    os.mkdir(os.path.dirname(loose_file))
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
+    os.mkdir(loose_file.parent)
     with open(loose_file, "wb") as fhandle:
         fhandle.write(content)
 
     # Check the starting condition
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -818,7 +809,7 @@ def test_object_writer_existing_OK(
     # nothing in the sandbox, nothing new in the loose_folder
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
     with open(loose_file, "rb") as fhandle:
@@ -832,9 +823,9 @@ def test_object_writer_existing_corrupted(
     temp_dir, trust_existing
 ):  # pylint: disable=invalid-name
     """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     hash_type = "sha256"
     os.mkdir(sandbox_folder)
@@ -849,17 +840,15 @@ def test_object_writer_existing_corrupted(
     # Some content that does not match the hash key
     corrupted_content = b"CORRUPTED CONTENT"
 
-    loose_file = os.path.join(
-        loose_folder, hashkey[:loose_prefix_len], hashkey[loose_prefix_len:]
-    )
-    os.mkdir(os.path.dirname(loose_file))
+    loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
+    os.mkdir(loose_file.parent)
     with open(loose_file, "wb") as fhandle:
         fhandle.write(corrupted_content)
 
     # Check the starting condition
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -878,7 +867,7 @@ def test_object_writer_existing_corrupted(
     # nothing in the sandbox, nothing new in the loose_folder
     assert not os.listdir(sandbox_folder)
     assert len(os.listdir(loose_folder)) == 1
-    assert len(os.listdir(os.path.dirname(loose_file))) == 1
+    assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
     with open(loose_file, "rb") as fhandle:
@@ -894,9 +883,9 @@ def test_object_writer_existing_corrupted(
 
 def test_unknown_hash_type(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
-    sandbox_folder = os.path.join(temp_dir, "sandbox")
-    loose_folder = os.path.join(temp_dir, "loose")
-    duplicates_folder = os.path.join(temp_dir, "duplicates")
+    sandbox_folder = temp_dir / "sandbox"
+    loose_folder = temp_dir / "loose"
+    duplicates_folder = temp_dir / "duplicates"
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
@@ -1294,7 +1283,7 @@ def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
     content = b"some-content-to-hash"
     filename = "test_file"
 
-    with open(os.path.join(temp_dir, filename), "wb") as fhandle:
+    with open(temp_dir / filename, "wb") as fhandle:
         wrapped = utils.HashWriterWrapper(fhandle, hash_type=hash_type)
         wrapped.write(content)
         # Check that the flush command does not raise
@@ -1304,7 +1293,7 @@ def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
         # Check the mode
         assert wrapped.mode == "wb"
 
-    with open(os.path.join(temp_dir, filename), "rb") as fhandle:
+    with open(temp_dir / filename, "rb") as fhandle:
         assert fhandle.read() == content
 
 
@@ -1335,20 +1324,20 @@ def test_compute_hash_from_filename(temp_dir):
     content = b"2345j43"
     expected_hash = hashlib.sha256(content).hexdigest()
 
-    fname = os.path.join(temp_dir, "testfile")
+    fpath = temp_dir / "testfile"
 
-    with open(fname, "wb") as fhandle:
+    with open(fpath, "wb") as fhandle:
         fhandle.write(content)
 
     assert (
-        utils._compute_hash_for_filename(  # pylint: disable=protected-access
-            fname, "sha256"
+        utils._compute_hash_for_file(  # pylint: disable=protected-access
+            fpath, "sha256"
         )
         == expected_hash
     )
     assert (
-        utils._compute_hash_for_filename(  # pylint: disable=protected-access
-            os.path.join(temp_dir, "NOT_EXISTENT_FILE"), "sha256"
+        utils._compute_hash_for_file(  # pylint: disable=protected-access
+            temp_dir / "NOT_EXISTENT_FILE", "sha256"
         )
         is None
     )

@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -88,7 +89,7 @@ def temp_dir():
     """
     try:
         dirpath = tempfile.mkdtemp()
-        yield dirpath
+        yield Path(dirpath)
     finally:
         # after the test function has completed, remove the directory again
         shutil.rmtree(dirpath)

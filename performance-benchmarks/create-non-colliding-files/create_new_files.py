@@ -15,11 +15,13 @@ import time
 import tempfile
 import uuid
 
+from pathlib import Path
+
 N = 10000
 
 t = time.time()
 for _ in range(N):
-    open(os.path.join('a', uuid.uuid4().hex), 'wb').close()
+    open(Path('a') / uuid.uuid4().hex, 'wb').close()
 print('Creating {} files with UUID: {:.3} s'.format(N, time.time() - t))
 
 t = time.time()
