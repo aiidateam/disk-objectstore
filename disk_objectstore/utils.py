@@ -70,6 +70,23 @@ StreamWriteBytesType = BinaryIO
 _MACOS_ALWAYS_USE_FULLSYNC = False
 
 
+class CompressMode(Enum):
+    """Various possible behaviors when compressing.
+
+    For now used only in the `repack` function, should probably be applied to all functions
+    that have a `compress` kwarg.
+    """
+
+    # Never compress
+    NO = "no"  # pylint: disable=invalid-name
+    # Always recompress
+    YES = "yes"
+    # Keep the current compression when repacking.
+    KEEP = "keep"
+    # Automatically determine if it's worth compressing this object or not, ideally in a relatively efficient way.
+    AUTO = "auto"
+
+
 class Location(Enum):
     """Enum that describes if an element is only on the left or right iterator, or on both."""
 
@@ -544,8 +561,6 @@ class PackedObjectReader:
         """Change stream position.
 
         Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
-
-        :raises NotImplementedError: if ``whence`` is not 0 or 1.
         """
         if whence not in [0, 1, 2]:
             raise ValueError(
@@ -1531,3 +1546,127 @@ def merge_sorted(iterator1: Iterable[Any], iterator2: Iterable[Any]) -> Iterator
     for item, _ in detect_where_sorted(iterator1, iterator2):
         # Whereever it is (only left, only right, on both) I return the object.
         yield item
+
+
+def should_compress(
+    source_stream: StreamSeekBytesType,
+    compress_mode: CompressMode,
+    source_compressed: bool,
+    source_length: int,
+    source_size: int,
+) -> bool:
+    """Return a boolean determining if the source_stream should be compressed or not.
+
+    :param source_stream: a seekable stream for which we should decide if we need to compress or not.
+    :param compress_mode: the compress mode that should be honoured by should_compress (i.e., what
+       the user asked for). E.g.:
+
+       - If `compress_mode` is `CompressMode.YES`, the answer is always True.
+       - If `compress_mode` is `CompressMode.NO`, the answer is always False.
+       - If `compress_mode` is ``CompressMode.KEEP`, the answer is equal to the input value of `source_compressed`
+         (i.e., the compression is unchanged)
+       - If `compress_mode` is `CompressMode.AUTO`, the stream is analyzed in a not-too-expensive way to determine
+         whether compression should be applied or not (i.e., if compressing will give a benefit or not).
+    :param source_compressed: whether the source stream was already compressed
+    :param source_length: the length (on disk, i.e. the compressed size if source_compressed is True) of
+        the source_stream - can be used to quickly decide if compression is already efficient on this object.
+    :param source_size: the uncompressed size of the source_stream - togetehr with source_length, can be used to
+        quickly decide if compression is already efficient on this object.
+
+    Note that in some cases this function will have to read parts of the stream to do some heuristics, so the stream
+    needs to be readable and seekable (because at the end the stream will be put back in the same position as when
+    we entered this method).
+    """
+    # It shoudl at least reduce by 10% to be worth compressing
+    compression_threshold = 0.9
+
+    if compress_mode == CompressMode.NO:
+        return False
+    if compress_mode == CompressMode.YES:
+        return True
+    if compress_mode == CompressMode.KEEP:
+        # Use the same compression type
+        return source_compressed
+    if compress_mode == CompressMode.AUTO:
+        if source_compressed:
+            if source_size == 0:
+                # Zero-length: I don't compress, useless and it
+                # actually would occupy more space
+                return False
+            # Only compress if it's worth it
+            return source_length / source_size < compression_threshold
+
+        # As noted by @dev-zero in #14:
+        #  > modern compression algorithms already automatically store uncompressed data if data is uncompressible
+        #  > (see the various tuning knobs of LZMA/LZ4/XZ), if possible use one of those as they usually
+        #  > already provide multithreaded implementations.
+        # Therefore, in the future if we support those clever algorithms we can just skip this and let the algorithm
+        # do its job.
+
+        # Estimate the amount of compression we can get and decide whether to compress based on how much we can save.
+        compression_ratio = estimate_compression(source_stream, source_size)
+        return compression_ratio < compression_threshold
+    raise NotImplementedError(f"Unknown {compress_mode=}")
+
+
+def estimate_compression(stream: StreamSeekBytesType, size: int) -> float:
+    """Tries to quickly estimate the compression ratio of the file.
+
+    At the end the stream, put back at the same position as when we entered this method (i.e. we will seek back
+    at the stream.tell() position that was set at the function enter).
+
+    :param stream: a seekable stream.
+    :param size: the total size of the stream (this is used to try to get small chunks of data from small
+        random parts of the stream.
+    :return: the ratio between the expected compressed size and the total file size. E.g. 1. means compressing
+        does not provide any feedback, 0.5 means compression halves the files size, 0.1 means the compressed version
+        only occupies 10% of the space, a value larger than 1 means that compressing actually increases the file size,
+        etc. Note that this is only a quick estimate; actual compression levels might vary, but it is meant as a
+        quick heuristics to decide whether we should compress or not, when CompressMode.AUTO is requested.
+    """
+    if size == 0:
+        # Return a large value for zero-length files, so they are not even attempted to be compressed.
+        return 1.0
+
+    # Set some internal parameters
+    sample_size = 1 * 1024  # Get this amount of consecutive bytes...
+    # Only check a sampled_data of at most `max_sample_data_size` bytes (approximately)
+    max_sampled_data_size = 131072  # 128kB
+    # Approximately, except for rounding errors, get a small sample of size `sample_size` every so many bytes
+    sample_interval = size // (max_sampled_data_size // sample_size)
+
+    # Get the current pos (to go back to the same position at the end)
+    initial_pos = stream.tell()
+    # Go back to the beginning
+    stream.seek(0)
+
+    sampled_data = []
+    total_length = 0
+    # Only check the first part of the file
+    while total_length < max_sampled_data_size:
+        chunk = stream.read(sample_size)
+        if not chunk:
+            # EOF, stop
+            break
+        sampled_data.append(chunk)
+        total_length += len(chunk)
+        # Advance to the next sample of length SAMPLE_INTERVAL
+        max_seek = size - stream.tell()
+        # Never go back, and never go past the end of the file
+        stream.seek(min(max_seek, max(0, sample_interval - len(chunk))), 1)
+    # I now have the sample, I compress it and compare the size
+
+    # I just want to know if it's compressible, I compress with some cheap ZLIB version,
+    # Ideally this gives me a good estimate. Probably I could even do better, e.g. like BTRFS I
+    # could estimate Shannon's entropy
+    compresser = get_compressobj_instance("zlib+1")
+    compressed = compresser.compress(b"".join(sampled_data))
+    compressed += compresser.flush()
+
+    # Since I have a guard above for small-size files, I never get here for
+    # a sample of 0 bytes
+    estimated = len(compressed) / total_length
+    # Restore the stream to the initial position
+    stream.seek(initial_pos)
+
+    return estimated

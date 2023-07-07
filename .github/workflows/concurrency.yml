@@ -19,7 +19,7 @@ jobs:
         # Check all OSs (this is important!)
         os: [ubuntu-latest, macos-latest, windows-latest]
         # Testing extensively but only on two python versions, typically first and last supported
-        python-version: [3.8, 3.10]
+        python-version: ["3.8", "3.11"]
 
     # Do not run on forks
     if: github.repository_owner == 'aiidateam'
@@ -35,7 +35,7 @@ jobs:
       # also of the concurrent tests (maybe we can achieve this differently)
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
+        pip install -e .[optionaltests]
         pip install -r requirements.lock
     - name: Test with pytest
       # Run only the concurrency tests, and repeating them 5 times to increase the chance that, if there is an issue

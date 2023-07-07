@@ -36,6 +36,7 @@ from .database import Obj, get_session
 from .exceptions import InconsistentContent, NotExistent, NotInitialised
 from .utils import (
     CallbackStreamWrapper,
+    CompressMode,
     LazyLooseStream,
     LazyOpener,
     Location,
@@ -56,6 +57,7 @@ from .utils import (
     nullcontext,
     rename_callback,
     safe_flush_to_disk,
+    should_compress,
     yield_first_element,
 )
 
@@ -70,18 +72,6 @@ class ObjectType(Enum):
     LOOSE = "loose"
     PACKED = "packed"
     MISSING = "missing"
-
-
-class CompressMode(Enum):
-    """Various possible behaviors when compressing.
-
-    For now used only in the `repack` function, should probably be applied to all functions
-    that have a `compress` kwarg.
-    """
-
-    NO = "no"  # pylint: disable=invalid-name
-    YES = "yes"
-    KEEP = "keep"  # Keep the current compression when repacking.
 
 
 class Container:  # pylint: disable=too-many-public-methods
@@ -1344,18 +1334,25 @@ class Container:  # pylint: disable=too-many-public-methods
 
         return (count_read_bytes, hasher.hexdigest() if hash_type else None)
 
-    def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches
+    def pack_all_loose(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         self,
-        compress: bool = False,
+        compress: Union[bool, CompressMode] = CompressMode.NO,
         validate_objects: bool = True,
         do_fsync: bool = True,
     ) -> None:
         """Pack all loose objects.
 
-        This is an operation that can be run, **BUT it needs to be done only by one process at any given time**
-        (i.e., don't call twice this function from different processes at the same time).
+        This is an operation that can be run at any time even when the container is being read
+        and written (ony to loose files, though), **BUT it needs to be done only by one
+        process at any given time**.
 
-        :param compress: if True, compress objects before storing them.
+        :param compress: either a boolean or a `CompressMode` objects.
+           If True (or `CompressMode.YES`), compress objects before storing them.
+           If False (or `CompressMode.NO`), do not compress objects (the default).
+           Also other `CompressMode`s are allowed, such as `CompressMode.AUTO` to use fast heuristics
+           to decide whether to compress or not.
+           Note that since loose objects are always uncompressed, `CompressMode.KEEP` is equivalent to
+           `CompressMode.NO` in this function.
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
         :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
@@ -1363,6 +1360,16 @@ class Container:  # pylint: disable=too-many-public-methods
             so often this guarantee is not strictly needed).
         """
         hash_type = self.hash_type if validate_objects else None
+
+        compress_mode: CompressMode
+        # For backwards-compatibility, convert boolean to CompressMode
+        if isinstance(compress, bool):
+            if compress:
+                compress_mode = CompressMode.YES
+            else:
+                compress_mode = CompressMode.NO
+        else:
+            compress_mode = compress
 
         loose_objects = set(self._list_loose())
         pack_int_id = self._get_pack_id_to_write_to()
@@ -1439,12 +1446,24 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict: Dict[str, Any] = {}
                     obj_dict["hashkey"] = loose_hashkey
                     obj_dict["pack_id"] = pack_int_id
-                    obj_dict["compressed"] = compress
                     obj_dict["offset"] = pack_handle.tell()
                     try:
                         with open(
                             self._get_loose_path_from_hashkey(loose_hashkey), "rb"
                         ) as loose_handle:
+                            # It's always a standard file, I get its size
+                            loose_size = os.fstat(loose_handle.fileno()).st_size
+                            # Determine if I should compress this object or not.
+                            # Note: source_compressed is always False because loose objects are always uncompressed
+                            # Therefore, it is also true that source_length == source_size
+                            obj_dict["compressed"] = should_compress(
+                                source_stream=loose_handle,
+                                compress_mode=compress_mode,
+                                source_compressed=False,
+                                source_length=loose_size,
+                                source_size=loose_size,
+                            )
+
                             # The second parameter is `None` since we are not computing the hash
                             # We can instead pass the hash algorithm and assert that it is correct
                             (
@@ -1453,7 +1472,7 @@ class Container:  # pylint: disable=too-many-public-methods
                             ) = self._write_data_to_packfile(
                                 pack_handle=pack_handle,
                                 read_handle=loose_handle,
-                                compress=compress,
+                                compress=obj_dict["compressed"],
                                 hash_type=hash_type,
                             )
                     except PermissionError:
@@ -1568,7 +1587,9 @@ class Container:  # pylint: disable=too-many-public-methods
         As such, it needs to be done only by one process.
 
         :param stream_list: a list of BytesIO bytestreams to add.
-        :param compress: if True, compress objects before storing them.
+        :param compress: if True, compress objects before storing them. Note that at variance with
+            other methods such as `pack_all_loose` or `repack`, where various `CompressMode`s are possible,
+            this is not (yet) implemented here.
         :param open_streams: if True, then open the streams using a ``with`` context
             manager. Otherwise, just read from them (assuming the responsibility of opening
             them is on the caller). Setting to True is useful when reading from many files,
@@ -1594,6 +1615,9 @@ class Container:  # pylint: disable=too-many-public-methods
             operations! (See e.g. the `import_files()` method).
         :return: a list of object hash keys
         """
+        assert isinstance(
+            compress, bool
+        ), "Only True of False are valid `compress` modes when adding direclty to a pack"
         yield_per_size = 1000
         hashkeys: List[str] = []
 
@@ -2464,7 +2488,19 @@ class Container:  # pylint: disable=too-many-public-methods
     def validate(
         self, callback: Optional[Callable] = None
     ) -> Dict[str, Union[List[Union[str, Any]], List[Any], List[str]]]:
-        """Perform a number of validations on the container content, to make sure it is not corrupt."""
+        """Perform a number of validations on the container content, to make sure it is not corrupt.
+
+        The callback can be used to show a progress bar (see e.g. its use in the `validate` command of
+        the `dostore` command-line interface).
+
+        :return: It always returns a dictionary of lists, where the key is the type of invalid behavior, and
+            the value is a list of hashkeys of problematic objects. Therefore, a "success" result is
+            represented by a dictionary where all values are empty lists. You can check if the container is
+            valid by passing the results to a one-liner:
+
+                errors = container.validate()
+                assert not any(errors.values()), "There are errors in the container!"
+        """
         all_errors = defaultdict(list)
 
         all_loose = set(self._list_loose())
@@ -2602,7 +2638,7 @@ class Container:  # pylint: disable=too-many-public-methods
             self.repack_pack(pack_id, compress_mode=compress_mode)
         self._vacuum()
 
-    def repack_pack(
+    def repack_pack(  # pylint: disable=too-many-branches,too-many-statements
         self, pack_id: str, compress_mode: CompressMode = CompressMode.KEEP
     ) -> None:
         """Perform a repack of a given pack object.
@@ -2615,9 +2651,6 @@ class Container:  # pylint: disable=too-many-public-methods
             as it can simply transfer the bytes without decompressing everything first,
             and recompressing it back again).
         """
-        if compress_mode != CompressMode.KEEP:
-            raise NotImplementedError("Only keep method currently implemented")
-
         assert (
             pack_id != self._REPACK_PACK_ID
         ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
@@ -2659,34 +2692,84 @@ class Container:  # pylint: disable=too-many-public-methods
                     .where(Obj.pack_id == pack_id)
                     .order_by(Obj.offset)
                 )
-                for rowid, hashkey, size, offset, length, compressed in session.execute(
-                    stmt
-                ):
-                    # Since I am assuming above that the method is `KEEP`, I will just transfer
-                    # the bytes. Otherwise I have to properly take into account compression in the
-                    # source and in the destination.
-                    read_handle = PackedObjectReader(read_pack, offset, length)
+                for (
+                    rowid,
+                    hashkey,
+                    size,
+                    offset,
+                    length,
+                    source_compressed,
+                ) in session.execute(stmt):
+                    # This is the read handle of the bytes in the pack - it might be
+                    read_handle: Union[
+                        PackedObjectReader, ZlibStreamDecompresser
+                    ] = PackedObjectReader(read_pack, offset, length)
 
+                    # Determine if I should compress or not the destination - this function will
+                    # try to do it in a cheap way (e.g. if the source is already compressed, will just
+                    # use the information to decide; only if the source is uncompressed and
+                    # the compress_mode is AUTO, it will need to read (part of) the stream to decide if
+                    # it's worth compressing or not.
+                    dest_compressed = should_compress(
+                        source_stream=read_handle,
+                        compress_mode=compress_mode,
+                        source_compressed=source_compressed,
+                        source_length=length,
+                        source_size=size,
+                    )
+
+                    # Prepare the object for the new entry in the repack-pack
                     obj_dict = {}
                     obj_dict["id"] = rowid
+                    # no need to rehash, it's the same object, and we are in the same container, so we are
+                    # using the same hashing algorithm
                     obj_dict["hashkey"] = hashkey
                     obj_dict["pack_id"] = self._REPACK_PACK_ID
-                    obj_dict["compressed"] = compressed
+                    # The uncompressed size is the same
                     obj_dict["size"] = size
+                    obj_dict["compressed"] = dest_compressed
                     obj_dict["offset"] = write_pack_handle.tell()
 
-                    # Transfer data in chunks.
-                    # No need to rehash - it's the same container so the same hash.
-                    # Not checking the compression on source or destination - we are assuming
-                    # for now that the mode is KEEP.
-                    while True:
-                        chunk = read_handle.read(self._CHUNKSIZE)
-                        if chunk == b"":
-                            # Returns an empty bytes object on EOF.
-                            break
-                        write_pack_handle.write(chunk)
-                    obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
+                    if source_compressed == dest_compressed:
+                        # In this branch, we can just transfer the bytes, as we are using the *same* compression
+                        # method in the source and destionation
 
+                        # Transfer data in chunks.
+                        # No need to rehash - it's the same container so the same hash.
+                        # Not checking the compression on source or destination - we are assuming
+                        # for now that the mode is KEEP.
+                        while True:
+                            chunk = read_handle.read(self._CHUNKSIZE)
+                            if chunk == b"":
+                                # Returns an empty bytes object on EOF.
+                                break
+                            write_pack_handle.write(chunk)
+                    else:
+                        # The compression mode is different: then, I have to properly take into account compression
+                        # in the source and in the destination.
+                        if source_compressed:
+                            read_handle = self._get_stream_decompresser()(read_handle)
+                        if dest_compressed:
+                            compressobj = self._get_compressobj_instance()
+                            while True:
+                                chunk = read_handle.read(self._CHUNKSIZE)
+                                if chunk == b"":
+                                    # Returns an empty bytes object on EOF.
+                                    break
+                                write_pack_handle.write(compressobj.compress(chunk))
+                            # Write the remaining of the file, if any leftovers are still present in the
+                            # compressobj
+                            write_pack_handle.write(compressobj.flush())
+                        else:
+                            while True:
+                                chunk = read_handle.read(self._CHUNKSIZE)
+                                if chunk == b"":
+                                    # Returns an empty bytes object on EOF.
+                                    break
+                                write_pack_handle.write(chunk)
+
+                    # Set correctly the length on disk
+                    obj_dict["length"] = write_pack_handle.tell() - obj_dict["offset"]
                     # Appending for later bulk commit
                     # I will assume that all objects of a single pack fit in memory
                     obj_dicts.append(obj_dict)
