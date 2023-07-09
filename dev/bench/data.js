@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1688883385164,
+  "lastUpdate": 1688883421865,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -8638,6 +8638,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.6830191149513739e-7",
             "extra": "mean: 230.87482898399853 nsec\nrounds: 195122"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "giovanni.pizzi@epfl.ch",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "committer": {
+            "email": "gio.piz@gmail.com",
+            "name": "Giovanni Pizzi",
+            "username": "giovannipizzi"
+          },
+          "distinct": true,
+          "id": "7a634626ea3e5f35aa3cdd458daf9d8b825d759a",
+          "message": "Replace returned dictionaries with dataclasses\n\nThis is done in a backward-compatible way, where the\ndataclass also provides a __getitem__ method so you\ncan use it as a dictionary.\nIf you want proper type checking, you should instead\nuse it calling it as a method.\n\nFixes #150",
+          "timestamp": "2023-07-09T08:15:11+02:00",
+          "tree_id": "02c41bcc03f72c8b75bb61f8d08456220ba69c3d",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/7a634626ea3e5f35aa3cdd458daf9d8b825d759a"
+        },
+        "date": 1688883420602,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.3617764543069844,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011081699924945681",
+            "extra": "mean: 734.3349173333339 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.3233137141591649,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012118924041091689",
+            "extra": "mean: 755.6787096666652 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.321128715336199,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008176153435333669",
+            "extra": "mean: 158.1995945714283 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.581256793431397,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001959256114590853",
+            "extra": "mean: 94.50673199999997 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.1741759627962707,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004489676908047146",
+            "extra": "mean: 459.944372999999 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2722978.7974367854,
+            "unit": "iter/sec",
+            "range": "stddev: 2.7279683694106935e-7",
+            "extra": "mean: 367.24487202813606 nsec\nrounds: 177117"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4528690.536569497,
+            "unit": "iter/sec",
+            "range": "stddev: 4.9974767048500754e-8",
+            "extra": "mean: 220.81438153588826 nsec\nrounds: 195849"
           }
         ]
       }
