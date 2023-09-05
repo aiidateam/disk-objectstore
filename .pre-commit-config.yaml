@@ -19,12 +19,12 @@ repos:
     - id: trailing-whitespace
 
   - repo: https://github.com/ikamensh/flynt/
-    rev: '0.78'
+    rev: '1.0.1'
     hooks:
     - id: flynt
 
   - repo: https://github.com/executablebooks/mdformat
-    rev: '0.7.16'
+    rev: '0.7.17'
     hooks:
     - id: mdformat
       additional_dependencies:
@@ -39,18 +39,18 @@ repos:
     - id: isort
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.4.0
+    rev: v3.10.1
     hooks:
     - id: pyupgrade
       args: [--py37-plus]
 
   - repo: https://github.com/psf/black
-    rev: '23.3.0'
+    rev: '23.7.0'
     hooks:
     - id: black
 
   - repo: https://github.com/PyCQA/pylint
-    rev: v3.0.0a6
+    rev: v3.0.0a7
     hooks:
     - id: pylint
       additional_dependencies:
@@ -64,7 +64,7 @@ repos:
       - h5py
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.3.0
+    rev: v1.5.1
     hooks:
     - id: mypy
       additional_dependencies:
