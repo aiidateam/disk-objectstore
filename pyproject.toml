@@ -30,7 +30,7 @@ keywords = ['object store', 'repository', 'file store', 'key-value store']
 requires-python = '>=3.8'
 dependencies = [
     'click',
-    'sqlalchemy~=1.4.22',
+    'sqlalchemy>=1.4.22',
 ]
 
 [project.urls]
