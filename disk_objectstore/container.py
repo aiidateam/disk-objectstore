@@ -8,7 +8,6 @@ import json
 import os
 import shutil
 import uuid
-import warnings
 from collections import defaultdict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
@@ -2300,41 +2299,6 @@ class Container:  # pylint: disable=too-many-public-methods
         self._get_cached_session().commit()
 
         return old_new_obj_hashkey_mapping
-
-    def export(
-        self,
-        hashkeys: Sequence[str],
-        other_container: "Container",
-        compress: bool = False,
-        target_memory_bytes: int = 104857600,
-        callback: Optional[Callable] = None,
-    ) -> Dict[str, str]:
-        """Export the specified hashkeys to a new container (must be already initialised).
-
-        ..deprecated:: 0.5
-            Deprecated: use the ``import_objects`` method of ``other_container`` instead. Will be removed in 0.6.
-
-        :param hashkeys: an iterable of hash keys.
-        :param other_container: another Container class into which you want to export the specified hash keys of this
-            container.
-        :param compress: specifies if content should be stored in compressed form.
-        :param target_memory_bytes: how much data to store in RAM before dumping to the new container. Larger values
-            allow to read and write in bulk that is more efficient, but of course require more memory.
-            Note that actual memory usage will be larger (SQLite DB, storage of the hashkeys are not included - this
-            only counts the RAM needed for the object content). Default: 100MB.
-
-        :return: a mapping from the old hash keys (in this container) to the new hash keys (in `other_container`).
-        """
-        warnings.warn(
-            "function is deprecated, use `import_objects` instead", DeprecationWarning
-        )
-        return other_container.import_objects(
-            hashkeys=hashkeys,
-            source_container=self,
-            compress=compress,
-            target_memory_bytes=target_memory_bytes,
-            callback=callback,
-        )
 
     # Let us also compute the hash
     def _validate_hashkeys_pack(  # pylint: disable=too-many-locals

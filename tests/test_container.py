@@ -2181,27 +2181,6 @@ def test_import_to_pack(
         other_container.close()
 
 
-def test_export_deprecated(temp_container):
-    """Test that the export_function exists but is deprecated."""
-    obj1 = b"111111"
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        other_container = Container(tmpdir)
-        # Use the same hash type
-        other_container.init_container(clear=True, hash_type=temp_container.hash_type)
-
-        hashkey1 = temp_container.add_object(obj1)
-
-        # Put only two objects
-        with pytest.warns(DeprecationWarning):
-            temp_container.export([hashkey1], other_container)
-
-        assert other_container.get_object_content(hashkey1) == obj1
-
-        # Close before going out, or the test will fail on Windows not being able to delete the folder
-        other_container.close()
-
-
 @pytest.mark.parametrize("compress", [True, False])
 def test_validate(temp_container, compress):
     """Test the validation function."""
