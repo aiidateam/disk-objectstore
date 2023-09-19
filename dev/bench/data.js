@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1689259838326,
+  "lastUpdate": 1695120010461,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -4464,6 +4464,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.710230505706329e-7",
             "extra": "mean: 397.0836852001469 nsec\nrounds: 125000"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "mail@sphuber.net",
+            "name": "Sebastiaan Huber",
+            "username": "sphuber"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "128b8667643322e22ec70e4de0fc7912c3f3dd74",
+          "message": "Devops: Fix the ReadTheDocs build (#159)\n\nThe new config requires `build.os` to be specified:\r\nhttps://blog.readthedocs.com/use-build-os-config/",
+          "timestamp": "2023-09-19T12:39:00+02:00",
+          "tree_id": "e1bfd6918d902516a016615d539dc1855cc6aed7",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/128b8667643322e22ec70e4de0fc7912c3f3dd74"
+        },
+        "date": 1695120009824,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 2.6866031678694418,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016700003609786535",
+            "extra": "mean: 372.21723399999956 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.4572623922132877,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03852757307041359",
+            "extra": "mean: 686.2182166666647 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 7.489832227411702,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009224860217297116",
+            "extra": "mean: 133.514339125 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 25.061675859393514,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00030305816796783055",
+            "extra": "mean: 39.90156147619251 msec\nrounds: 21"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 3.8010068644825106,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014873471486997786",
+            "extra": "mean: 263.08818575000004 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2003752.135221454,
+            "unit": "iter/sec",
+            "range": "stddev: 1.3046897897524396e-7",
+            "extra": "mean: 499.06372271412715 nsec\nrounds: 181819"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3042933.182901991,
+            "unit": "iter/sec",
+            "range": "stddev: 2.6354986630483292e-8",
+            "extra": "mean: 328.63028528458176 nsec\nrounds: 149254"
           }
         ]
       }
