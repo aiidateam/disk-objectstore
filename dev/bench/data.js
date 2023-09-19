@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1695120289450,
+  "lastUpdate": 1695125959860,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -4537,6 +4537,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.6354986630483292e-8",
             "extra": "mean: 328.63028528458176 nsec\nrounds: 149254"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "66853113+pre-commit-ci[bot]@users.noreply.github.com",
+            "name": "pre-commit-ci[bot]",
+            "username": "pre-commit-ci[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5dc4a34d212cf75e9e649b4294fd8bfa452d97ad",
+          "message": "[pre-commit.ci] pre-commit autoupdate (#157)\n\nupdates:\r\n- https://github.com/ikamensh/flynt/: 0.78 → 1.0.1\r\n- [github.com/executablebooks/mdformat: 0.7.16 → 0.7.17](https://github.com/executablebooks/mdformat/compare/0.7.16...0.7.17)\r\n- [github.com/asottile/pyupgrade: v3.4.0 → v3.10.1](https://github.com/asottile/pyupgrade/compare/v3.4.0...v3.10.1)\r\n- [github.com/psf/black: 23.3.0 → 23.7.0](https://github.com/psf/black/compare/23.3.0...23.7.0)\r\n- [github.com/PyCQA/pylint: v3.0.0a6 → v3.0.0a7](https://github.com/PyCQA/pylint/compare/v3.0.0a6...v3.0.0a7)\r\n- [github.com/pre-commit/mirrors-mypy: v1.3.0 → v1.5.1](https://github.com/pre-commit/mirrors-mypy/compare/v1.3.0...v1.5.1)\r\n\r\nCo-authored-by: pre-commit-ci[bot] <66853113+pre-commit-ci[bot]@users.noreply.github.com>",
+          "timestamp": "2023-09-19T14:17:28+02:00",
+          "tree_id": "79dbae413ecad9e644deefaef21eeaeb54ab4120",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/5dc4a34d212cf75e9e649b4294fd8bfa452d97ad"
+        },
+        "date": 1695125958525,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.8994624780147629,
+            "unit": "iter/sec",
+            "range": "stddev: 0.020511400599814027",
+            "extra": "mean: 526.4647296666567 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.5115409755288839,
+            "unit": "iter/sec",
+            "range": "stddev: 0.1736915953074423",
+            "extra": "mean: 1.954877610666666 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 6.26866876816763,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011731144274178323",
+            "extra": "mean: 159.5235028333306 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 16.21363423565545,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0031882331600870378",
+            "extra": "mean: 61.67648692856886 msec\nrounds: 14"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 3.020861717580797,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008541170551809633",
+            "extra": "mean: 331.03137233333274 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 1556857.4785052957,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000026109010699140885",
+            "extra": "mean: 642.31955320668 nsec\nrounds: 158731"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 2493231.538234823,
+            "unit": "iter/sec",
+            "range": "stddev: 5.428611431290808e-7",
+            "extra": "mean: 401.0858938145673 nsec\nrounds: 140846"
           }
         ]
       }
