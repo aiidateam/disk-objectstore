@@ -11,7 +11,6 @@ import hashlib
 import itertools
 import os
 import uuid
-import warnings
 import zlib
 from contextlib import contextmanager
 from enum import Enum
@@ -1186,17 +1185,6 @@ def get_hash_cls(hash_type: str) -> Callable:
     except KeyError:
         # pylint: disable=raise-missing-from
         raise ValueError(f"Unknown or unsupported hash type '{hash_type}'")
-
-
-def get_hash(hash_type: str) -> Callable:
-    """Return a hash class with an update method and a hexdigest method.
-
-    .. deprecated:: Deprecated since 1.0. Use `get_hash_cls` instead.
-    """
-    warnings.warn(
-        "`get_hash` is deprecated, use `get_hash_cls` instead", DeprecationWarning
-    )
-    return get_hash_cls(hash_type)
 
 
 def _compute_hash_for_file(filepath: Path, hash_type: str) -> str | None:
