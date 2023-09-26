@@ -8,7 +8,7 @@ from typing import List, Optional
 
 import click
 
-from disk_objectstore import __version__
+from disk_objectstore import __version__, backup_utils
 from disk_objectstore.container import Container
 
 
@@ -183,3 +183,40 @@ def optimize(
         container.clean_storage(vacuum=vacuum)
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
     click.echo(f"Final container size: {round(size/1000, 2)} Mb")
+
+
+@main.command("backup")
+@click.argument("path", nargs=1, type=click.Path())
+@click.option(
+    "--remote",
+    default=None,
+    help="ssh remote of the backup location.",
+)
+@click.option(
+    "--prev_backup",
+    default=None,
+    help="Previous backup location for rsync link-dest.",
+)
+@click.option(
+    "--rsync_exe",
+    default="rsync",
+    help="Specify the 'rsync' executable, if not in PATH.",
+)
+@pass_dostore
+def backup(
+    dostore: ContainerContext,
+    path: str,
+    remote: Optional[str],
+    prev_backup: Optional[str],
+    rsync_exe: str,
+):
+    """Create a backup of the container"""
+
+    with dostore.container as container:
+        backup_utils.backup(
+            container,
+            Path(path),
+            remote=remote,
+            prev_backup=Path(prev_backup) if prev_backup else None,
+            rsync_exe=rsync_exe,
+        )
