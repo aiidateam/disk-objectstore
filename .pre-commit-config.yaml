@@ -39,18 +39,18 @@ repos:
     - id: isort
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.10.1
+    rev: v3.14.0
     hooks:
     - id: pyupgrade
       args: [--py37-plus]
 
   - repo: https://github.com/psf/black
-    rev: '23.7.0'
+    rev: '23.9.1'
     hooks:
     - id: black
 
   - repo: https://github.com/PyCQA/pylint
-    rev: v3.0.0a7
+    rev: v3.0.0
     hooks:
     - id: pylint
       additional_dependencies:
