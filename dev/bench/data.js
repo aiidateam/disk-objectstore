@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1696839803592,
+  "lastUpdate": 1696839806358,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -9514,6 +9514,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.3646893480373023e-7",
             "extra": "mean: 436.25839187408616 nsec\nrounds: 161317"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "66853113+pre-commit-ci[bot]@users.noreply.github.com",
+            "name": "pre-commit-ci[bot]",
+            "username": "pre-commit-ci[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "22b988c1921a516ae5271fd2379dfe9e7a510b45",
+          "message": "[pre-commit.ci] pre-commit autoupdate (#162)\n\nupdates:\r\n- [github.com/asottile/pyupgrade: v3.10.1 → v3.14.0](https://github.com/asottile/pyupgrade/compare/v3.10.1...v3.14.0)\r\n- [github.com/psf/black: 23.7.0 → 23.9.1](https://github.com/psf/black/compare/23.7.0...23.9.1)\r\n- [github.com/PyCQA/pylint: v3.0.0a7 → v3.0.0](https://github.com/PyCQA/pylint/compare/v3.0.0a7...v3.0.0)\r\n\r\nCo-authored-by: pre-commit-ci[bot] <66853113+pre-commit-ci[bot]@users.noreply.github.com>",
+          "timestamp": "2023-10-09T10:22:06+02:00",
+          "tree_id": "6d51e5da8fae1c4057d378f978f6e6fb847284c6",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/22b988c1921a516ae5271fd2379dfe9e7a510b45"
+        },
+        "date": 1696839804913,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 2.1222366787727163,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0609345212122758",
+            "extra": "mean: 471.20097866666663 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.5732049237047592,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07253102238380599",
+            "extra": "mean: 635.645099333333 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 5.473994385980832,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04051381130999773",
+            "extra": "mean: 182.6819557142859 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.957117831000087,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006881530893011049",
+            "extra": "mean: 66.85780050000022 msec\nrounds: 16"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.623838575237596,
+            "unit": "iter/sec",
+            "range": "stddev: 0.030064479173706547",
+            "extra": "mean: 381.1210070000009 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3439698.9939098437,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001012427378005192",
+            "extra": "mean: 290.7231132057088 nsec\nrounds: 199641"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3647832.818203087,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000033235828945102995",
+            "extra": "mean: 274.13537018744506 nsec\nrounds: 195428"
           }
         ]
       }
