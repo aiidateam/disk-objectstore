@@ -186,37 +186,52 @@ def optimize(
 
 
 @main.command("backup")
-@click.argument("path", nargs=1, type=click.Path())
-@click.option(
-    "--remote",
-    default=None,
-    help="ssh remote of the backup location.",
-)
-@click.option(
-    "--prev_backup",
-    default=None,
-    help="Previous backup location for rsync link-dest.",
-)
+@click.argument("dest", nargs=1, type=click.Path())
+# @click.option(
+#     "--keep",
+#     default=1,
+#     help="Number of previous backups to keep in the destination.",
+# )
 @click.option(
     "--rsync_exe",
     default="rsync",
-    help="Specify the 'rsync' executable, if not in PATH.",
+    help="Specify the 'rsync' executable, if not in PATH. Used for both local and remote destinations.",
 )
 @pass_dostore
 def backup(
     dostore: ContainerContext,
-    path: str,
-    remote: Optional[str],
-    prev_backup: Optional[str],
+    dest: str,
     rsync_exe: str,
 ):
-    """Create a backup of the container"""
+    """Create a backup of the container to a subfolder `last-backup` of the destination location DEST.
+
+    NOTE: This is safe to run while the container is being used.
+
+    Destination (DEST) can either be a local path, or a remote destination (reachable via ssh).
+    In the latter case, remote destination needs to have the following syntax:
+       [<remote_user>@]<remote_host>:<path>
+    i.e., contain the remote host name and the remote path, separated by a colon (and optionally the
+    remote user separated by an @ symbol). You can tune SSH parameters using the standard options given
+    by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
+    login - recommended, since this script might ask multiple times for the password).
+
+    NOTE: 'rsync' and other UNIX-specific commands are called,  thus the command will not work on
+    non-UNIX environments.
+
+    """
+
+    try:
+        remote, path = backup_utils.split_remote_and_path(dest)
+    except ValueError:
+        click.echo("Unsupported destination.")
+        return False
+
+    backup_utils.validate_inputs(path, remote=remote, rsync_exe=rsync_exe)
 
     with dostore.container as container:
-        backup_utils.backup(
+        return backup_utils.backup_auto_folders(
             container,
-            Path(path),
+            path,
             remote=remote,
-            prev_backup=Path(prev_backup) if prev_backup else None,
             rsync_exe=rsync_exe,
         )
