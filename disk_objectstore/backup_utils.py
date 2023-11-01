@@ -2,9 +2,12 @@
 Utilities to back up a container.
 """
 
+import datetime
 import logging
+import random
 import shutil
 import sqlite3
+import string
 import subprocess
 import tempfile
 from pathlib import Path
@@ -34,7 +37,7 @@ def is_exe_found(exe: str) -> bool:
     return shutil.which(exe) is not None
 
 
-def run_cmd(args: list, remote: Optional[str] = None, check: bool = True) -> bool:
+def run_cmd(args: list, remote: Optional[str] = None):
     """
     Run a command locally or remotely.
     """
@@ -42,24 +45,24 @@ def run_cmd(args: list, remote: Optional[str] = None, check: bool = True) -> boo
     if remote:
         all_args = ["ssh", remote] + all_args
 
-    try:
-        res = subprocess.run(all_args, capture_output=True, text=True, check=check)
-    except subprocess.CalledProcessError as exc:
-        _log("Error: " + str(exc))
-        return False
+    res = subprocess.run(all_args, capture_output=True, text=True, check=False)
+    exit_code = res.returncode
 
-    _log(f"stdout: {all_args}\n{res.stdout}")
-    _log(f"stderr: {all_args}\n{res.stderr}")
+    _log(
+        f"Command: {all_args}\n"
+        f"  Exit Code: {exit_code}\n"
+        f"  stdout/stderr: {res.stdout}\n{res.stderr}"
+    )
 
-    success = not bool(res.returncode)
+    success = exit_code == 0
 
-    return success
+    return success, res.stdout
 
 
 def check_if_remote_accessible(remote: str) -> bool:
     """Check if remote host is accessible via ssh"""
-    _log(f"Checking if '{remote}' is accessible...", end="")
-    success = run_cmd(["exit"], remote=remote)
+    _log(f"Checking if '{remote}' is accessible...")
+    success = run_cmd(["exit"], remote=remote)[0]
     if not success:
         _log(f"Error: Remote '{remote}' is not accessible!")
         return False
@@ -69,7 +72,7 @@ def check_if_remote_accessible(remote: str) -> bool:
 
 def check_path_exists(path: Path, remote: Optional[str] = None) -> bool:
     cmd = ["[", "-e", str(path), "]"]
-    return run_cmd(cmd, remote=remote, check=False)
+    return run_cmd(cmd, remote=remote)[0]
 
 
 def call_rsync(  # pylint: disable=too-many-arguments
@@ -127,18 +130,22 @@ def call_rsync(  # pylint: disable=too-many-arguments
     except subprocess.CalledProcessError as exc:
         _log(f"Error: {exc}")
         return False
+    exit_code = res.returncode
+    _log(
+        f"Command: {all_args}\n"
+        f"  Exit Code: {exit_code}\n"
+        f"  stdout/stderr: {res.stdout}\n{res.stderr}"
+    )
 
-    _log(f"stdout: {all_args}\n{res.stdout}")
-    _log(f"stderr: {all_args}\n{res.stderr}")
-
-    success = not bool(res.returncode)
+    success = exit_code == 0
 
     return success
 
 
 def validate_inputs(
     path: Path,
-    remote: Optional[str] = None,
+    remote: Optional[str],
+    keep: int,
     rsync_exe: str = "rsync",
 ) -> bool:
     """Validate inputs to the backup cli command
@@ -146,6 +153,10 @@ def validate_inputs(
     :return:
         True if validation passes, False otherwise.
     """
+    if keep < 0:
+        _log("Error: keep variable can't be negative!")
+        return False
+
     if remote:
         if not check_if_remote_accessible(remote):
             return False
@@ -157,7 +168,7 @@ def validate_inputs(
     path_exists = check_path_exists(path, remote)
 
     if not path_exists:
-        success = run_cmd(["mkdir", str(path)], remote=remote)
+        success = run_cmd(["mkdir", str(path)], remote=remote)[0]
         if not success:
             _log(f"Error: Couldn't access/create '{str(path)}'!")
             return False
@@ -261,18 +272,49 @@ def backup_container(  # pylint: disable=too-many-return-statements, too-many-br
     return True
 
 
+def delete_old_backups(path: Path, remote: Optional[str] = None, keep: int = 1) -> bool:
+    """Get all folders matching the backup pattern, and delete oldest ones."""
+    success, stdout = run_cmd(
+        [
+            "find",
+            str(path),
+            "-maxdepth",
+            "1",
+            "-type",
+            "d",
+            "-name",
+            "backup_*_*",
+            "-print",
+        ],
+        remote=remote,
+    )
+    if not success:
+        return False
+
+    sorted_folders = sorted(stdout.splitlines())
+    to_delete = sorted_folders[: -(keep + 1)]
+    for folder in to_delete:
+        success = run_cmd(["rm", "-rf", folder], remote=remote)[0]
+        if success:
+            _log(f"Deleted old backup: {folder}")
+        else:
+            _log(f"Warning: couldn't delete old backup: {folder}")
+    return True
+
+
 def backup_auto_folders(
     container: Container,
     path: Path,
     remote: Optional[str] = None,
+    keep: int = 1,
     rsync_exe: str = "rsync",
 ):
     """Create a backup, managing live and previous backup folders automatically
 
     The running backup is done to `<path>/live-backup`. When it completes, it is moved to
-    the final path: `<path>/last-backup`. This done so that the last backup wouldn't be
-    corrupted, in case the live one crashes or gets interrupted. Rsync `link-dest` is used between
-    the two folders to keep the backups incremental and performant.
+    the final path: `<path>/backup_<timestamp>_<randstr>` and the symlink `<path>/last-backup will
+    be set to point to it. Rsync `link-dest` is used between live-backup and last-backup
+    to keep the backups incremental and performant.
 
     :param path:
         Path to where the backup will be created. If 'remote' is specified, must be an absolute path,
@@ -282,46 +324,44 @@ def backup_auto_folders(
         Remote host of the backup location. 'ssh' executable is called via subprocess and therefore remote
         hosts configured for it are supported (e.g. via .ssh/config file).
 
-    :param kwargs:
-        * Executable paths if not default, e.g. 'rsync'
-
     :return:
         True is successful and False if unsuccessful.
     """
 
     live_folder = path / "live-backup"
-    last_folder = path / "last-backup"
+    last_symlink = path / "last-backup"
 
-    prev_exists = check_path_exists(last_folder, remote)
+    prev_exists = check_path_exists(last_symlink, remote)
 
     success = backup_container(
         container,
         live_folder,
         remote=remote,
-        prev_backup=last_folder if prev_exists else None,
+        prev_backup=last_symlink if prev_exists else None,
         rsync_exe=rsync_exe,
     )
     if not success:
         return False
 
-    # move live-backup -> last-backup in a safe manner
-    # (such that if the process stops at any point, that we wouldn't lose data)
-    # step 1: last-backup -> last-backup-old
-    if prev_exists:
-        success = run_cmd(
-            ["mv", str(last_folder), str(last_folder) + "-old"], remote=remote
-        )
-        if not success:
-            return False
-    # step 2: live-backup -> last-backup
-    success = run_cmd(["mv", str(live_folder), str(last_folder)], remote=remote)
+    # move live-backup -> backup_<timestamp>_<randstr>
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    randstr = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+    folder_name = f"backup_{timestamp}_{randstr}"
+
+    success = run_cmd(["mv", str(live_folder), str(path / folder_name)], remote=remote)[
+        0
+    ]
     if not success:
         return False
-    # step 3: remote last-backup-old
-    if prev_exists:
-        success = run_cmd(["rm", "-rf", str(last_folder) + "-old"], remote=remote)
-        if not success:
-            return False
 
-    _log(f"Backup moved from '{str(live_folder)}' to '{str(last_folder)}'.")
+    # update last-backup symlink
+    success = run_cmd(
+        ["ln", "-sfn", str(folder_name), str(last_symlink)], remote=remote
+    )[0]
+    if not success:
+        return False
+    _log(f"Backup moved from '{str(live_folder)}' to '{str(path / folder_name)}'.")
+
+    delete_old_backups(path, remote=remote, keep=keep)
+
     return True

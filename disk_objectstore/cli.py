@@ -187,11 +187,11 @@ def optimize(
 
 @main.command("backup")
 @click.argument("dest", nargs=1, type=click.Path())
-# @click.option(
-#     "--keep",
-#     default=1,
-#     help="Number of previous backups to keep in the destination.",
-# )
+@click.option(
+    "--keep",
+    default=1,
+    help="Number of previous backups to keep in the destination. (default: 1)",
+)
 @click.option(
     "--rsync_exe",
     default="rsync",
@@ -201,9 +201,11 @@ def optimize(
 def backup(
     dostore: ContainerContext,
     dest: str,
+    keep: int,
     rsync_exe: str,
 ):
-    """Create a backup of the container to a subfolder `last-backup` of the destination location DEST.
+    """Create a backup of the container to destination location DEST, in a subfolder
+    backup_<timestamp>_<randstr> and point a symlink called `last-backup` to it.
 
     NOTE: This is safe to run while the container is being used.
 
@@ -215,9 +217,8 @@ def backup(
     by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
     login - recommended, since this script might ask multiple times for the password).
 
-    NOTE: 'rsync' and other UNIX-specific commands are called,  thus the command will not work on
+    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will not work on
     non-UNIX environments.
-
     """
 
     try:
@@ -226,12 +227,16 @@ def backup(
         click.echo("Unsupported destination.")
         return False
 
-    backup_utils.validate_inputs(path, remote=remote, rsync_exe=rsync_exe)
+    success = backup_utils.validate_inputs(path, remote, keep, rsync_exe=rsync_exe)
+    if not success:
+        click.echo("Input validation failed.")
+        return False
 
     with dostore.container as container:
         return backup_utils.backup_auto_folders(
             container,
             path,
             remote=remote,
+            keep=keep,
             rsync_exe=rsync_exe,
         )
