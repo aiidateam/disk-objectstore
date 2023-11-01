@@ -1,6 +1,7 @@
 """A small CLI tool for managing stores."""
 import dataclasses
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -197,12 +198,14 @@ def optimize(
     default="rsync",
     help="Specify the 'rsync' executable, if not in PATH. Used for both local and remote destinations.",
 )
+@click.option(
+    "--verbosity",
+    default="info",
+    help="Set verbosity [silent|info|debug], default is 'info'.",
+)
 @pass_dostore
 def backup(
-    dostore: ContainerContext,
-    dest: str,
-    keep: int,
-    rsync_exe: str,
+    dostore: ContainerContext, dest: str, keep: int, rsync_exe: str, verbosity: str
 ):
     """Create a backup of the container to destination location DEST, in a subfolder
     backup_<timestamp>_<randstr> and point a symlink called `last-backup` to it.
@@ -221,22 +224,31 @@ def backup(
     non-UNIX environments.
     """
 
-    try:
-        remote, path = backup_utils.split_remote_and_path(dest)
-    except ValueError:
-        click.echo("Unsupported destination.")
-        return False
+    if verbosity == "silent":
+        backup_utils.logger.setLevel(logging.ERROR)
+    elif verbosity == "info":
+        backup_utils.logger.setLevel(logging.INFO)
+    elif verbosity == "debug":
+        backup_utils.logger.setLevel(logging.DEBUG)
+    else:
+        click.echo("Unsupported verbosity.")
+        return
 
-    success = backup_utils.validate_inputs(path, remote, keep, rsync_exe=rsync_exe)
+    try:
+        backup_utils_instance = backup_utils.BackupUtilities(
+            dest, keep, rsync_exe, backup_utils.logger
+        )
+    except ValueError as e:
+        click.echo(f"Error: {e}")
+        return
+
+    success = backup_utils_instance.validate_inputs()
     if not success:
         click.echo("Input validation failed.")
-        return False
+        return
 
     with dostore.container as container:
-        return backup_utils.backup_auto_folders(
-            container,
-            path,
-            remote=remote,
-            keep=keep,
-            rsync_exe=rsync_exe,
-        )
+        success = backup_utils_instance.backup_auto_folders(container)
+        if not success:
+            click.echo("Error: backup failed.")
+            return
