@@ -11,7 +11,7 @@ import string
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from disk_objectstore.container import Container
 
@@ -35,7 +35,9 @@ def is_exe_found(exe: str) -> bool:
 
 
 class BackupUtilities:
-    """Utilities to make a backup of the disk-objectstore container"""
+    """Utilities to make a backup of the disk-objectstore container
+    and to manage backups in general (designed to also be used by aiida-core)
+    """
 
     def __init__(
         self, dest: str, keep: int, rsync_exe: str, logger_: logging.Logger
@@ -45,6 +47,9 @@ class BackupUtilities:
         self.rsync_exe = rsync_exe
         self.logger = logger_
         self.remote, self.path = split_remote_and_path(dest)
+
+        # subprocess arguments shared by all rsync calls:
+        self.rsync_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
 
     def run_cmd(self, args: list):
         """
@@ -81,7 +86,7 @@ class BackupUtilities:
         cmd = ["[", "-e", str(path), "]"]
         return self.run_cmd(cmd)[0]
 
-    def validate_inputs(self) -> bool:
+    def validate_inputs(self, additional_exes: Optional[list] = None) -> bool:
         """Validate inputs to the backup cli command
 
         :return:
@@ -99,6 +104,12 @@ class BackupUtilities:
             self.logger.error(f"{self.rsync_exe} not accessible.")
             return False
 
+        if additional_exes:
+            for add_exe in additional_exes:
+                if not is_exe_found(add_exe):
+                    self.logger.error(f"{add_exe} not accessible.")
+                    return False
+
         path_exists = self.check_path_exists(self.path)
 
         if not path_exists:
@@ -111,12 +122,12 @@ class BackupUtilities:
 
     def call_rsync(  # pylint: disable=too-many-arguments
         self,
-        args: list,
         src: Path,
         dest: Path,
         link_dest: Optional[Path] = None,
         src_trailing_slash: bool = False,
         dest_trailing_slash: bool = False,
+        extra_args: Optional[list] = None,
     ) -> bool:
         """Call rsync with specified arguments and handle possible errors & stdout/stderr
 
@@ -135,7 +146,9 @@ class BackupUtilities:
             True if successful and False if unsuccessful.
         """
 
-        all_args = args[:]
+        all_args = self.rsync_args[:]
+        if extra_args:
+            all_args += extra_args
         if link_dest:
             if not self.remote:
                 # for local paths, use resolve() to get absolute path
@@ -197,9 +210,6 @@ class BackupUtilities:
             True if successful and False if unsuccessful.
         """
 
-        # subprocess arguments shared by all rsync calls:
-        rsync_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
-
         container_root_path = container.get_folder()
         loose_path = container._get_loose_folder()  # pylint: disable=protected-access
         packs_path = container._get_pack_folder()  # pylint: disable=protected-access
@@ -210,9 +220,7 @@ class BackupUtilities:
         # step 1: back up loose files
         loose_path_rel = loose_path.relative_to(container_root_path)
         prev_backup_loose = prev_backup / loose_path_rel if prev_backup else None
-        success = self.call_rsync(
-            rsync_args, loose_path, path, link_dest=prev_backup_loose
-        )
+        success = self.call_rsync(loose_path, path, link_dest=prev_backup_loose)
         if not success:
             return False
         self.logger.info(f"Transferred {str(loose_path)} to {str(path)}")
@@ -241,24 +249,25 @@ class BackupUtilities:
                 return False
 
             # step 3: transfer the SQLITE database file
-            success = self.call_rsync(
-                rsync_args, sqlite_temp_loc, path, link_dest=prev_backup
-            )
+            success = self.call_rsync(sqlite_temp_loc, path, link_dest=prev_backup)
             if not success:
                 return False
             self.logger.info(f"Transferred SQLite database to {str(path)}")
 
         # step 4: transfer the packed files
         packs_path_rel = packs_path.relative_to(container_root_path)
-        success = self.call_rsync(rsync_args, packs_path, path, link_dest=prev_backup)
+        success = self.call_rsync(packs_path, path, link_dest=prev_backup)
         if not success:
             return False
         self.logger.info(f"Transferred {str(packs_path)} to {str(path)}")
 
         # step 5: transfer anything else in the container folder
         success = self.call_rsync(
-            rsync_args
-            + [
+            container_root_path,
+            path,
+            link_dest=prev_backup,
+            src_trailing_slash=True,
+            extra_args=[
                 "--exclude",
                 str(loose_path_rel),
                 "--exclude",
@@ -266,10 +275,6 @@ class BackupUtilities:
                 "--exclude",
                 str(packs_path_rel),
             ],
-            container_root_path,
-            path,
-            link_dest=prev_backup,
-            src_trailing_slash=True,
         )
         if not success:
             return False
@@ -306,7 +311,7 @@ class BackupUtilities:
 
     def backup_auto_folders(
         self,
-        container: Container,
+        backup_function: Callable,
     ):
         """Create a backup, managing live and previous backup folders automatically
 
@@ -314,6 +319,10 @@ class BackupUtilities:
         the final path: `<path>/backup_<timestamp>_<randstr>` and the symlink `<path>/last-backup will
         be set to point to it. Rsync `link-dest` is used between live-backup and last-backup
         to keep the backups incremental and performant.
+
+        :param backup_function:
+            Function that is used to make a single backup. Needs to have two arguments: path and
+            previous_backup location (which can be None).
 
         :param path:
             Path to where the backup will be created. If 'remote' is specified, must be an absolute path,
@@ -336,10 +345,14 @@ class BackupUtilities:
                 f"'{str(last_symlink)}' exists, using it for rsync --link-dest."
             )
 
-        success = self.backup_container(
-            container,
+        # success = self.backup_container(
+        #     container,
+        #     live_folder,
+        #     prev_backup=last_symlink if prev_exists else None,
+        # )
+        success = backup_function(
             live_folder,
-            prev_backup=last_symlink if prev_exists else None,
+            last_symlink if prev_exists else None,
         )
         if not success:
             return False

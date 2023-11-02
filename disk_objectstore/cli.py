@@ -248,7 +248,11 @@ def backup(
         return
 
     with dostore.container as container:
-        success = backup_utils_instance.backup_auto_folders(container)
+        success = backup_utils_instance.backup_auto_folders(
+            lambda path, prev: backup_utils_instance.backup_container(
+                container, path, prev_backup=prev
+            )
+        )
         if not success:
             click.echo("Error: backup failed.")
             return
