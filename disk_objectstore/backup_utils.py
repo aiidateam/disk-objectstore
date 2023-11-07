@@ -51,7 +51,7 @@ class BackupUtilities:
         # subprocess arguments shared by all rsync calls:
         self.rsync_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
 
-    def run_cmd(self, args: list):
+    def run_cmd(self, args: list, check: bool = False):
         """
         Run a command locally or remotely.
         """
@@ -59,7 +59,7 @@ class BackupUtilities:
         if self.remote:
             all_args = ["ssh", self.remote] + all_args
 
-        res = subprocess.run(all_args, capture_output=True, text=True, check=False)
+        res = subprocess.run(all_args, capture_output=True, text=True, check=check)
         exit_code = res.returncode
 
         self.logger.debug(
@@ -281,9 +281,9 @@ class BackupUtilities:
 
         return True
 
-    def delete_old_backups(self) -> bool:
-        """Get all folders matching the backup pattern, and delete oldest ones."""
-        success, stdout = self.run_cmd(
+    def get_existing_backup_folders(self):
+        """Get all folders matching the backup folder name pattern."""
+        _, stdout = self.run_cmd(
             [
                 "find",
                 str(self.path),
@@ -295,11 +295,19 @@ class BackupUtilities:
                 "backup_*_*",
                 "-print",
             ],
+            check=True,
         )
-        if not success:
-            return False
 
-        sorted_folders = sorted(stdout.splitlines())
+        return stdout.splitlines()
+
+    def get_last_backup_folder(self):
+        """Get the latest backup folder, if it exists."""
+        existing_backups = self.get_existing_backup_folders()
+        return Path(sorted(existing_backups)[-1]) if existing_backups else None
+
+    def delete_old_backups(self):
+        """Get all folders matching the backup pattern, and delete oldest ones."""
+        sorted_folders = sorted(self.get_existing_backup_folders())
         to_delete = sorted_folders[: -(self.keep + 1)]
         for folder in to_delete:
             success = self.run_cmd(["rm", "-rf", folder])[0]
@@ -307,7 +315,6 @@ class BackupUtilities:
                 self.logger.info(f"Deleted old backup: {folder}")
             else:
                 self.logger.warning("Warning: couldn't delete old backup: %s", folder)
-        return True
 
     def backup_auto_folders(
         self,
@@ -316,43 +323,36 @@ class BackupUtilities:
         """Create a backup, managing live and previous backup folders automatically
 
         The running backup is done to `<path>/live-backup`. When it completes, it is moved to
-        the final path: `<path>/backup_<timestamp>_<randstr>` and the symlink `<path>/last-backup will
-        be set to point to it. Rsync `link-dest` is used between live-backup and last-backup
-        to keep the backups incremental and performant.
+        the final path: `<path>/backup_<timestamp>_<randstr>`. If the filesystem supports it,
+        the symlink `<path>/last-backup` is added to point to the last backup.
+        Rsync `link-dest` is used to keep the backups incremental and performant.
 
         :param backup_function:
             Function that is used to make a single backup. Needs to have two arguments: path and
             previous_backup location (which can be None).
-
-        :param path:
-            Path to where the backup will be created. If 'remote' is specified, must be an absolute path,
-            otherwise can be relative.
-
-        :param remote:
-            Remote host of the backup location. 'ssh' executable is called via subprocess and therefore remote
-            hosts configured for it are supported (e.g. via .ssh/config file).
 
         :return:
             True is successful and False if unsuccessful.
         """
 
         live_folder = self.path / "live-backup"
-        last_symlink = self.path / "last-backup"
 
-        prev_exists = self.check_path_exists(last_symlink)
-        if prev_exists:
+        try:
+            last_folder = self.get_last_backup_folder()
+        except subprocess.CalledProcessError:
+            self.logger.error("Couldn't determine last backup.")
+            return False
+
+        if last_folder:
             self.logger.info(
-                f"'{str(last_symlink)}' exists, using it for rsync --link-dest."
+                f"Last backup is '{str(last_folder)}', using it for rsync --link-dest."
             )
+        else:
+            self.logger.info("Couldn't find a previous backup to increment from.")
 
-        # success = self.backup_container(
-        #     container,
-        #     live_folder,
-        #     prev_backup=last_symlink if prev_exists else None,
-        # )
         success = backup_function(
             live_folder,
-            last_symlink if prev_exists else None,
+            last_folder,
         )
         if not success:
             return False
@@ -368,14 +368,25 @@ class BackupUtilities:
         if not success:
             return False
 
-        # update last-backup symlink
-        success = self.run_cmd(["ln", "-sfn", str(folder_name), str(last_symlink)])[0]
-        if not success:
-            return False
         self.logger.info(
             f"Backup moved from '{str(live_folder)}' to '{str(self.path / folder_name)}'."
         )
 
-        self.delete_old_backups()
+        symlink_name = "last-backup"
+        success = self.run_cmd(
+            ["ln", "-sfn", str(folder_name), str(self.path / symlink_name)]
+        )[0]
+        if not success:
+            self.logger.warning(
+                f"Couldn't create symlink '{symlink_name}'. Perhaps the filesystem doesn't support it."
+            )
+        else:
+            self.logger.info(f"Added symlink '{symlink_name}' to '{folder_name}'.")
+
+        try:
+            self.delete_old_backups()
+        except subprocess.CalledProcessError:
+            self.logger.error("Failed to delete old backups.")
+            return False
 
         return True

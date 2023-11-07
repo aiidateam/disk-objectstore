@@ -185,3 +185,20 @@ def test_validate_no_progressbar(temp_container, verbose, monkeypatch):
     assert result.exit_code == 0
     assert "INFO: no `tqdm` package found" in result.stdout
     assert "No errors found" in result.stdout
+
+
+def test_backup(temp_container, temp_dir):
+    """Test the backup command"""
+
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    obj = cli.ContainerContext(temp_container.get_folder())
+
+    path = Path(temp_dir) / "backup"
+    result = CliRunner().invoke(cli.backup, [str(path)], obj=obj)
+
+    assert result.exit_code == 0
+    assert path.exists()

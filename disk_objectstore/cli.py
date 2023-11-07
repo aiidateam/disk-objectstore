@@ -212,9 +212,13 @@ def backup(
 
     NOTE: This is safe to run while the container is being used.
 
+    NOTE: the symlink `last-backup` is omitted if the filesystem doesn't support it.
+
     Destination (DEST) can either be a local path, or a remote destination (reachable via ssh).
     In the latter case, remote destination needs to have the following syntax:
+
        [<remote_user>@]<remote_host>:<path>
+
     i.e., contain the remote host name and the remote path, separated by a colon (and optionally the
     remote user separated by an @ symbol). You can tune SSH parameters using the standard options given
     by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
