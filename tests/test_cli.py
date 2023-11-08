@@ -187,7 +187,17 @@ def test_validate_no_progressbar(temp_container, verbose, monkeypatch):
     assert "No errors found" in result.stdout
 
 
-def test_backup(temp_container, temp_dir):
+@pytest.mark.parametrize(
+    "remote, verbosity",
+    [
+        (False, None),
+        (False, "silent"),
+        (False, "info"),
+        (False, "debug"),
+        (True, None),
+    ],
+)
+def test_backup(temp_container, temp_dir, remote, verbosity):
     """Test the backup command"""
 
     temp_container.init_container(clear=True)
@@ -198,7 +208,68 @@ def test_backup(temp_container, temp_dir):
     obj = cli.ContainerContext(temp_container.get_folder())
 
     path = Path(temp_dir) / "backup"
-    result = CliRunner().invoke(cli.backup, [str(path)], obj=obj)
+
+    if remote:
+        destination = f"localhost:{str(path)}"
+    else:
+        destination = str(path)
+
+    args = [destination]
+
+    if verbosity:
+        args += [f"--verbosity={verbosity}"]
+
+    result = CliRunner().invoke(cli.backup, args, obj=obj)
 
     assert result.exit_code == 0
     assert path.exists()
+
+    path_contents = [entry.name for entry in path.iterdir()]
+    backup_dirs = [
+        entry for entry in path.iterdir() if entry.name.startswith("backup_")
+    ]
+
+    assert "last-backup" in path_contents
+    assert len(backup_dirs) == 1
+
+    backup_dir_contents = [entry.name for entry in backup_dirs[0].iterdir()]
+
+    for item in ["config.json", "duplicates", "loose", "packs", "packs.idx", "sandbox"]:
+        assert item in backup_dir_contents
+
+    # validate the backup
+
+    obj = cli.ContainerContext(backup_dirs[0])
+    result = CliRunner().invoke(cli.validate, obj=obj)
+
+    assert result.exit_code == 0
+    assert "No errors found" in result.stdout
+
+
+def test_backup_repeated(temp_container, temp_dir):
+    """Test the backup command repeated 3 times.
+
+    Considering --keep 1 is default, the last one should get deleted.
+    """
+
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    obj = cli.ContainerContext(temp_container.get_folder())
+
+    path = Path(temp_dir) / "backup"
+
+    for _ in range(3):
+        result = CliRunner().invoke(cli.backup, [str(path)], obj=obj)
+        assert result.exit_code == 0
+
+    assert path.exists()
+    path_contents = [entry.name for entry in path.iterdir()]
+    backup_dirs = [
+        entry for entry in path.iterdir() if entry.name.startswith("backup_")
+    ]
+
+    assert "last-backup" in path_contents
+    assert len(backup_dirs) == 2
