@@ -236,7 +236,7 @@ def backup(
         backup_utils.logger.setLevel(logging.DEBUG)
     else:
         click.echo("Unsupported verbosity.")
-        return
+        return 1
 
     try:
         backup_utils_instance = backup_utils.BackupUtilities(
@@ -244,12 +244,12 @@ def backup(
         )
     except ValueError as e:
         click.echo(f"Error: {e}")
-        return
+        return 1
 
     success = backup_utils_instance.validate_inputs()
     if not success:
         click.echo("Input validation failed.")
-        return
+        return 1
 
     with dostore.container as container:
         success = backup_utils_instance.backup_auto_folders(
@@ -259,4 +259,5 @@ def backup(
         )
         if not success:
             click.echo("Error: backup failed.")
-            return
+            return 1
+    return 0
