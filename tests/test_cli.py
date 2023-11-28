@@ -1,4 +1,5 @@
 """Test the CLI commands"""
+import platform
 from pathlib import Path
 
 import pytest
@@ -187,6 +188,9 @@ def test_validate_no_progressbar(temp_container, verbose, monkeypatch):
     assert "No errors found" in result.stdout
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Backup not supported on Windows"
+)
 @pytest.mark.parametrize(
     "remote, verbosity",
     [
@@ -246,6 +250,9 @@ def test_backup(temp_container, temp_dir, remote, verbosity):
     assert "No errors found" in result.stdout
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Backup not supported on Windows"
+)
 def test_backup_repeated(temp_container, temp_dir):
     """Test the backup command repeated 3 times.
 
