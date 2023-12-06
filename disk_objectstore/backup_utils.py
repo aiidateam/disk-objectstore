@@ -16,7 +16,11 @@ from typing import Callable, Optional
 from disk_objectstore.container import Container
 
 logging.basicConfig()
-logger = logging.getLogger(__name__)
+backup_logger = logging.getLogger(__name__)
+
+
+class BackupError(Exception):
+    "Raised when backup fails."
 
 
 def split_remote_and_path(dest: str):
@@ -27,50 +31,40 @@ def split_remote_and_path(dest: str):
     if len(split_dest) == 2:
         return split_dest[0], Path(split_dest[1])
     # more than 1 colon:
-    raise ValueError("Invalid destination format: <remote>:<path>")
+    raise BackupError("Invalid destination format: <remote>:<path>")
 
 
 def is_exe_found(exe: str) -> bool:
     return shutil.which(exe) is not None
 
 
-class BackupUtilities:
-    """Utilities to make a backup of the disk-objectstore container
-    and to manage backups in general (designed to also be used by aiida-core)
+class BackupManager:
+    """
+    Class that contains all configuration and utility functions to create
+    backups except for the backup function itself, which is passed in according
+    to what is backed up (e.g. the disk-objectstore container in for this repo,
+    or the whole aiida storage in aiida-core)
     """
 
     def __init__(
-        self, dest: str, keep: int, rsync_exe: str, logger_: logging.Logger
+        self,
+        dest: str,
+        keep: int,
+        logger: logging.Logger,
+        exes: dict,
     ) -> None:
         self.dest = dest
         self.keep = keep
-        self.rsync_exe = rsync_exe
-        self.logger = logger_
+        self.logger = logger
         self.remote, self.path = split_remote_and_path(dest)
 
-        # subprocess arguments shared by all rsync calls:
-        self.rsync_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
+        self.exes = exes
 
-    def run_cmd(self, args: list, check: bool = False):
-        """
-        Run a command locally or remotely.
-        """
-        all_args = args[:]
-        if self.remote:
-            all_args = ["ssh", self.remote] + all_args
+        # make sure rsync gets added so it gets validated
+        if "rsync" not in self.exes:
+            self.exes["rsync"] = "rsync"
 
-        res = subprocess.run(all_args, capture_output=True, text=True, check=check)
-        exit_code = res.returncode
-
-        self.logger.debug(
-            f"Command: {all_args}\n"
-            f"  Exit Code: {exit_code}\n"
-            f"  stdout/stderr: {res.stdout}\n{res.stderr}"
-        )
-
-        success = exit_code == 0
-
-        return success, res.stdout
+        self.validate()
 
     def check_if_remote_accessible(self) -> bool:
         """Check if remote host is accessible via ssh"""
@@ -86,39 +80,61 @@ class BackupUtilities:
         cmd = ["[", "-e", str(path), "]"]
         return self.run_cmd(cmd)[0]
 
-    def validate_inputs(self, additional_exes: Optional[list] = None) -> bool:
-        """Validate inputs to the backup cli command
+    def validate(self):
+        """Validate the backup config inputs
 
         :return:
             True if validation passes, False otherwise.
         """
         if self.keep < 0:
-            self.logger.error("keep variable can't be negative!")
-            return False
+            raise BackupError(
+                "Input validation failed: keep variable can't be negative!"
+            )
 
         if self.remote:
             if not self.check_if_remote_accessible():
-                return False
+                raise BackupError(
+                    "Input validation failed: keep variable can't be negative!"
+                )
 
-        if not is_exe_found(self.rsync_exe):
-            self.logger.error(f"{self.rsync_exe} not accessible.")
-            return False
-
-        if additional_exes:
-            for add_exe in additional_exes:
-                if not is_exe_found(add_exe):
-                    self.logger.error(f"{add_exe} not accessible.")
-                    return False
+        if self.exes:
+            for _, path in self.exes.items():
+                if not is_exe_found(path):
+                    raise BackupError(
+                        f"Input validation failed: {path} not accessible."
+                    )
 
         path_exists = self.check_path_exists(self.path)
 
         if not path_exists:
             success = self.run_cmd(["mkdir", str(self.path)])[0]
             if not success:
-                self.logger.error(f"Couldn't access/create '{str(self.path)}'!")
-                return False
+                raise BackupError(
+                    f"Input validation failed: Couldn't access/create '{str(self.path)}'!"
+                )
 
-        return True
+    def run_cmd(
+        self,
+        args: list,
+    ):
+        """
+        Run a command locally or remotely.
+        """
+        all_args = args[:]
+        if self.remote:
+            all_args = ["ssh", self.remote] + all_args
+
+        res = subprocess.run(all_args, capture_output=True, text=True, check=False)
+
+        self.logger.debug(
+            f"Command: {all_args}\n"
+            f"  Exit Code: {res.returncode}\n"
+            f"  stdout/stderr: {res.stdout}\n{res.stderr}"
+        )
+
+        success = res.returncode == 0
+
+        return success, res.stdout
 
     def call_rsync(  # pylint: disable=too-many-arguments
         self,
@@ -146,7 +162,9 @@ class BackupUtilities:
             True if successful and False if unsuccessful.
         """
 
-        all_args = self.rsync_args[:]
+        assert "rsync" in self.exes
+
+        all_args = [self.exes["rsync"], "-azh", "-vv", "--no-whole-file"]
         if extra_args:
             all_args += extra_args
         if link_dest:
@@ -172,114 +190,24 @@ class BackupUtilities:
         else:
             all_args += [f"{self.remote}:{dest_str}"]
 
-        try:
-            res = subprocess.run(all_args, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as exc:
-            self.logger.error(f"{exc}")
-            return False
-        exit_code = res.returncode
+        res = subprocess.run(all_args, capture_output=True, text=True, check=False)
 
         self.logger.debug(
             "Command: %s\n  Exit Code: %s\n  stdout/stderr: %s\n%s",
             str(all_args),
-            exit_code,
+            res.returncode,
             res.stdout,
             res.stderr,
         )
 
-        success = exit_code == 0
+        success = res.returncode == 0
 
         return success
 
-    def backup_container(  # pylint: disable=too-many-return-statements, too-many-branches
-        self,
-        container: Container,
-        path: Path,
-        prev_backup: Optional[Path] = None,
-    ) -> bool:
-        """Create a backup of the disk-objectstore container
-
-        This is safe to perform when the container is being used.
-
-        It should be done in the following order:
-            1) loose files;
-            2) sqlite database;
-            3) packed files.
-
-        :return:
-            True if successful and False if unsuccessful.
-        """
-
-        container_root_path = container.get_folder()
-        loose_path = container._get_loose_folder()  # pylint: disable=protected-access
-        packs_path = container._get_pack_folder()  # pylint: disable=protected-access
-        sqlite_path = (
-            container._get_pack_index_path()  # pylint: disable=protected-access
-        )
-
-        # step 1: back up loose files
-        loose_path_rel = loose_path.relative_to(container_root_path)
-        prev_backup_loose = prev_backup / loose_path_rel if prev_backup else None
-        success = self.call_rsync(loose_path, path, link_dest=prev_backup_loose)
-        if not success:
-            return False
-        self.logger.info(f"Transferred {str(loose_path)} to {str(path)}")
-
-        # step 2: back up sqlite db
-
-        # make a temporary directory to dump sqlite db locally
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            sqlite_temp_loc = Path(temp_dir_name) / "packs.idx"
-
-            # Safe way to make a backup of the sqlite db, while it might potentially be accessed
-            # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup
-            src = sqlite3.connect(str(sqlite_path))
-            dst = sqlite3.connect(str(sqlite_temp_loc))
-            with dst:
-                src.backup(dst)
-            dst.close()
-            src.close()
-
-            if sqlite_temp_loc.is_file():
-                self.logger.info(
-                    f"Dumped the SQLite database to {str(sqlite_temp_loc)}"
-                )
-            else:
-                self.logger.error("'%s' was not created.", str(sqlite_temp_loc))
-                return False
-
-            # step 3: transfer the SQLITE database file
-            success = self.call_rsync(sqlite_temp_loc, path, link_dest=prev_backup)
-            if not success:
-                return False
-            self.logger.info(f"Transferred SQLite database to {str(path)}")
-
-        # step 4: transfer the packed files
-        packs_path_rel = packs_path.relative_to(container_root_path)
-        success = self.call_rsync(packs_path, path, link_dest=prev_backup)
-        if not success:
-            return False
-        self.logger.info(f"Transferred {str(packs_path)} to {str(path)}")
-
-        # step 5: transfer anything else in the container folder
-        success = self.call_rsync(
-            container_root_path,
-            path,
-            link_dest=prev_backup,
-            src_trailing_slash=True,
-            extra_args=[
-                "--exclude",
-                str(loose_path_rel),
-                "--exclude",
-                "packs.idx",
-                "--exclude",
-                str(packs_path_rel),
-            ],
-        )
-        if not success:
-            return False
-
-        return True
+    # ----
+    # Utilities to manage multiple folders of backups, e.g. hard-linking to previous backup;
+    # deleting old backups.
+    # ----
 
     def get_existing_backup_folders(self):
         """Get all folders matching the backup folder name pattern."""
@@ -294,8 +222,7 @@ class BackupUtilities:
                 "-name",
                 "backup_*_*",
                 "-print",
-            ],
-            check=True,
+            ]
         )
 
         return stdout.splitlines()
@@ -316,10 +243,7 @@ class BackupUtilities:
             else:
                 self.logger.warning("Warning: couldn't delete old backup: %s", folder)
 
-    def backup_auto_folders(
-        self,
-        backup_function: Callable,
-    ):
+    def backup_auto_folders(self, backup_func: Callable):
         """Create a backup, managing live and previous backup folders automatically
 
         The running backup is done to `<path>/live-backup`. When it completes, it is moved to
@@ -327,7 +251,7 @@ class BackupUtilities:
         the symlink `<path>/last-backup` is added to point to the last backup.
         Rsync `link-dest` is used to keep the backups incremental and performant.
 
-        :param backup_function:
+        :param backup_func:
             Function that is used to make a single backup. Needs to have two arguments: path and
             previous_backup location (which can be None).
 
@@ -339,9 +263,8 @@ class BackupUtilities:
 
         try:
             last_folder = self.get_last_backup_folder()
-        except subprocess.CalledProcessError:
-            self.logger.error("Couldn't determine last backup.")
-            return False
+        except subprocess.CalledProcessError as exc:
+            raise BackupError("Couldn't determine last backup.") from exc
 
         if last_folder:
             self.logger.info(
@@ -350,15 +273,15 @@ class BackupUtilities:
         else:
             self.logger.info("Couldn't find a previous backup to increment from.")
 
-        success = backup_function(
+        backup_func(
             live_folder,
             last_folder,
         )
-        if not success:
-            return False
 
         # move live-backup -> backup_<timestamp>_<randstr>
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y%m%d%H%M%S"
+        )
         randstr = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
         folder_name = f"backup_{timestamp}_{randstr}"
 
@@ -366,7 +289,9 @@ class BackupUtilities:
             0
         ]
         if not success:
-            return False
+            raise BackupError(
+                f"Failed to move '{str(live_folder)}' to '{str(self.path / folder_name)}'"
+            )
 
         self.logger.info(
             f"Backup moved from '{str(live_folder)}' to '{str(self.path / folder_name)}'."
@@ -386,7 +311,92 @@ class BackupUtilities:
         try:
             self.delete_old_backups()
         except subprocess.CalledProcessError:
-            self.logger.error("Failed to delete old backups.")
-            return False
+            self.logger.warning("Failed to delete old backups.")
 
-        return True
+
+def backup_container(
+    manager: BackupManager,
+    container: Container,
+    path: Path,
+    prev_backup: Optional[Path] = None,
+) -> None:
+    """Create a backup of the disk-objectstore container
+
+    This is safe to perform when the container is being used.
+
+    It should be done in the following order:
+        1) loose files;
+        2) sqlite database;
+        3) packed files.
+
+    :return:
+        True if successful and False if unsuccessful.
+    """
+
+    container_root_path = container.get_folder()
+    loose_path = container._get_loose_folder()  # pylint: disable=protected-access
+    packs_path = container._get_pack_folder()  # pylint: disable=protected-access
+    sqlite_path = container._get_pack_index_path()  # pylint: disable=protected-access
+
+    # step 1: back up loose files
+    loose_path_rel = loose_path.relative_to(container_root_path)
+    prev_backup_loose = prev_backup / loose_path_rel if prev_backup else None
+    success = manager.call_rsync(loose_path, path, link_dest=prev_backup_loose)
+    if not success:
+        raise BackupError(f"rsync failed for: {str(loose_path)} to {str(path)}")
+    manager.logger.info(f"Transferred {str(loose_path)} to {str(path)}")
+
+    # step 2: back up sqlite db
+
+    # make a temporary directory to dump sqlite db locally
+    with tempfile.TemporaryDirectory() as temp_dir_name:
+        sqlite_temp_loc = Path(temp_dir_name) / "packs.idx"
+
+        # Safe way to make a backup of the sqlite db, while it might potentially be accessed
+        # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup
+        src = sqlite3.connect(str(sqlite_path))
+        dst = sqlite3.connect(str(sqlite_temp_loc))
+        with dst:
+            src.backup(dst)
+        dst.close()
+        src.close()
+
+        if sqlite_temp_loc.is_file():
+            manager.logger.info(f"Dumped the SQLite database to {str(sqlite_temp_loc)}")
+        else:
+            raise BackupError(f"'{str(sqlite_temp_loc)}' failed to be created.")
+
+        # step 3: transfer the SQLITE database file
+        success = manager.call_rsync(sqlite_temp_loc, path, link_dest=prev_backup)
+        if not success:
+            raise BackupError(
+                f"rsync failed for: {str(sqlite_temp_loc)} to {str(path)}"
+            )
+        manager.logger.info(f"Transferred SQLite database to {str(path)}")
+
+    # step 4: transfer the packed files
+    packs_path_rel = packs_path.relative_to(container_root_path)
+    success = manager.call_rsync(packs_path, path, link_dest=prev_backup)
+    if not success:
+        raise BackupError(f"rsync failed for: {str(packs_path)} to {str(path)}")
+    manager.logger.info(f"Transferred {str(packs_path)} to {str(path)}")
+
+    # step 5: transfer anything else in the container folder
+    success = manager.call_rsync(
+        container_root_path,
+        path,
+        link_dest=prev_backup,
+        src_trailing_slash=True,
+        extra_args=[
+            "--exclude",
+            str(loose_path_rel),
+            "--exclude",
+            "packs.idx",
+            "--exclude",
+            str(packs_path_rel),
+        ],
+    )
+    if not success:
+        raise BackupError(
+            f"rsync failed for: {str(container_root_path)} to {str(path)}"
+        )

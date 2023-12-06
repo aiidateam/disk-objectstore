@@ -229,35 +229,26 @@ def backup(
     """
 
     if verbosity == "silent":
-        backup_utils.logger.setLevel(logging.ERROR)
+        backup_utils.backup_logger.setLevel(logging.ERROR)
     elif verbosity == "info":
-        backup_utils.logger.setLevel(logging.INFO)
+        backup_utils.backup_logger.setLevel(logging.INFO)
     elif verbosity == "debug":
-        backup_utils.logger.setLevel(logging.DEBUG)
+        backup_utils.backup_logger.setLevel(logging.DEBUG)
     else:
         click.echo("Unsupported verbosity.")
         return 1
 
-    try:
-        backup_utils_instance = backup_utils.BackupUtilities(
-            dest, keep, rsync_exe, backup_utils.logger
-        )
-    except ValueError as e:
-        click.echo(f"Error: {e}")
-        return 1
-
-    success = backup_utils_instance.validate_inputs()
-    if not success:
-        click.echo("Input validation failed.")
-        return 1
-
     with dostore.container as container:
-        success = backup_utils_instance.backup_auto_folders(
-            lambda path, prev: backup_utils_instance.backup_container(
-                container, path, prev_backup=prev
+        try:
+            backup_manager = backup_utils.BackupManager(
+                dest, keep, backup_utils.backup_logger, exes={"rsync": rsync_exe}
             )
-        )
-        if not success:
-            click.echo("Error: backup failed.")
+            backup_manager.backup_auto_folders(
+                lambda path, prev: backup_utils.backup_container(
+                    backup_manager, container, path, prev
+                )
+            )
+        except backup_utils.BackupError as e:
+            click.echo(f"Error: {e}")
             return 1
     return 0
