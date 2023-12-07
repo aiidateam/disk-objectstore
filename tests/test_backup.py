@@ -66,6 +66,17 @@ def test_rsync_failure():
         manager.call_rsync(Path(f"/_{_random_string()}"), Path(dest))
 
 
+def test_rsync_dest_trailing_slash(temp_dir):
+    """Test case for dest_trailing_slash."""
+    dest1 = Path(temp_dir) / "dest1"
+    dest2 = Path(temp_dir) / "dest2"
+    # manager will create dest1 folder
+    manager = BackupManager(str(dest1), backup_utils.backup_logger)
+    # dest_trailing_slash=True will create dest2
+    manager.call_rsync(dest1, dest2, dest_trailing_slash=True)
+    assert dest2.exists()
+
+
 def test_existing_backups_failure():
     """Test case where existing backups fail to be determined."""
     dest = "/tmp/test"

@@ -136,6 +136,7 @@ class BackupManager:
         dest: Path,
         link_dest: Optional[Path] = None,
         src_trailing_slash: bool = False,
+        dest_trailing_slash: bool = False,
         extra_args: Optional[list] = None,
     ):
         """Call rsync with specified arguments and handle possible errors & stdout/stderr
@@ -146,6 +147,10 @@ class BackupManager:
         :param src_trailing_slash:
             Add a trailing slash to the source path. This makes rsync copy the contents
             of the folder instead of the folder itself.
+
+        :param dest_trailing_slash:
+            Add a trailing slash to the destination path. This makes rsync interpret the
+            destination as a folder and create it if it doesn't exists.
 
         """
 
@@ -169,6 +174,8 @@ class BackupManager:
             all_args += [str(src)]
 
         dest_str = str(dest)
+        if dest_trailing_slash:
+            dest_str += "/"
 
         if not self.remote:
             all_args += [dest_str]
