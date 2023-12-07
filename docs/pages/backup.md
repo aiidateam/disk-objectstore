@@ -1,4 +1,4 @@
-# Backing up the container
+# Making backups
 
 ## User instructions
 
@@ -42,6 +42,20 @@ Options:
   --verbosity TEXT  Set verbosity [silent|info|debug], default is 'info'.
   --help            Show this message and exit.
 
+```
+
+Example usage:
+
+```console
+$ dostore backup /path/to/backup
+INFO:Last backup is '/path/to/backup/backup_20231207142602_ymqf', using it for rsync --link-dest.
+INFO:Transferred /path/to/dostore/loose to /path/to/backup/live-backup
+INFO:Dumped the SQLite database to /tmp/tmpgewwse3f/packs.idx
+INFO:Transferred SQLite database to /path/to/backup/live-backup
+INFO:Transferred /path/to/dostore/packs to /path/to/backup/live-backup
+INFO:Backup moved from '/path/to/backup/live-backup' to '/path/to/backup/backup_20231207142913_pz7m'.
+INFO:Added symlink 'last-backup' to 'backup_20231207142913_pz7m'.
+INFO:Deleted old backup: /path/to/backup/backup_20231207131741_zar7
 ```
 
 For more detailed information about how the backup is made, see the next section.

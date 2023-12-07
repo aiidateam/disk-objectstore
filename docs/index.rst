@@ -64,7 +64,7 @@ and does not require a server running.
 
    ----------------------------------------------
 
-:fa:`bookmark,mr-1` **Making a backup**
+   :fa:`bookmark,mr-1` **Making backups**
 
    Information on how to back up a container.
 
