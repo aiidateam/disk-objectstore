@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 from disk_objectstore.container import Container
 
-logging.basicConfig()
+logging.basicConfig(format="%(levelname)s:%(message)s")
 backup_logger = logging.getLogger(__name__)
 
 
