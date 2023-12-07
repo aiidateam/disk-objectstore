@@ -2,6 +2,7 @@
 
 """
 
+import platform
 import random
 import string
 from pathlib import Path
@@ -10,6 +11,10 @@ import pytest
 
 from disk_objectstore import backup_utils
 from disk_objectstore.backup_utils import BackupError, BackupManager
+
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Windows", reason="Backup not supported on Windows"
+)
 
 
 def _random_string(n=10):
@@ -71,8 +76,40 @@ def test_existing_backups_failure():
         manager.get_existing_backup_folders()
 
 
+def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
+    """Test case where sqlite fails to make a backup file."""
+
+    # monkeypatch sqlite backup to do nothing
+    def mock_sqlite_backup(src, dst):  # pylint: disable=unused-argument
+        pass
+
+    monkeypatch.setattr(
+        backup_utils,
+        "_sqlite_backup",
+        mock_sqlite_backup,
+    )
+
+    # make a container
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    dest = Path(temp_dir) / "backup"
+    with pytest.raises(BackupError, match="'.*' failed to be created."):
+        manager = BackupManager(str(dest), backup_utils.backup_logger)
+        manager.backup_auto_folders(
+            lambda path, prev: backup_utils.backup_container(
+                manager, temp_container, path, prev
+            )
+        )
+
+
 def test_mv_failure(monkeypatch, temp_container, temp_dir):
-    """Test case where mv command fails by monkeypatching."""
+    """
+    Test case where mv command fails by monkeypatching.
+    Make sure correct BackupError is raised.
+    """
 
     # save a reference to the original run_cmd command
     original_run_cmd = backup_utils.BackupManager.run_cmd
@@ -105,30 +142,77 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
         )
 
 
-def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
-    """Test case where sqlite fails to make a backup file."""
+def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
+    """
+    Test case where ln command fails by monkeypatching.
+    Make sure correct warning is logged.
+    """
 
-    # monkeypatch sqlite backup to do nothing
-    def mock_sqlite_backup(src, dst):  # pylint: disable=unused-argument
-        pass
+    # save a reference to the original run_cmd command
+    original_run_cmd = backup_utils.BackupManager.run_cmd
+
+    # monkeypatch the run_cmd command to fail when "mv" is used
+    def mock_run_cmd(self, args):
+        if "ln" in args:
+            return False, ""
+        return original_run_cmd(self, args)
 
     monkeypatch.setattr(
-        backup_utils,
-        "_sqlite_backup",
-        mock_sqlite_backup,
+        backup_utils.BackupManager,
+        "run_cmd",
+        mock_run_cmd,
     )
 
-    # make a container
+    # make a container and back it up
     temp_container.init_container(clear=True)
     # Add a few objects
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
     dest = Path(temp_dir) / "backup"
-    with pytest.raises(BackupError, match="'.*' failed to be created."):
-        manager = BackupManager(str(dest), backup_utils.backup_logger)
+    manager = BackupManager(str(dest), backup_utils.backup_logger)
+    manager.backup_auto_folders(
+        lambda path, prev: backup_utils.backup_container(
+            manager, temp_container, path, prev
+        )
+    )
+    assert "Couldn't create symlink" in caplog.text
+
+
+def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
+    """
+    Test case where rm command fails by monkeypatching.
+    Make sure correct warning is logged.
+    Note, this is used for deleting old backups, so create two with keep=0.
+    """
+
+    # save a reference to the original run_cmd command
+    original_run_cmd = backup_utils.BackupManager.run_cmd
+
+    # monkeypatch the run_cmd command to fail when "mv" is used
+    def mock_run_cmd(self, args):
+        if "rm" in args:
+            return False, ""
+        return original_run_cmd(self, args)
+
+    monkeypatch.setattr(
+        backup_utils.BackupManager,
+        "run_cmd",
+        mock_run_cmd,
+    )
+
+    # make a container and back it up
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    dest = Path(temp_dir) / "backup"
+    manager = BackupManager(str(dest), backup_utils.backup_logger, keep=0)
+    for _ in range(2):
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(
                 manager, temp_container, path, prev
             )
         )
+    assert "Warning: couldn't delete old backup" in caplog.text

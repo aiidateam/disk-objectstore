@@ -286,3 +286,47 @@ def test_backup_repeated(temp_container, temp_dir, remote):
 
     assert "last-backup" in path_contents
     assert len(backup_dirs) == 2
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Backup not supported on Windows"
+)
+def test_backup_unsupported_verbosity(temp_container, temp_dir):
+    """Test failure when providing unsupported verbosity value"""
+
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    obj = cli.ContainerContext(temp_container.get_folder())
+
+    path = Path(temp_dir) / "backup"
+
+    args = [str(path), "--verbosity=unsupported"]
+
+    result = CliRunner().invoke(cli.backup, args, obj=obj)
+
+    assert result.exit_code == 1
+    assert "Unsupported verbosity" in result.stdout
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Backup not supported on Windows"
+)
+def test_backup_failure(temp_container):
+    """Test failure when providing invalid destination"""
+
+    temp_container.init_container(clear=True)
+    # Add a few objects
+    for idx in range(100):
+        temp_container.add_object(f"test-{idx}".encode())
+
+    obj = cli.ContainerContext(temp_container.get_folder())
+
+    dest = "abc:abc:"
+
+    result = CliRunner().invoke(cli.backup, [dest], obj=obj)
+
+    assert result.exit_code == 1
+    assert "Error:" in result.stdout

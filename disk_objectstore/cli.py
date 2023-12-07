@@ -236,7 +236,7 @@ def backup(
         backup_utils.backup_logger.setLevel(logging.DEBUG)
     else:
         click.echo("Unsupported verbosity.")
-        return 1
+        sys.exit(1)
 
     with dostore.container as container:
         try:
@@ -253,5 +253,4 @@ def backup(
             )
         except backup_utils.BackupError as e:
             click.echo(f"Error: {e}")
-            return 1
-    return 0
+            sys.exit(1)
