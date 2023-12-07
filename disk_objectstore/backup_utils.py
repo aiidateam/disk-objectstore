@@ -82,11 +82,7 @@ class BackupManager:
         return self.run_cmd(cmd)[0]
 
     def validate(self):
-        """Validate the backup config inputs
-
-        :return:
-            True if validation passes, False otherwise.
-        """
+        """Validate the backup config inputs"""
         if self.keep < 0:
             raise BackupError(
                 "Input validation failed: keep variable can't be negative!"
@@ -151,8 +147,6 @@ class BackupManager:
             Add a trailing slash to the source path. This makes rsync copy the contents
             of the folder instead of the folder itself.
 
-        :return:
-            True if successful and False if unsuccessful.
         """
 
         assert "rsync" in self.exes
@@ -238,7 +232,7 @@ class BackupManager:
             else:
                 self.logger.warning("Warning: couldn't delete old backup: %s", folder)
 
-    def backup_auto_folders(self, backup_func: Callable):
+    def backup_auto_folders(self, backup_func: Callable) -> None:
         """Create a backup, managing live and previous backup folders automatically
 
         The running backup is done to `<path>/live-backup`. When it completes, it is moved to
@@ -250,8 +244,6 @@ class BackupManager:
             Function that is used to make a single backup. Needs to have two arguments: path and
             previous_backup location (which can be None).
 
-        :return:
-            True is successful and False if unsuccessful.
         """
 
         live_folder = self.path / "live-backup"
@@ -331,8 +323,6 @@ def backup_container(
         2) sqlite database;
         3) packed files.
 
-    :return:
-        True if successful and False if unsuccessful.
     """
 
     container_root_path = container.get_folder()
