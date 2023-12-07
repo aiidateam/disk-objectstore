@@ -241,7 +241,10 @@ def backup(
     with dostore.container as container:
         try:
             backup_manager = backup_utils.BackupManager(
-                dest, keep, backup_utils.backup_logger, exes={"rsync": rsync_exe}
+                dest,
+                backup_utils.backup_logger,
+                exes={"rsync": rsync_exe},
+                keep=keep,
             )
             backup_manager.backup_auto_folders(
                 lambda path, prev: backup_utils.backup_container(

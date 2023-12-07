@@ -253,7 +253,8 @@ def test_backup(temp_container, temp_dir, remote, verbosity):
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Backup not supported on Windows"
 )
-def test_backup_repeated(temp_container, temp_dir):
+@pytest.mark.parametrize("remote", [False, True])
+def test_backup_repeated(temp_container, temp_dir, remote):
     """Test the backup command repeated 3 times.
 
     Considering --keep 1 is default, the last one should get deleted.
@@ -268,8 +269,13 @@ def test_backup_repeated(temp_container, temp_dir):
 
     path = Path(temp_dir) / "backup"
 
+    if remote:
+        destination = f"localhost:{str(path)}"
+    else:
+        destination = str(path)
+
     for _ in range(3):
-        result = CliRunner().invoke(cli.backup, [str(path)], obj=obj)
+        result = CliRunner().invoke(cli.backup, [destination], obj=obj)
         assert result.exit_code == 0
 
     assert path.exists()
