@@ -238,9 +238,6 @@ def backup(
         backup_utils.backup_logger.setLevel(logging.INFO)
     elif verbosity == "debug":
         backup_utils.backup_logger.setLevel(logging.DEBUG)
-    else:
-        click.echo("Unsupported verbosity.")
-        sys.exit(1)
 
     with dostore.container as container:
         try:
