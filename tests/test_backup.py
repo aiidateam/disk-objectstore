@@ -24,7 +24,7 @@ def _random_string(n=10):
 def test_invalid_destination():
     """Test invalid destination with two colons."""
     dest = "localhost:/tmp/test:"
-    with pytest.raises(BackupError, match="Invalid destination format"):
+    with pytest.raises(ValueError, match="Invalid destination format"):
         BackupManager(dest, backup_utils.backup_logger)
 
 
@@ -38,7 +38,7 @@ def test_inaccessible_remote():
 def test_negative_keep():
     """Test a negative keep value."""
     dest = "/tmp/test"
-    with pytest.raises(BackupError, match="keep variable can't be negative"):
+    with pytest.raises(ValueError, match="keep variable can't be negative"):
         BackupManager(dest, backup_utils.backup_logger, keep=-1)
 
 
@@ -46,14 +46,14 @@ def test_inaccessible_exe():
     """Test case where rsync is not accessible."""
     dest = "/tmp/test"
     rsync_exe = f"_{_random_string()}"
-    with pytest.raises(BackupError, match=f"{rsync_exe} not accessible."):
+    with pytest.raises(ValueError, match=f"{rsync_exe} not accessible."):
         BackupManager(dest, backup_utils.backup_logger, exes={"rsync": rsync_exe})
 
 
 def test_inaccessible_path():
     """Test case where path is not accessible."""
     dest = f"/_{_random_string()}"  # I assume there will be a permission error for this path
-    with pytest.raises(BackupError, match=f"Couldn't access/create '{dest}'"):
+    with pytest.raises(ValueError, match=f"Couldn't access/create '{dest}'"):
         BackupManager(dest, backup_utils.backup_logger)
 
 
