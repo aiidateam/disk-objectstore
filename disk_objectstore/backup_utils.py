@@ -156,11 +156,8 @@ class BackupManager:
         if link_dest:
             if not self.remote:
                 # for local paths, use resolve() to get absolute path
-                link_dest_str = str(link_dest.resolve())
-            else:
-                # for remote paths, we require absolute paths anyways
-                link_dest_str = str(link_dest)
-            all_args += [f"--link-dest={link_dest_str}"]
+                link_dest = link_dest.resolve()
+            all_args += [f"--link-dest={link_dest}"]
 
         if src_trailing_slash:
             all_args += [str(src) + "/"]
