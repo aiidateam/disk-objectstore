@@ -67,7 +67,27 @@ class BackupManager:
         if "rsync" not in self.exes:
             self.exes["rsync"] = "rsync"
 
-        self.validate()
+        # Validate the backup config inputs
+
+        if self.keep < 0:
+            raise ValueError(
+                "Input validation failed: keep variable can't be negative!"
+            )
+
+        if self.remote:
+            self.check_if_remote_accessible()
+
+        if self.exes:
+            for _, path in self.exes.items():
+                if not is_exe_found(path):
+                    raise ValueError(f"Input validation failed: {path} not accessible.")
+
+        if not self.check_path_exists(self.path):
+            success = self.run_cmd(["mkdir", str(self.path)])[0]
+            if not success:
+                raise ValueError(
+                    f"Input validation failed: Couldn't access/create '{str(self.path)}'!"
+                )
 
     def check_if_remote_accessible(self):
         """Check if remote host is accessible via ssh"""
@@ -80,30 +100,6 @@ class BackupManager:
     def check_path_exists(self, path: Path) -> bool:
         cmd = ["[", "-e", str(path), "]"]
         return self.run_cmd(cmd)[0]
-
-    def validate(self):
-        """Validate the backup config inputs"""
-        if self.keep < 0:
-            raise BackupError(
-                "Input validation failed: keep variable can't be negative!"
-            )
-
-        if self.remote:
-            self.check_if_remote_accessible()
-
-        if self.exes:
-            for _, path in self.exes.items():
-                if not is_exe_found(path):
-                    raise BackupError(
-                        f"Input validation failed: {path} not accessible."
-                    )
-
-        if not self.check_path_exists(self.path):
-            success = self.run_cmd(["mkdir", str(self.path)])[0]
-            if not success:
-                raise BackupError(
-                    f"Input validation failed: Couldn't access/create '{str(self.path)}'!"
-                )
 
     def run_cmd(
         self,
