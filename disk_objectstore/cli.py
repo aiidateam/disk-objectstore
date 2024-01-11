@@ -209,8 +209,10 @@ def optimize(
 def backup(
     dostore: ContainerContext, dest: str, keep: int, rsync_exe: str, verbosity: str
 ):
-    """Create a backup of the container to destination location DEST, in a subfolder
-    backup_<timestamp>_<randstr> and point a symlink called `last-backup` to it.
+    """Create a backup of the container.
+
+    The backup is created at the `DEST` destination, in a subfolder
+    backup_<timestamp>_<randstr> and a symlink `last-backup` is created to it in the same folder.
 
     NOTE: This is safe to run while the container is being used.
 
