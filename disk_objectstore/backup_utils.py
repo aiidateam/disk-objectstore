@@ -98,9 +98,7 @@ class BackupManager:
                         f"Input validation failed: {path} not accessible."
                     )
 
-        path_exists = self.check_path_exists(self.path)
-
-        if not path_exists:
+        if not self.check_path_exists(self.path):
             success = self.run_cmd(["mkdir", str(self.path)])[0]
             if not success:
                 raise BackupError(
