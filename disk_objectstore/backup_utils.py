@@ -31,7 +31,7 @@ def split_remote_and_path(dest: str):
     if len(split_dest) == 2:
         return split_dest[0], Path(split_dest[1])
     # more than 1 colon:
-    raise BackupError("Invalid destination format: <remote>:<path>")
+    raise ValueError("Invalid destination format: <remote>:<path>")
 
 
 def is_exe_found(exe: str) -> bool:
