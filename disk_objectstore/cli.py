@@ -191,7 +191,8 @@ def optimize(
 @click.option(
     "--keep",
     default=1,
-    help="Number of previous backups to keep in the destination. (default: 1)",
+    show_default=True,
+    help="Number of previous backups to keep in the destination.",
 )
 @click.option(
     "--rsync_exe",
