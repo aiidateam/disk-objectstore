@@ -202,7 +202,7 @@ def optimize(
 @click.option(
     "--verbosity",
     default="info",
-    type=click.Choice(('silent', 'info', 'debug')),
+    type=click.Choice(("silent", "info", "debug")),
     help="Set verbosity of the logger.",
 )
 @pass_dostore
