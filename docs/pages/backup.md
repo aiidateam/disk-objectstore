@@ -37,7 +37,7 @@ Usage: dostore backup [OPTIONS] DEST
 Options:
   --keep INTEGER    Number of previous backups to keep in the destination.
                     (default: 1)
-  --rsync_exe TEXT  Specify the 'rsync' executable, if not in PATH. Used for
+  --rsync-exe TEXT  Specify the 'rsync' executable, if not in PATH. Used for
                     both local and remote destinations.
   --verbosity TEXT  Set verbosity [silent|info|debug], default is 'info'.
   --help            Show this message and exit.
