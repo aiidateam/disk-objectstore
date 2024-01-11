@@ -190,9 +190,7 @@ class BackupManager:
             res.stderr,
         )
 
-        success = res.returncode == 0
-
-        if not success:
+        if res.returncode != 0:
             raise BackupError(f"rsync failed for: {str(src)} to {str(dest)}")
 
     # ----
