@@ -195,7 +195,7 @@ def optimize(
     help="Number of previous backups to keep in the destination.",
 )
 @click.option(
-    "--rsync_exe",
+    "--rsync-exe",
     default="rsync",
     help="Specify the 'rsync' executable, if not in PATH. Used for both local and remote destinations.",
 )
@@ -253,6 +253,6 @@ def backup(
                     backup_manager, container, path, prev
                 )
             )
-        except backup_utils.BackupError as e:
+        except (ValueError, backup_utils.BackupError) as e:
             click.echo(f"Error: {e}")
             sys.exit(1)
