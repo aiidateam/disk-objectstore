@@ -253,6 +253,6 @@ def backup(
                     backup_manager, container, path, prev
                 )
             )
-        except backup_utils.BackupError as e:
+        except (ValueError, backup_utils.BackupError) as e:
             click.echo(f"Error: {e}")
             sys.exit(1)
