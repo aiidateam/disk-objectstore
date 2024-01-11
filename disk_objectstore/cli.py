@@ -195,7 +195,7 @@ def optimize(
     help="Number of previous backups to keep in the destination.",
 )
 @click.option(
-    "--rsync_exe",
+    "--rsync-exe",
     default="rsync",
     help="Specify the 'rsync' executable, if not in PATH. Used for both local and remote destinations.",
 )
