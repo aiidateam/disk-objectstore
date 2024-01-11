@@ -47,12 +47,12 @@ Options:
 Example usage:
 
 ```console
-$ dostore backup /path/to/backup
+$ dostore --path /path/to/container backup /path/to/backup
 INFO:Last backup is '/path/to/backup/backup_20231207142602_ymqf', using it for rsync --link-dest.
-INFO:Transferred /path/to/dostore/loose to /path/to/backup/live-backup
+INFO:Transferred /path/to/container/loose to /path/to/backup/live-backup
 INFO:Dumped the SQLite database to /tmp/tmpgewwse3f/packs.idx
 INFO:Transferred SQLite database to /path/to/backup/live-backup
-INFO:Transferred /path/to/dostore/packs to /path/to/backup/live-backup
+INFO:Transferred /path/to/container/packs to /path/to/backup/live-backup
 INFO:Backup moved from '/path/to/backup/live-backup' to '/path/to/backup/backup_20231207142913_pz7m'.
 INFO:Added symlink 'last-backup' to 'backup_20231207142913_pz7m'.
 INFO:Deleted old backup: /path/to/backup/backup_20231207131741_zar7
