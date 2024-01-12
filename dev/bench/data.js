@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1705047742919,
+  "lastUpdate": 1705047950411,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -14929,6 +14929,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 8.942045923913444e-7",
             "extra": "mean: 444.72718475594235 nsec\nrounds: 169492"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eimrek@users.noreply.github.com",
+            "name": "Kristjan Eimre",
+            "username": "eimrek"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23c784a221954a1518a3e35affdec53681f809b7",
+          "message": "Add functionality to easily create a container backup (#161)\n\nThe `disk_objectstore.backup_utils` module is added that contains various\r\nutilities that make it easy to create a backup of a container. It was\r\ndesigned with the following criteria in mind:\r\n\r\n* Backup should use rsync to make incremental backup as efficient as\r\n  possible.\r\n* The mechanism should support keeping a certain number of backups in the\r\n  target location, removing the oldest copies if the number exceeds the\r\n  target number. \r\n* The mechanism should support backing up to a target that is reachable\r\n  over an SSH connection.\r\n* The mechanism should be easily reusable by other storage solutions that\r\n  use the disk objectstore as part of the storage, e.g., `aiida-core`.\r\n* The mechanism should work safely while the storage is being used.\r\n\r\nThe `BackupManager` class implements all functionality that relates to\r\ncopying files (over SSH or locally) using rsync and keeping the target\r\nnumber of backup copies. It takes a callable that should contain the\r\nactual backup logic to create a backup of a containers contents. The\r\ncallable should take an instance of the `BackupManager` as a first\r\nargument as it should use its `call_rsync` method to copy any files to\r\nthe target directory.\r\n\r\nThis design makes for a slightly awkward cyclic dependency where the\r\nmanager calls a callable which takes the manager as an argument, but this\r\nis done to make the actual backup logic configurable by other packages.\r\n\r\nThe actual container backup logic is implemented in `backup_container`\r\nwhich is the callable passed to `BackupManager.backup_auto_folders`.\r\nThis function carefully copies the content of a container's folder to the\r\ntarget directory in a specific order which guarantees that the backup is\r\ncoherent even while the container is actively being used.",
+          "timestamp": "2024-01-12T09:20:52+01:00",
+          "tree_id": "c55e6f93845003692e66df639a9dea2a4004b64f",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/23c784a221954a1518a3e35affdec53681f809b7"
+        },
+        "date": 1705047940256,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.492687918960182,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01075047230357857",
+            "extra": "mean: 669.9323999999999 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.12502524676483004,
+            "unit": "iter/sec",
+            "range": "stddev: 0.917841113967405",
+            "extra": "mean: 7.998384533333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.064594735244517,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0077028938104564204",
+            "extra": "mean: 90.3783666666668 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 13.883477488004244,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0019215212880795563",
+            "extra": "mean: 72.02806363636424 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.3203559178473623,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016273307803376016",
+            "extra": "mean: 430.9683666666615 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5312546.361743923,
+            "unit": "iter/sec",
+            "range": "stddev: 2.2396505026078427e-8",
+            "extra": "mean: 188.23365141814375 nsec\nrounds: 192308"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5296195.0398715595,
+            "unit": "iter/sec",
+            "range": "stddev: 4.137984997041796e-8",
+            "extra": "mean: 188.8147986379614 nsec\nrounds: 192308"
           }
         ]
       }
