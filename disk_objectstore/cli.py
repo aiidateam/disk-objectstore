@@ -1,6 +1,7 @@
 """A small CLI tool for managing stores."""
 import dataclasses
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import List, Optional
 
 import click
 
-from disk_objectstore import __version__
+from disk_objectstore import __version__, backup_utils
 from disk_objectstore.container import Container
 
 
@@ -183,3 +184,74 @@ def optimize(
         container.clean_storage(vacuum=vacuum)
     size = sum(f.stat().st_size for f in dostore.path.glob("**/*") if f.is_file())
     click.echo(f"Final container size: {round(size/1000, 2)} Mb")
+
+
+@main.command("backup")
+@click.argument("dest", nargs=1, type=click.Path())
+@click.option(
+    "--keep",
+    default=1,
+    show_default=True,
+    help="Number of previous backups to keep in the destination.",
+)
+@click.option(
+    "--rsync-exe",
+    default="rsync",
+    help="Specify the 'rsync' executable, if not in PATH. Used for both local and remote destinations.",
+)
+@click.option(
+    "--verbosity",
+    default="info",
+    type=click.Choice(("silent", "info", "debug")),
+    help="Set verbosity of the logger.",
+)
+@pass_dostore
+def backup(
+    dostore: ContainerContext, dest: str, keep: int, rsync_exe: str, verbosity: str
+):
+    """Create a backup of the container.
+
+    The backup is created at the `DEST` destination, in a subfolder
+    backup_<timestamp>_<randstr> and a symlink `last-backup` is created to it in the same folder.
+
+    NOTE: This is safe to run while the container is being used.
+
+    NOTE: the symlink `last-backup` is omitted if the filesystem doesn't support it.
+
+    Destination (DEST) can either be a local path, or a remote destination (reachable via ssh).
+    In the latter case, remote destination needs to have the following syntax:
+
+       [<remote_user>@]<remote_host>:<path>
+
+    i.e., contain the remote host name and the remote path, separated by a colon (and optionally the
+    remote user separated by an @ symbol). You can tune SSH parameters using the standard options given
+    by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
+    login - recommended, since this script might ask multiple times for the password).
+
+    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will not work on
+    non-UNIX environments.
+    """
+
+    if verbosity == "silent":
+        backup_utils.backup_logger.setLevel(logging.ERROR)
+    elif verbosity == "info":
+        backup_utils.backup_logger.setLevel(logging.INFO)
+    elif verbosity == "debug":
+        backup_utils.backup_logger.setLevel(logging.DEBUG)
+
+    with dostore.container as container:
+        try:
+            backup_manager = backup_utils.BackupManager(
+                dest,
+                backup_utils.backup_logger,
+                exes={"rsync": rsync_exe},
+                keep=keep,
+            )
+            backup_manager.backup_auto_folders(
+                lambda path, prev: backup_utils.backup_container(
+                    backup_manager, container, path, prev
+                )
+            )
+        except (ValueError, backup_utils.BackupError) as e:
+            click.echo(f"Error: {e}")
+            sys.exit(1)

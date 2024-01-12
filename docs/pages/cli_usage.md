@@ -16,9 +16,11 @@ Options:
 
 Commands:
   add-files  Add file(s) to the container
+  backup     Create a backup of the container to destination location...
   create     Create a container
   optimize   Optimize the container's memory use
   status     Print details about the container
+  validate   Validate the container
 ```
 
 Create a container:

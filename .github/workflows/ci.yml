@@ -6,22 +6,19 @@ name: Continuous integration
 on: [push, pull_request]
 
 jobs:
-
   pre-commit:
-
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.8"
-    - uses: pre-commit/action@v2.0.0
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+      - uses: pre-commit/action@v2.0.0
 
   tests:
-
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,30 +27,37 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v1
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies (including dev dependencies at frozen version)
-      # I'm using pip install -e to make sure that the coverage properly traces the runs
-      # also of the concurrent tests (maybe we can achieve this differently)
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[progressbar,optionaltests]
-        pip install -r requirements.lock
-    - name: Test with pytest
-      # No need to run the benchmarks, they will run in a different workflow
-      # Also, run in very verbose mode so if there is an error we get a complete diff
-      run: pytest -vv --cov=disk_objectstore --benchmark-skip
-      env:
-        SQLALCHEMY_WARN_20: 1
-    - name: Create xml coverage
-      run: coverage xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./coverage.xml
-        name: disk-objectstore
-        ## Commenting the following lines - if often fails, and if at least one manages to push, it should be enough
-        # fail_ci_if_error: true
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+        # Set up 'ssh localhost' that is used in testing the backup command
+        # skipped for windows, as it doesn't support this setup or the backup command
+      - name: set up 'ssh localhost'
+        if: matrix.os != 'windows-latest'
+        run: |
+          .github/workflows/setup-ssh-localhost.sh
+          ssh -v localhost
+      - name: Install dependencies (including dev dependencies at frozen version)
+        # I'm using pip install -e to make sure that the coverage properly traces the runs
+        # also of the concurrent tests (maybe we can achieve this differently)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[progressbar,optionaltests]
+          pip install -r requirements.lock
+      - name: Test with pytest
+        # No need to run the benchmarks, they will run in a different workflow
+        # Also, run in very verbose mode so if there is an error we get a complete diff
+        run: pytest -vv --cov=disk_objectstore --benchmark-skip
+        env:
+          SQLALCHEMY_WARN_20: 1
+      - name: Create xml coverage
+        run: coverage xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          name: disk-objectstore
+          ## Commenting the following lines - if often fails, and if at least one manages to push, it should be enough
+          # fail_ci_if_error: true

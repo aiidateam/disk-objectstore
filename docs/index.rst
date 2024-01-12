@@ -64,6 +64,19 @@ and does not require a server running.
 
    ----------------------------------------------
 
+   :fa:`bookmark,mr-1` **Making backups**
+
+   Information on how to back up a container.
+
+   +++++++++++++++++++++++++++++++++++++++++++++
+
+   .. link-button:: pages/backup
+      :type: ref
+      :text: To the backup explanation
+      :classes: btn-outline-primary btn-block stretched-link
+
+   ----------------------------------------------
+
    :fa:`cogs,mr-1` **Design**
 
    Background information on the design of the package.
@@ -84,4 +97,5 @@ and does not require a server running.
    pages/advanced_usage
    pages/cli_usage
    pages/packing
+   pages/backup
    pages/design
