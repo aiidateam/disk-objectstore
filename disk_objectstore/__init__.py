@@ -2,6 +2,7 @@
 
 It does not require a server running.
 """
+
 from .container import CompressMode, Container, ObjectType
 
 __all__ = ("Container", "ObjectType", "CompressMode")

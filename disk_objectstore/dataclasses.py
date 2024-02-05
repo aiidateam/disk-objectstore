@@ -2,6 +2,7 @@
 Definition of the dataclasses used as return values of
 a number of methods.
 """
+
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, List, Optional, Union
 

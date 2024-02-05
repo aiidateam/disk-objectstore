@@ -1,4 +1,5 @@
 """A small CLI tool for managing stores."""
+
 import dataclasses
 import json
 import logging

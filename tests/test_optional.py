@@ -1,5 +1,6 @@
 """Additional optional tests to check additional functionality, such as
 if the library works also with other external optional modules."""
+
 from pathlib import Path
 
 import numpy as np

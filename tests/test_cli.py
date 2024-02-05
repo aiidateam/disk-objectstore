@@ -1,4 +1,5 @@
 """Test the CLI commands"""
+
 import platform
 from pathlib import Path
 
