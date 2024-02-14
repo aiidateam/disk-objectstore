@@ -51,21 +51,13 @@ class BackupManager:
         dest: str,
         logger: logging.Logger,
         keep: int = 1,
-        exes: Optional[dict] = None,
+        rsync_exe: Optional[str] = None,
     ) -> None:
         self.dest = dest
         self.keep = keep
         self.logger = logger
         self.remote, self.path = split_remote_and_path(dest)
-
-        if exes is None:
-            self.exes = {}
-        else:
-            self.exes = exes
-
-        # make sure rsync gets added so it gets validated
-        if "rsync" not in self.exes:
-            self.exes["rsync"] = "rsync"
+        self.rsync_exe = rsync_exe if rsync_exe is not None else "rsync"
 
         # Validate the backup config inputs
 
@@ -77,10 +69,10 @@ class BackupManager:
         if self.remote:
             self.check_if_remote_accessible()
 
-        if self.exes:
-            for _, path in self.exes.items():
-                if not is_exe_found(path):
-                    raise ValueError(f"Input validation failed: {path} not accessible.")
+        if not is_exe_found(self.rsync_exe):
+            raise ValueError(
+                f"Input validation failed: {self.rsync_exe} not accessible."
+            )
 
         if not self.check_path_exists(self.path):
             success = self.run_cmd(["mkdir", str(self.path)])[0]
@@ -148,9 +140,7 @@ class BackupManager:
 
         """
 
-        assert "rsync" in self.exes
-
-        all_args = [self.exes["rsync"], "-azh", "-vv", "--no-whole-file"]
+        all_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
         if extra_args:
             all_args += extra_args
         if link_dest:

@@ -47,7 +47,7 @@ def test_inaccessible_exe():
     dest = "/tmp/test"
     rsync_exe = f"_{_random_string()}"
     with pytest.raises(ValueError, match=f"{rsync_exe} not accessible."):
-        BackupManager(dest, backup_utils.backup_logger, exes={"rsync": rsync_exe})
+        BackupManager(dest, backup_utils.backup_logger, rsync_exe=rsync_exe)
 
 
 def test_inaccessible_path():

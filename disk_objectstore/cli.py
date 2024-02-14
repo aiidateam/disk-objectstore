@@ -1,4 +1,5 @@
 """A small CLI tool for managing stores."""
+
 import dataclasses
 import json
 import logging
@@ -228,7 +229,7 @@ def backup(
     by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
     login - recommended, since this script might ask multiple times for the password).
 
-    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will not work on
+    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will likely not work on
     non-UNIX environments.
     """
 
@@ -244,8 +245,8 @@ def backup(
             backup_manager = backup_utils.BackupManager(
                 dest,
                 backup_utils.backup_logger,
-                exes={"rsync": rsync_exe},
                 keep=keep,
+                rsync_exe=rsync_exe,
             )
             backup_manager.backup_auto_folders(
                 lambda path, prev: backup_utils.backup_container(
