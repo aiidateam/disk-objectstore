@@ -233,18 +233,20 @@ def backup(
     non-UNIX environments.
     """
 
+    logging.basicConfig(format="%(levelname)s:%(message)s")
+    logger = logging.getLogger("disk_objectstore.backup_utils")
+
     if verbosity == "silent":
-        backup_utils.backup_logger.setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
     elif verbosity == "info":
-        backup_utils.backup_logger.setLevel(logging.INFO)
+        logger.setLevel(logging.INFO)
     elif verbosity == "debug":
-        backup_utils.backup_logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
 
     with dostore.container as container:
         try:
             backup_manager = backup_utils.BackupManager(
                 dest,
-                backup_utils.backup_logger,
                 keep=keep,
                 rsync_exe=rsync_exe,
             )

@@ -25,21 +25,21 @@ def test_invalid_destination():
     """Test invalid destination with two colons."""
     dest = "localhost:/tmp/test:"
     with pytest.raises(ValueError, match="Invalid destination format"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_inaccessible_remote():
     """Test a remote destination of random characters that will not be accessible."""
     dest = f"_{_random_string()}:/tmp/test"
     with pytest.raises(BackupError, match="is not accessible"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_negative_keep():
     """Test a negative keep value."""
     dest = "/tmp/test"
     with pytest.raises(ValueError, match="keep variable can't be negative"):
-        BackupManager(dest, backup_utils.backup_logger, keep=-1)
+        BackupManager(dest, keep=-1)
 
 
 def test_inaccessible_exe():
@@ -47,21 +47,21 @@ def test_inaccessible_exe():
     dest = "/tmp/test"
     rsync_exe = f"_{_random_string()}"
     with pytest.raises(ValueError, match=f"{rsync_exe} not accessible."):
-        BackupManager(dest, backup_utils.backup_logger, rsync_exe=rsync_exe)
+        BackupManager(dest, rsync_exe=rsync_exe)
 
 
 def test_inaccessible_path():
     """Test case where path is not accessible."""
     dest = f"/_{_random_string()}"  # I assume there will be a permission error for this path
     with pytest.raises(ValueError, match=f"Couldn't access/create '{dest}'"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_rsync_failure():
     """Test case where rsync fails."""
     dest = "/tmp/test"
     with pytest.raises(BackupError, match="rsync failed"):
-        manager = BackupManager(dest, backup_utils.backup_logger)
+        manager = BackupManager(dest)
         # pick a src that doesn't exists
         manager.call_rsync(Path(f"/_{_random_string()}"), Path(dest))
 
@@ -71,7 +71,7 @@ def test_rsync_dest_trailing_slash(temp_dir):
     dest1 = Path(temp_dir) / "dest1"
     dest2 = Path(temp_dir) / "dest2"
     # manager will create dest1 folder
-    manager = BackupManager(str(dest1), backup_utils.backup_logger)
+    manager = BackupManager(str(dest1))
     # dest_trailing_slash=True will create dest2
     manager.call_rsync(dest1, dest2, dest_trailing_slash=True)
     assert dest2.exists()
@@ -81,7 +81,7 @@ def test_existing_backups_failure():
     """Test case where existing backups fail to be determined."""
     dest = "/tmp/test"
     with pytest.raises(BackupError, match="Existing backups determination failed"):
-        manager = BackupManager(dest, backup_utils.backup_logger)
+        manager = BackupManager(dest)
         # override the path to something that will fail
         manager.path = f"/_{_random_string()}"
         manager.get_existing_backup_folders()
@@ -108,7 +108,7 @@ def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
 
     dest = Path(temp_dir) / "backup"
     with pytest.raises(BackupError, match="'.*' failed to be created."):
-        manager = BackupManager(str(dest), backup_utils.backup_logger)
+        manager = BackupManager(str(dest))
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(
                 manager, temp_container, path, prev
@@ -145,7 +145,7 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
 
     dest = Path(temp_dir) / "backup"
     with pytest.raises(BackupError, match="Failed to move"):
-        manager = BackupManager(str(dest), backup_utils.backup_logger)
+        manager = BackupManager(str(dest))
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(
                 manager, temp_container, path, prev
@@ -181,7 +181,7 @@ def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
         temp_container.add_object(f"test-{idx}".encode())
 
     dest = Path(temp_dir) / "backup"
-    manager = BackupManager(str(dest), backup_utils.backup_logger)
+    manager = BackupManager(str(dest))
     manager.backup_auto_folders(
         lambda path, prev: backup_utils.backup_container(
             manager, temp_container, path, prev
@@ -219,7 +219,7 @@ def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
         temp_container.add_object(f"test-{idx}".encode())
 
     dest = Path(temp_dir) / "backup"
-    manager = BackupManager(str(dest), backup_utils.backup_logger, keep=0)
+    manager = BackupManager(str(dest), keep=0)
     for _ in range(2):
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(

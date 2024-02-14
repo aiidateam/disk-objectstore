@@ -15,8 +15,7 @@ from typing import Callable, Optional
 
 from disk_objectstore.container import Container
 
-logging.basicConfig(format="%(levelname)s:%(message)s")
-backup_logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class BackupError(Exception):
@@ -49,13 +48,11 @@ class BackupManager:
     def __init__(
         self,
         dest: str,
-        logger: logging.Logger,
         keep: int = 1,
         rsync_exe: Optional[str] = None,
     ) -> None:
         self.dest = dest
         self.keep = keep
-        self.logger = logger
         self.remote, self.path = split_remote_and_path(dest)
         self.rsync_exe = rsync_exe if rsync_exe is not None else "rsync"
 
@@ -83,11 +80,11 @@ class BackupManager:
 
     def check_if_remote_accessible(self):
         """Check if remote host is accessible via ssh"""
-        self.logger.info(f"Checking if '{self.remote}' is accessible...")
+        LOGGER.info("Checking if '%s' is accessible...", self.remote)
         success = self.run_cmd(["exit"])[0]
         if not success:
             raise BackupError(f"Remote '{self.remote}' is not accessible!")
-        self.logger.info("Success! '%s' is accessible!", self.remote)
+        LOGGER.info("Success! '%s' is accessible!", self.remote)
 
     def check_path_exists(self, path: Path) -> bool:
         cmd = ["[", "-e", str(path), "]"]
@@ -106,10 +103,12 @@ class BackupManager:
 
         res = subprocess.run(all_args, capture_output=True, text=True, check=False)
 
-        self.logger.debug(
-            f"Command: {all_args}\n"
-            f"  Exit Code: {res.returncode}\n"
-            f"  stdout/stderr: {res.stdout}\n{res.stderr}"
+        LOGGER.debug(
+            "Command: %s\n  Exit Code: %d\n  stdout/stderr: %s\n%s",
+            str(all_args),
+            res.returncode,
+            res.stdout,
+            res.stderr,
         )
 
         success = res.returncode == 0
@@ -137,10 +136,16 @@ class BackupManager:
         :param dest_trailing_slash:
             Add a trailing slash to the destination path. This makes rsync interpret the
             destination as a folder and create it if it doesn't exists.
-
         """
 
-        all_args = [self.rsync_exe, "-azh", "-vv", "--no-whole-file"]
+        all_args = [
+            self.rsync_exe,
+            "-azh",
+            "--no-whole-file",
+            "--info=progress2,stats1",
+        ]
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            all_args += ["-vv"]
         if extra_args:
             all_args += extra_args
         if link_dest:
@@ -163,15 +168,21 @@ class BackupManager:
         else:
             all_args += [f"{self.remote}:{dest_str}"]
 
-        res = subprocess.run(all_args, capture_output=True, text=True, check=False)
+        cmd_str = " ".join(all_args)
+        LOGGER.info("Running '%s'", cmd_str)
 
-        self.logger.debug(
-            "Command: %s\n  Exit Code: %s\n  stdout/stderr: %s\n%s",
-            str(all_args),
-            res.returncode,
-            res.stdout,
-            res.stderr,
+        capture_output = True
+        if LOGGER.isEnabledFor(logging.INFO):
+            capture_output = False
+
+        res = subprocess.run(
+            all_args, capture_output=capture_output, text=True, check=False
         )
+
+        info_text = f"rsync completed. Exit Code: {res.returncode}"
+        if capture_output:
+            info_text += f"\nstdout/stderr: {res.stdout}\n{res.stderr}"
+        LOGGER.info(info_text)
 
         if res.returncode != 0:
             raise BackupError(f"rsync failed for: {str(src)} to {str(dest)}")
@@ -214,9 +225,9 @@ class BackupManager:
         for folder in to_delete:
             success = self.run_cmd(["rm", "-rf", folder])[0]
             if success:
-                self.logger.info(f"Deleted old backup: {folder}")
+                LOGGER.info("Deleted old backup: %s", folder)
             else:
-                self.logger.warning("Warning: couldn't delete old backup: %s", folder)
+                LOGGER.warning("Warning: couldn't delete old backup: %s", folder)
 
     def backup_auto_folders(self, backup_func: Callable) -> None:
         """Create a backup, managing live and previous backup folders automatically
@@ -237,11 +248,11 @@ class BackupManager:
         last_folder = self.get_last_backup_folder()
 
         if last_folder:
-            self.logger.info(
-                f"Last backup is '{str(last_folder)}', using it for rsync --link-dest."
+            LOGGER.info(
+                "Last backup is '%s', using it for rsync --link-dest.", str(last_folder)
             )
         else:
-            self.logger.info("Couldn't find a previous backup to increment from.")
+            LOGGER.info("Couldn't find a previous backup to increment from.")
 
         backup_func(
             live_folder,
@@ -263,8 +274,10 @@ class BackupManager:
                 f"Failed to move '{str(live_folder)}' to '{str(self.path / folder_name)}'"
             )
 
-        self.logger.info(
-            f"Backup moved from '{str(live_folder)}' to '{str(self.path / folder_name)}'."
+        LOGGER.info(
+            "Backup moved from '%s' to '%s'.",
+            str(live_folder),
+            str(self.path / folder_name),
         )
 
         symlink_name = "last-backup"
@@ -272,11 +285,12 @@ class BackupManager:
             ["ln", "-sfn", str(folder_name), str(self.path / symlink_name)]
         )[0]
         if not success:
-            self.logger.warning(
-                f"Couldn't create symlink '{symlink_name}'. Perhaps the filesystem doesn't support it."
+            LOGGER.warning(
+                "Couldn't create symlink '%s'. Perhaps the filesystem doesn't support it.",
+                symlink_name,
             )
         else:
-            self.logger.info(f"Added symlink '{symlink_name}' to '{folder_name}'.")
+            LOGGER.info("Added symlink '%s' to '%s'.", symlink_name, folder_name)
 
         self.delete_old_backups()
 
@@ -321,7 +335,7 @@ def backup_container(
     prev_backup_loose = prev_backup / loose_path_rel if prev_backup else None
 
     manager.call_rsync(loose_path, path, link_dest=prev_backup_loose)
-    manager.logger.info(f"Transferred {str(loose_path)} to {str(path)}")
+    LOGGER.info("Transferred %s to %s", str(loose_path), str(path))
 
     # step 2: back up sqlite db
 
@@ -331,18 +345,18 @@ def backup_container(
         _sqlite_backup(sqlite_path, sqlite_temp_loc)
 
         if sqlite_temp_loc.is_file():
-            manager.logger.info(f"Dumped the SQLite database to {str(sqlite_temp_loc)}")
+            LOGGER.info("Dumped the SQLite database to %s", str(sqlite_temp_loc))
         else:
             raise BackupError(f"'{str(sqlite_temp_loc)}' failed to be created.")
 
         # step 3: transfer the SQLITE database file
         manager.call_rsync(sqlite_temp_loc, path, link_dest=prev_backup)
-        manager.logger.info(f"Transferred SQLite database to {str(path)}")
+        LOGGER.info("Transferred SQLite database to %s", str(path))
 
     # step 4: transfer the packed files
     packs_path_rel = packs_path.relative_to(container_root_path)
     manager.call_rsync(packs_path, path, link_dest=prev_backup)
-    manager.logger.info(f"Transferred {str(packs_path)} to {str(path)}")
+    LOGGER.info("Transferred %s to %s", str(packs_path), str(path))
 
     # step 5: transfer anything else in the container folder
     manager.call_rsync(
