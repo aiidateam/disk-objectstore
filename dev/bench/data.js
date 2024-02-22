@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1705047950411,
+  "lastUpdate": 1708640622954,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -5048,6 +5048,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.6612261761562274e-8",
             "extra": "mean: 233.2188302484572 nsec\nrounds: 100624"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eimrek@users.noreply.github.com",
+            "name": "Kristjan Eimre",
+            "username": "eimrek"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d23dac42c770a2dc62e98782da460f087931e429",
+          "message": "Improve the logging of the `backup_utils` module  (#166)\n\nA number of changes to improve the logging:\r\n\r\n* A base logger `disk_objectstore` is defined and the `backup_utils`\r\n  uses a child logger. This makes it easy to control the logging config\r\n  for the entire package.\r\n* The `BackupManager` no longer takes a `logger` as argument. The base\r\n  logger should be configured instead.\r\n* Logger is now only configured in the CLI. Not in the API itself.\r\n* `BackupManager` removes the `exes` argument and now only takes the\r\n  `rsync_exe` argument to specify the `rsync` executable.\r\n* Log messages use lazy interpolation instead of f-string formatting\r\n* `rsync` is now called with `--info` flag to show a progress bar. This\r\n  option is not available for rsync older than v3, in which case the\r\n  `--progress` flag is used instead.",
+          "timestamp": "2024-02-22T23:22:29+01:00",
+          "tree_id": "5a18bf34056e5625e4f348253c5992958382fbcd",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/d23dac42c770a2dc62e98782da460f087931e429"
+        },
+        "date": 1708640622433,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.4431283169661886,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012688973518038483",
+            "extra": "mean: 290.4335557499991 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.2085604974697421,
+            "unit": "iter/sec",
+            "range": "stddev: 0.047457450194479354",
+            "extra": "mean: 827.4306516666835 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.42136258593901,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00689365668193844",
+            "extra": "mean: 95.95674190909035 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 28.98411103834197,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00034660138849933533",
+            "extra": "mean: 34.50166191666663 msec\nrounds: 24"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.77065606247287,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0016486804924924583",
+            "extra": "mean: 209.61477559999366 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 4247702.788001885,
+            "unit": "iter/sec",
+            "range": "stddev: 2.736312336349299e-8",
+            "extra": "mean: 235.42136771532847 nsec\nrounds: 188715"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4321101.676764004,
+            "unit": "iter/sec",
+            "range": "stddev: 2.144694177645182e-8",
+            "extra": "mean: 231.4224646408638 nsec\nrounds: 198413"
           }
         ]
       }
