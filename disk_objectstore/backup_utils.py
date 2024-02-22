@@ -14,9 +14,10 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
+from disk_objectstore import LOGGER as BASE_LOGGER
 from disk_objectstore.container import Container
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = BASE_LOGGER.getChild(__name__)
 
 
 class BackupError(Exception):
