@@ -5,6 +5,7 @@ Utilities to back up a container.
 import datetime
 import logging
 import random
+import re
 import shutil
 import sqlite3
 import string
@@ -115,7 +116,23 @@ class BackupManager:
 
         return success, res.stdout
 
-    def call_rsync(  # pylint: disable=too-many-arguments
+    def get_rsync_major_version(self):
+        """
+        Get the rsync major version.
+        """
+        result = subprocess.run(
+            [self.rsync_exe, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        pattern = r"rsync\s+version\s+(\d+\.\d+\.\d+)"
+        match = re.search(pattern, result.stdout)
+        if match:
+            return int(match.group(1).split(".")[0])
+        return None
+
+    def call_rsync(  # pylint: disable=too-many-arguments,too-many-branches
         self,
         src: Path,
         dest: Path,
@@ -142,8 +159,20 @@ class BackupManager:
             self.rsync_exe,
             "-azh",
             "--no-whole-file",
-            "--info=progress2,stats1",
         ]
+
+        capture_output = True
+        if LOGGER.isEnabledFor(logging.INFO):
+            capture_output = False
+            rsync_version = self.get_rsync_major_version()
+            if rsync_version and rsync_version >= 3:
+                # These options show progress in a nicer way but
+                # they're only available for rsync version 3+
+                all_args += ["--info=progress2,stats1"]
+            else:
+                LOGGER.info("rsync version <3 detected: showing 'legacy' progress.")
+                all_args += ["--progress"]
+
         if LOGGER.isEnabledFor(logging.DEBUG):
             all_args += ["-vv"]
         if extra_args:
@@ -170,10 +199,6 @@ class BackupManager:
 
         cmd_str = " ".join(all_args)
         LOGGER.info("Running '%s'", cmd_str)
-
-        capture_output = True
-        if LOGGER.isEnabledFor(logging.INFO):
-            capture_output = False
 
         res = subprocess.run(
             all_args, capture_output=capture_output, text=True, check=False
