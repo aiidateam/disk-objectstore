@@ -77,6 +77,39 @@ def test_rsync_dest_trailing_slash(temp_dir):
     assert dest2.exists()
 
 
+def test_rsync_legacy_progress(monkeypatch, temp_dir):
+    """Test case where rsync version is less than 3.
+
+    In this case, 'rsync --progress' is used, that prints each transferred file
+    and it's progress instead of a global progress like '--info=progress2'.
+    """
+
+    # monkeypatch the get_rsync_major_version
+    def mock_get_rsync_major_version():
+        return None
+
+    monkeypatch.setattr(
+        backup_utils.BackupManager,
+        "get_rsync_major_version",
+        mock_get_rsync_major_version,
+    )
+
+    dest1 = Path(temp_dir) / "dest1"
+    dest2 = Path(temp_dir) / "dest2"
+
+    dest1.mkdir(parents=True)
+
+    fname = "test_file.txt"
+    file_path = dest1 / fname
+    with open(file_path, "w") as f:
+        f.write("Test content\n")
+
+    manager = BackupManager(str(dest2))
+    manager.call_rsync(dest1, dest2, src_trailing_slash=True)
+
+    assert (dest2 / fname).exists()
+
+
 def test_existing_backups_failure():
     """Test case where existing backups fail to be determined."""
     dest = "/tmp/test"
