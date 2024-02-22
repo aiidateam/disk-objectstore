@@ -234,7 +234,7 @@ def backup(
     """
 
     logging.basicConfig(format="%(levelname)s:%(message)s")
-    logger = logging.getLogger("disk_objectstore.backup_utils")
+    logger = logging.getLogger("disk_objectstore")
 
     if verbosity == "silent":
         logger.setLevel(logging.ERROR)

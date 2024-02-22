@@ -2,6 +2,7 @@
 
 """
 
+import logging
 import platform
 import random
 import string
@@ -77,15 +78,17 @@ def test_rsync_dest_trailing_slash(temp_dir):
     assert dest2.exists()
 
 
-def test_rsync_legacy_progress(monkeypatch, temp_dir):
+def test_rsync_legacy_progress(monkeypatch, temp_dir, capfd):
     """Test case where rsync version is less than 3.
 
     In this case, 'rsync --progress' is used, that prints each transferred file
     and it's progress instead of a global progress like '--info=progress2'.
     """
 
+    logging.getLogger("disk_objectstore").setLevel(logging.INFO)
+
     # monkeypatch the get_rsync_major_version
-    def mock_get_rsync_major_version():
+    def mock_get_rsync_major_version(_self):
         return None
 
     monkeypatch.setattr(
@@ -107,7 +110,10 @@ def test_rsync_legacy_progress(monkeypatch, temp_dir):
     manager = BackupManager(str(dest2))
     manager.call_rsync(dest1, dest2, src_trailing_slash=True)
 
+    captured = capfd.readouterr()
+
     assert (dest2 / fname).exists()
+    assert fname in captured.out
 
 
 def test_existing_backups_failure():
