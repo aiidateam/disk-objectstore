@@ -80,6 +80,8 @@ class BackupManager:
                     f"Input validation failed: Couldn't access/create '{str(self.path)}'!"
                 )
 
+        self.rsync_version = self.get_rsync_major_version()
+
     def check_if_remote_accessible(self):
         """Check if remote host is accessible via ssh"""
         LOGGER.info("Checking if '%s' is accessible...", self.remote)
@@ -165,8 +167,7 @@ class BackupManager:
         capture_output = True
         if LOGGER.isEnabledFor(logging.INFO):
             capture_output = False
-            rsync_version = self.get_rsync_major_version()
-            if rsync_version and rsync_version >= 3:
+            if self.rsync_version and self.rsync_version >= 3:
                 # These options show progress in a nicer way but
                 # they're only available for rsync version 3+
                 all_args += ["--info=progress2,stats1"]
