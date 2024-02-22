@@ -68,10 +68,10 @@ def test_rsync_failure():
         manager.call_rsync(Path(f"/_{_random_string()}"), Path(dest))
 
 
-def test_rsync_dest_trailing_slash(temp_dir):
+def test_rsync_dest_trailing_slash(tmp_path):
     """Test case for dest_trailing_slash."""
-    dest1 = Path(temp_dir) / "dest1"
-    dest2 = Path(temp_dir) / "dest2"
+    dest1 = tmp_path / "dest1"
+    dest2 = tmp_path / "dest2"
     # manager will create dest1 folder
     manager = BackupManager(str(dest1))
     # dest_trailing_slash=True will create dest2
@@ -79,7 +79,7 @@ def test_rsync_dest_trailing_slash(temp_dir):
     assert dest2.exists()
 
 
-def test_rsync_legacy_progress(monkeypatch, temp_dir, capfd):
+def test_rsync_legacy_progress(monkeypatch, tmp_path, capfd):
     """Test case where rsync version is less than 3.
 
     In this case, 'rsync --progress' is used, that prints each transferred file
@@ -98,8 +98,8 @@ def test_rsync_legacy_progress(monkeypatch, temp_dir, capfd):
         mock_get_rsync_major_version,
     )
 
-    dest1 = Path(temp_dir) / "dest1"
-    dest2 = Path(temp_dir) / "dest2"
+    dest1 = tmp_path / "dest1"
+    dest2 = tmp_path / "dest2"
 
     dest1.mkdir(parents=True)
 
@@ -138,7 +138,7 @@ def test_existing_backups_failure():
         manager.get_existing_backup_folders()
 
 
-def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
+def test_sqlite_failure(monkeypatch, temp_container, tmp_path):
     """Test case where sqlite fails to make a backup file."""
 
     # monkeypatch sqlite backup to do nothing
@@ -157,7 +157,7 @@ def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     with pytest.raises(BackupError, match="'.*' failed to be created."):
         manager = BackupManager(str(dest))
         manager.backup_auto_folders(
@@ -167,7 +167,7 @@ def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
         )
 
 
-def test_mv_failure(monkeypatch, temp_container, temp_dir):
+def test_mv_failure(monkeypatch, temp_container, tmp_path):
     """
     Test case where mv command fails by monkeypatching.
     Make sure correct BackupError is raised.
@@ -194,7 +194,7 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     with pytest.raises(BackupError, match="Failed to move"):
         manager = BackupManager(str(dest))
         manager.backup_auto_folders(
@@ -204,7 +204,7 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
         )
 
 
-def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
+def test_ln_failure(monkeypatch, temp_container, tmp_path, caplog):
     """
     Test case where ln command fails by monkeypatching.
     Make sure correct warning is logged.
@@ -231,7 +231,7 @@ def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     manager = BackupManager(str(dest))
     manager.backup_auto_folders(
         lambda path, prev: backup_utils.backup_container(
@@ -241,7 +241,7 @@ def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
     assert "Couldn't create symlink" in caplog.text
 
 
-def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
+def test_rm_failure(monkeypatch, temp_container, tmp_path, caplog):
     """
     Test case where rm command fails by monkeypatching.
     Make sure correct warning is logged.
@@ -269,7 +269,7 @@ def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     manager = BackupManager(str(dest), keep=0)
     for _ in range(2):
         manager.backup_auto_folders(
