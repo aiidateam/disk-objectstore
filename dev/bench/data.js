@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708640633948,
+  "lastUpdate": 1708640778209,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -15148,6 +15148,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.137984997041796e-8",
             "extra": "mean: 188.8147986379614 nsec\nrounds: 192308"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eimrek@users.noreply.github.com",
+            "name": "Kristjan Eimre",
+            "username": "eimrek"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d23dac42c770a2dc62e98782da460f087931e429",
+          "message": "Improve the logging of the `backup_utils` module  (#166)\n\nA number of changes to improve the logging:\r\n\r\n* A base logger `disk_objectstore` is defined and the `backup_utils`\r\n  uses a child logger. This makes it easy to control the logging config\r\n  for the entire package.\r\n* The `BackupManager` no longer takes a `logger` as argument. The base\r\n  logger should be configured instead.\r\n* Logger is now only configured in the CLI. Not in the API itself.\r\n* `BackupManager` removes the `exes` argument and now only takes the\r\n  `rsync_exe` argument to specify the `rsync` executable.\r\n* Log messages use lazy interpolation instead of f-string formatting\r\n* `rsync` is now called with `--info` flag to show a progress bar. This\r\n  option is not available for rsync older than v3, in which case the\r\n  `--progress` flag is used instead.",
+          "timestamp": "2024-02-22T23:22:29+01:00",
+          "tree_id": "5a18bf34056e5625e4f348253c5992958382fbcd",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/d23dac42c770a2dc62e98782da460f087931e429"
+        },
+        "date": 1708640763109,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4415682648164743,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010820218691105199",
+            "extra": "mean: 693.6889666666669 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.3240374478413121,
+            "unit": "iter/sec",
+            "range": "stddev: 0.017364705866306538",
+            "extra": "mean: 3.0860630666666675 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.625580060075077,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008781265815639011",
+            "extra": "mean: 94.11250909090927 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 13.36505663175432,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0027742869060961716",
+            "extra": "mean: 74.82198000000082 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.3740489856519518,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0015842501917280479",
+            "extra": "mean: 421.2213000000015 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5253441.7924183225,
+            "unit": "iter/sec",
+            "range": "stddev: 2.3418226664419573e-8",
+            "extra": "mean: 190.35139999975002 nsec\nrounds: 200000"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5277337.602928703,
+            "unit": "iter/sec",
+            "range": "stddev: 2.214561779067066e-8",
+            "extra": "mean: 189.4894879275995 nsec\nrounds: 192308"
           }
         ]
       }
