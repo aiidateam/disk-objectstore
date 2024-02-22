@@ -2,9 +2,11 @@
 
 """
 
+import logging
 import platform
 import random
 import string
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,21 +27,21 @@ def test_invalid_destination():
     """Test invalid destination with two colons."""
     dest = "localhost:/tmp/test:"
     with pytest.raises(ValueError, match="Invalid destination format"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_inaccessible_remote():
     """Test a remote destination of random characters that will not be accessible."""
     dest = f"_{_random_string()}:/tmp/test"
     with pytest.raises(BackupError, match="is not accessible"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_negative_keep():
     """Test a negative keep value."""
     dest = "/tmp/test"
     with pytest.raises(ValueError, match="keep variable can't be negative"):
-        BackupManager(dest, backup_utils.backup_logger, keep=-1)
+        BackupManager(dest, keep=-1)
 
 
 def test_inaccessible_exe():
@@ -47,47 +49,96 @@ def test_inaccessible_exe():
     dest = "/tmp/test"
     rsync_exe = f"_{_random_string()}"
     with pytest.raises(ValueError, match=f"{rsync_exe} not accessible."):
-        BackupManager(dest, backup_utils.backup_logger, exes={"rsync": rsync_exe})
+        BackupManager(dest, rsync_exe=rsync_exe)
 
 
 def test_inaccessible_path():
     """Test case where path is not accessible."""
     dest = f"/_{_random_string()}"  # I assume there will be a permission error for this path
     with pytest.raises(ValueError, match=f"Couldn't access/create '{dest}'"):
-        BackupManager(dest, backup_utils.backup_logger)
+        BackupManager(dest)
 
 
 def test_rsync_failure():
     """Test case where rsync fails."""
     dest = "/tmp/test"
     with pytest.raises(BackupError, match="rsync failed"):
-        manager = BackupManager(dest, backup_utils.backup_logger)
+        manager = BackupManager(dest)
         # pick a src that doesn't exists
         manager.call_rsync(Path(f"/_{_random_string()}"), Path(dest))
 
 
-def test_rsync_dest_trailing_slash(temp_dir):
+def test_rsync_dest_trailing_slash(tmp_path):
     """Test case for dest_trailing_slash."""
-    dest1 = Path(temp_dir) / "dest1"
-    dest2 = Path(temp_dir) / "dest2"
+    dest1 = tmp_path / "dest1"
+    dest2 = tmp_path / "dest2"
     # manager will create dest1 folder
-    manager = BackupManager(str(dest1), backup_utils.backup_logger)
+    manager = BackupManager(str(dest1))
     # dest_trailing_slash=True will create dest2
     manager.call_rsync(dest1, dest2, dest_trailing_slash=True)
     assert dest2.exists()
+
+
+def test_rsync_legacy_progress(monkeypatch, tmp_path, capfd):
+    """Test case where rsync version is less than 3.
+
+    In this case, 'rsync --progress' is used, that prints each transferred file
+    and it's progress instead of a global progress like '--info=progress2'.
+    """
+
+    logging.getLogger("disk_objectstore").setLevel(logging.INFO)
+
+    # monkeypatch the get_rsync_major_version
+    def mock_get_rsync_major_version(_self):
+        return None
+
+    monkeypatch.setattr(
+        backup_utils.BackupManager,
+        "get_rsync_major_version",
+        mock_get_rsync_major_version,
+    )
+
+    dest1 = tmp_path / "dest1"
+    dest2 = tmp_path / "dest2"
+
+    dest1.mkdir(parents=True)
+
+    fname = "test_file.txt"
+    file_path = dest1 / fname
+    with open(file_path, "w") as f:
+        f.write("Test content\n")
+
+    manager = BackupManager(str(dest2))
+    manager.call_rsync(dest1, dest2, src_trailing_slash=True)
+
+    captured = capfd.readouterr()
+
+    assert (dest2 / fname).exists()
+    assert fname in captured.out
+
+
+def test_get_rsync_major_version_failure(monkeypatch):
+    """Test case where rsync version fails."""
+
+    def mock_subprocess_run(*args, **_kwargs):
+        return subprocess.CompletedProcess(args, 0, "unexpected", "")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+    manager = BackupManager("/tmp")
+    assert manager.get_rsync_major_version() is None
 
 
 def test_existing_backups_failure():
     """Test case where existing backups fail to be determined."""
     dest = "/tmp/test"
     with pytest.raises(BackupError, match="Existing backups determination failed"):
-        manager = BackupManager(dest, backup_utils.backup_logger)
+        manager = BackupManager(dest)
         # override the path to something that will fail
         manager.path = f"/_{_random_string()}"
         manager.get_existing_backup_folders()
 
 
-def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
+def test_sqlite_failure(monkeypatch, temp_container, tmp_path):
     """Test case where sqlite fails to make a backup file."""
 
     # monkeypatch sqlite backup to do nothing
@@ -106,9 +157,9 @@ def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     with pytest.raises(BackupError, match="'.*' failed to be created."):
-        manager = BackupManager(str(dest), backup_utils.backup_logger)
+        manager = BackupManager(str(dest))
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(
                 manager, temp_container, path, prev
@@ -116,7 +167,7 @@ def test_sqlite_failure(monkeypatch, temp_container, temp_dir):
         )
 
 
-def test_mv_failure(monkeypatch, temp_container, temp_dir):
+def test_mv_failure(monkeypatch, temp_container, tmp_path):
     """
     Test case where mv command fails by monkeypatching.
     Make sure correct BackupError is raised.
@@ -143,9 +194,9 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
+    dest = tmp_path / "backup"
     with pytest.raises(BackupError, match="Failed to move"):
-        manager = BackupManager(str(dest), backup_utils.backup_logger)
+        manager = BackupManager(str(dest))
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(
                 manager, temp_container, path, prev
@@ -153,7 +204,7 @@ def test_mv_failure(monkeypatch, temp_container, temp_dir):
         )
 
 
-def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
+def test_ln_failure(monkeypatch, temp_container, tmp_path, caplog):
     """
     Test case where ln command fails by monkeypatching.
     Make sure correct warning is logged.
@@ -180,8 +231,8 @@ def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
-    manager = BackupManager(str(dest), backup_utils.backup_logger)
+    dest = tmp_path / "backup"
+    manager = BackupManager(str(dest))
     manager.backup_auto_folders(
         lambda path, prev: backup_utils.backup_container(
             manager, temp_container, path, prev
@@ -190,7 +241,7 @@ def test_ln_failure(monkeypatch, temp_container, temp_dir, caplog):
     assert "Couldn't create symlink" in caplog.text
 
 
-def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
+def test_rm_failure(monkeypatch, temp_container, tmp_path, caplog):
     """
     Test case where rm command fails by monkeypatching.
     Make sure correct warning is logged.
@@ -218,8 +269,8 @@ def test_rm_failure(monkeypatch, temp_container, temp_dir, caplog):
     for idx in range(100):
         temp_container.add_object(f"test-{idx}".encode())
 
-    dest = Path(temp_dir) / "backup"
-    manager = BackupManager(str(dest), backup_utils.backup_logger, keep=0)
+    dest = tmp_path / "backup"
+    manager = BackupManager(str(dest), keep=0)
     for _ in range(2):
         manager.backup_auto_folders(
             lambda path, prev: backup_utils.backup_container(

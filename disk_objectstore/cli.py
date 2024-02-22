@@ -1,4 +1,5 @@
 """A small CLI tool for managing stores."""
+
 import dataclasses
 import json
 import logging
@@ -228,24 +229,26 @@ def backup(
     by OpenSSH, such as adding configuration options to ~/.ssh/config (e.g. to allow for passwordless
     login - recommended, since this script might ask multiple times for the password).
 
-    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will not work on
+    NOTE: 'rsync' and other UNIX-specific commands are called, thus the command will likely not work on
     non-UNIX environments.
     """
 
+    logging.basicConfig(format="%(levelname)s:%(message)s")
+    logger = logging.getLogger("disk_objectstore")
+
     if verbosity == "silent":
-        backup_utils.backup_logger.setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
     elif verbosity == "info":
-        backup_utils.backup_logger.setLevel(logging.INFO)
+        logger.setLevel(logging.INFO)
     elif verbosity == "debug":
-        backup_utils.backup_logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
 
     with dostore.container as container:
         try:
             backup_manager = backup_utils.BackupManager(
                 dest,
-                backup_utils.backup_logger,
-                exes={"rsync": rsync_exe},
                 keep=keep,
+                rsync_exe=rsync_exe,
             )
             backup_manager.backup_auto_folders(
                 lambda path, prev: backup_utils.backup_container(
