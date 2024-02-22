@@ -6,6 +6,7 @@ import logging
 import platform
 import random
 import string
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -114,6 +115,17 @@ def test_rsync_legacy_progress(monkeypatch, temp_dir, capfd):
 
     assert (dest2 / fname).exists()
     assert fname in captured.out
+
+
+def test_get_rsync_major_version_failure(monkeypatch):
+    """Test case where rsync version fails."""
+
+    def mock_subprocess_run(*args, **_kwargs):
+        return subprocess.CompletedProcess(args, 0, "unexpected", "")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+    manager = BackupManager("/tmp")
+    assert manager.get_rsync_major_version() is None
 
 
 def test_existing_backups_failure():
