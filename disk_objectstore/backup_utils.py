@@ -50,7 +50,7 @@ class BackupManager:
     def __init__(
         self,
         dest: str,
-        keep: int = 1,
+        keep: Optional[int] = None,
         rsync_exe: Optional[str] = None,
     ) -> None:
         self.dest = dest
@@ -60,7 +60,7 @@ class BackupManager:
 
         # Validate the backup config inputs
 
-        if self.keep < 0:
+        if self.keep is not None and self.keep < 0:
             raise ValueError(
                 "Input validation failed: keep variable can't be negative!"
             )
@@ -247,14 +247,15 @@ class BackupManager:
 
     def delete_old_backups(self):
         """Get all folders matching the backup pattern, and delete oldest ones."""
-        sorted_folders = sorted(self.get_existing_backup_folders())
-        to_delete = sorted_folders[: -(self.keep + 1)]
-        for folder in to_delete:
-            success = self.run_cmd(["rm", "-rf", folder])[0]
-            if success:
-                LOGGER.info("Deleted old backup: %s", folder)
-            else:
-                LOGGER.warning("Warning: couldn't delete old backup: %s", folder)
+        if self.keep is not None:
+            sorted_folders = sorted(self.get_existing_backup_folders())
+            to_delete = sorted_folders[: -(self.keep + 1)]
+            for folder in to_delete:
+                success = self.run_cmd(["rm", "-rf", folder])[0]
+                if success:
+                    LOGGER.info("Deleted old backup: %s", folder)
+                else:
+                    LOGGER.warning("Warning: couldn't delete old backup: %s", folder)
 
     def backup_auto_folders(self, backup_func: Callable) -> None:
         """Create a backup, managing live and previous backup folders automatically
