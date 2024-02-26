@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1708937229231,
+  "lastUpdate": 1708937285925,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -10244,6 +10244,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.000004341555571533375",
             "extra": "mean: 247.7522159881072 nsec\nrounds: 196233"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eimrek@users.noreply.github.com",
+            "name": "Kristjan Eimre",
+            "username": "eimrek"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d1f8c2392c6617a417c11b41fc253d80ee341649",
+          "message": "Backups: default `keep=None`, which keeps all previous backups (#167)\n\nDefault `keep=1` might be dangerous, in case that users want to keep\r\nmany backups, as accidentally forgetting to specify `--keep` will delete\r\nthem down to 2 by default.",
+          "timestamp": "2024-02-26T09:46:04+01:00",
+          "tree_id": "53818b100ed2e436fea6e4c500c86a2754cee45b",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/d1f8c2392c6617a417c11b41fc253d80ee341649"
+        },
+        "date": 1708937284698,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.3540542119001804,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06931537035972152",
+            "extra": "mean: 738.5228679999992 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.2418017824446097,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03561302577704444",
+            "extra": "mean: 805.281498333334 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 5.7218748003155016,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01099544010751097",
+            "extra": "mean: 174.76789250000024 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.283933575015798,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004597326704997097",
+            "extra": "mean: 97.2390567000005 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.0507028192285084,
+            "unit": "iter/sec",
+            "range": "stddev: 0.030515903152090927",
+            "extra": "mean: 487.6376970000014 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2533710.629924702,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000001650658032838042",
+            "extra": "mean: 394.67806157079525 nsec\nrounds: 150535"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4267388.557060361,
+            "unit": "iter/sec",
+            "range": "stddev: 1.86199461299956e-7",
+            "extra": "mean: 234.3353520844725 nsec\nrounds: 195925"
           }
         ]
       }
