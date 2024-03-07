@@ -11,4 +11,4 @@ LOGGER = logging.getLogger(__name__)
 
 __all__ = ("Container", "ObjectType", "CompressMode")
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

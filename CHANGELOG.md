@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.0 (7 March 2024)
+
+### Features
+
+- Add functionality to easily create a container backup [\[23c784a\]](https://github.com/aiidateam/disk-objectstore/commit/23c784a221954a1518a3e35affdec53681f809b7)
+
 ## v1.0.0 (September 2023)
 
 ### Features
