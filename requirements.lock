@@ -58,7 +58,7 @@ pytest-benchmark==4.0.0
     # via disk-objectstore (setup.py)
 pytest-cov==4.1.0
     # via disk-objectstore (setup.py)
-pyyaml==6.0
+pyyaml==6.0.1
     # via pre-commit
 sqlalchemy==1.4.48
     # via disk-objectstore (setup.py)
