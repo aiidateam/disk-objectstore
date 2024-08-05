@@ -1,4 +1,5 @@
 """Test of the utils wrappers."""
+
 # pylint: disable=too-many-lines,protected-access
 import functools
 import hashlib
