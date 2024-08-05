@@ -1,4 +1,5 @@
 """Configuration file for pytest tests."""
+
 import hashlib
 import os
 import random

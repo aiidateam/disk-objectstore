@@ -1,6 +1,7 @@
 """
 The main implementation of the ``Container`` class of the object store.
 """
+
 # pylint: disable=too-many-lines
 import dataclasses
 import io
@@ -176,14 +177,12 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_session(
         self, create: bool = False, raise_if_missing: Literal[True] = True
-    ) -> Session:
-        ...
+    ) -> Session: ...
 
     @overload
     def _get_session(
         self, create: bool = False, raise_if_missing: Literal[False] = False
-    ) -> Optional[Session]:
-        ...
+    ) -> Optional[Session]: ...
 
     def _get_session(
         self, create: bool = False, raise_if_missing: bool = False
@@ -521,8 +520,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
-    ) -> Iterator[Tuple[str, ObjectMeta]]:
-        ...
+    ) -> Iterator[Tuple[str, ObjectMeta]]: ...
 
     @overload
     def _get_objects_stream_meta_generator(
@@ -530,8 +528,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
-    ) -> Iterator[Tuple[str, Optional[StreamSeekBytesType], ObjectMeta]]:
-        ...
+    ) -> Iterator[Tuple[str, Optional[StreamSeekBytesType], ObjectMeta]]: ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
@@ -2653,9 +2650,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     source_compressed,
                 ) in session.execute(stmt):
                     # This is the read handle of the bytes in the pack - it might be
-                    read_handle: Union[
-                        PackedObjectReader, ZlibStreamDecompresser
-                    ] = PackedObjectReader(read_pack, offset, length)
+                    read_handle: Union[PackedObjectReader, ZlibStreamDecompresser] = (
+                        PackedObjectReader(read_pack, offset, length)
+                    )
 
                     # Determine if I should compress or not the destination - this function will
                     # try to do it in a cheap way (e.g. if the source is already compressed, will just
