@@ -1,4 +1,5 @@
 """Test of the object-store container module."""
+
 import os
 import subprocess
 import sys

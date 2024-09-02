@@ -3,6 +3,7 @@
 Some might be useful also for end users, like the wrappers to get streams,
 like the ``LazyOpener``.
 """
+
 #  pylint: disable= too-many-lines
 from __future__ import annotations
 
@@ -809,9 +810,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._decompressor = self.decompressobj_class()
         self._internal_buffer = b""
         self._pos = 0
-        self._lazy_uncompressed_stream: None | (
-            LazyLooseStream
-        ) = lazy_uncompressed_stream
+        self._lazy_uncompressed_stream: None | (LazyLooseStream) = (
+            lazy_uncompressed_stream
+        )
         # If True, this class just proxies request to the underlying
         # uncompressed stream
         self._use_uncompressed_stream: bool = False
@@ -1326,11 +1327,9 @@ def safe_flush_to_disk(
     fhandle.flush()
 
     # Default fsync function, replaced on Mac OS X
-    _fsync_function: Callable[
-        [Any], Any
-    ] = lambda fileno: os.fsync(  # pylint: disable=unnecessary-lambda
+    _fsync_function: Callable[[Any], Any] = lambda fileno: os.fsync(
         fileno
-    )
+    )  # pylint: disable=unnecessary-lambda
 
     # Flush to disk
     if hasattr(fcntl, "F_FULLFSYNC") is not None and (

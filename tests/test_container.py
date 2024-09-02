@@ -1,4 +1,5 @@
 """Test of the object-store container module."""
+
 # pylint: disable=too-many-lines,protected-access
 import dataclasses
 import functools
