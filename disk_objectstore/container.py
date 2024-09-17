@@ -1340,6 +1340,15 @@ class Container:  # pylint: disable=too-many-public-methods
             Needed to guarantee that data will be there even in the case of a power loss.
             Set to False if you don't need such a guarantee (anyway the loose version will be kept,
             so often this guarantee is not strictly needed).
+        :param callback: a callback function that can be used to report progress.
+            The callback function should accept two arguments: a string with the action being performed
+            and the value of the action. The action can be "init" (initialization),
+            "update" (update of the progress), or "close" (finalization).
+            In case of "init", the value is a dictionary with the key "total" as the total size of the operation
+            and key "description" as the label of the operation.
+            In case of "update", the value is amount of the operation that has been completed.
+            In case of "close", the value is None.
+            return value of the callback function is ignored.
         """
         hash_type = self.hash_type if validate_objects else None
 
@@ -2611,6 +2620,15 @@ class Container:  # pylint: disable=too-many-public-methods
         This is a maintenance operation.
 
         :param compress_mode: see docstring of ``repack_pack``.
+        :param callback: a callback function that can be used to report progress.
+            The callback function should accept two arguments: a string with the action being performed
+            and the value of the action. The action can be "init" (initialization),
+            "update" (update of the progress), or "close" (finalization).
+            In case of "init", the value is a dictionary with the key "total" as the total size of the operation
+            and key "description" as the label of the operation.
+            In case of "update", the value is amount of the operation that has been completed.
+            In case of "close", the value is None.
+            return value of the callback function is ignored.
         """
         for pack_id in self._list_packs():
             self.repack_pack(pack_id, compress_mode=compress_mode, callback=callback)
@@ -2631,6 +2649,15 @@ class Container:  # pylint: disable=too-many-public-methods
             preserves the same compression (this means that repacking is *much* faster
             as it can simply transfer the bytes without decompressing everything first,
             and recompressing it back again).
+        :param callback: a callback function that can be used to report progress.
+            The callback function should accept two arguments: a string with the action being performed
+            and the value of the action. The action can be "init" (initialization),
+            "update" (update of the progress), or "close" (finalization).
+            In case of "init", the value is a dictionary with the key "total" as the total size of the operation
+            and key "description" as the label of the operation.
+            In case of "update", the value is amount of the operation that has been completed.
+            In case of "close", the value is None.
+            return value of the callback function is ignored.
         """
         assert (
             pack_id != self._REPACK_PACK_ID

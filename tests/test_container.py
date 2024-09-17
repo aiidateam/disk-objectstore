@@ -3446,6 +3446,36 @@ def test_repack_auto_many_sizes(temp_container: Container, start_compressed):
     assert issues.is_valid()
 
 
+def test_repack_progress_bar(temp_container: Container):
+    """Check that the progress bar is correctly updated when packing all loose objects."""
+    objects = []
+    for length in range(0, 100):
+        objects.append(b"a" * length)
+
+    temp_container.add_objects_to_pack(objects, compress=False)
+
+    passed_updates = 0
+    passed_total = 0
+
+    def progress(action, value):
+        """A dummy progress function."""
+        if action == "init":
+            assert (
+                value["total"] == temp_container.get_total_size()["total_size_packed"]
+            )
+            nonlocal passed_total
+            passed_total = value["total"]
+            assert value["description"] == "Repack 0"
+        elif action == "update":
+            isinstance(value, (int, float))
+            nonlocal passed_updates
+            passed_updates += value
+        elif action == "close":
+            assert passed_updates == passed_total
+
+    temp_container.repack(callback=progress)
+
+
 @pytest.mark.parametrize("compress_mode", [True, False] + list(CompressMode))
 def test_pack_all_loose_compress_modes(temp_container: Container, compress_mode):
     """Check that pack_all_loose() uses the correct compression mode.
@@ -3516,6 +3546,33 @@ def test_pack_all_loose_many(temp_container):
     temp_container.pack_all_loose()
     retrieved = temp_container.get_objects_content(expected.keys())
     assert retrieved == expected
+
+
+def test_pack_all_loose_progress_bar(temp_container):
+    """Check that the progress bar is correctly updated when packing all loose objects."""
+    # Add 10 objects
+    for idx in range(10):
+        content = f"{idx}".encode()
+        temp_container.add_object(content)
+
+    passed_updates = 0
+    passed_total = 0
+
+    def progress(action, value):
+        """A dummy progress function."""
+        if action == "init":
+            assert value["total"] == temp_container.get_total_size()["total_size_loose"]
+            nonlocal passed_total
+            passed_total = value["total"]
+            assert value["description"] == "Packing loose objects"
+        elif action == "update":
+            isinstance(value, (int, float))
+            nonlocal passed_updates
+            passed_updates += value
+        elif action == "close":
+            assert passed_updates == passed_total
+
+    temp_container.pack_all_loose(callback=progress)
 
 
 def test_container_id(temp_container):
