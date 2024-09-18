@@ -1417,7 +1417,9 @@ class Container:  # pylint: disable=too-many-public-methods
                 },
             )
             # I wish this would show as MB, GB. In tqdm it's easy:
-            # just pass unit='B' and unit_scale=1024. But would callback accept **keywords?
+            # just pass unit='B' and unit_scale=1024.
+            # But to do this here, some changes is in callback function is needed.
+            # see this feature request for more details: https://github.com/aiidateam/aiida-core/issues/6564
 
         # Outer loop: this is used to continue when a new pack file needs to be created
         while loose_objects:
