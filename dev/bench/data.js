@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1726730119751,
+  "lastUpdate": 1726730328617,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -16024,6 +16024,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.999061358842923e-8",
             "extra": "mean: 187.00124999898665 nsec\nrounds: 200000"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "khsrali@gmail.com",
+            "name": "Ali Khosravi",
+            "username": "khsrali"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "737f9c71151bf7ac297c6431688b4a75eac91b7c",
+          "message": "Progress bar for `repack` and `pack_all_loose` (#171)\n\n* added progressbar for `repack` and `pack_all_loose`\r\n\r\nCo-authored-by: Alexander Goscinski <alex.goscinski@posteo.de>",
+          "timestamp": "2024-09-19T09:14:02+02:00",
+          "tree_id": "b9d4eddbceb620fd20e935888912b9395fdfcf54",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/737f9c71151bf7ac297c6431688b4a75eac91b7c"
+        },
+        "date": 1726730319465,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4119116111328096,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007046293250591425",
+            "extra": "mean: 708.2596333333337 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.12876318565065806,
+            "unit": "iter/sec",
+            "range": "stddev: 0.1749505773286085",
+            "extra": "mean: 7.766194933333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.81707496918037,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008397012329106852",
+            "extra": "mean: 92.44643333333318 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 13.374704130266775,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0009629813585456643",
+            "extra": "mean: 74.76800909090868 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.247034307944502,
+            "unit": "iter/sec",
+            "range": "stddev: 0.015946798708941883",
+            "extra": "mean: 445.03103333333627 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5358840.688291749,
+            "unit": "iter/sec",
+            "range": "stddev: 2.6911167217572194e-8",
+            "extra": "mean: 186.6075254274988 nsec\nrounds: 192308"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5199814.083029531,
+            "unit": "iter/sec",
+            "range": "stddev: 5.7265888999729425e-8",
+            "extra": "mean: 192.3145681811501 nsec\nrounds: 200000"
           }
         ]
       }
