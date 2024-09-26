@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.0 (26 September 2024)
+
+This only enforces proper semantic versioning as the last release added a new functionality. No changes have been added.
+
 ## v1.1.1 (19 September 2024)
 
 - Added progress bar functionality for repack and pack_all_loose [\[737f9c7\]](https://github.com/aiidateam/disk-objectstore/commit/737f9c71151bf7ac297c6431688b4a75eac91b7c)
