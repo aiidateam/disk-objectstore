@@ -81,18 +81,13 @@ def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
 
 
 @pytest.fixture(scope="function")
-def temp_dir():
+def temp_dir(tmpdir):
     """Get a temporary directory.
 
     :return: The path to the directory
     :rtype: str
     """
-    try:
-        dirpath = tempfile.mkdtemp()
-        yield Path(dirpath)
-    finally:
-        # after the test function has completed, remove the directory again
-        shutil.rmtree(dirpath)
+    yield tmpdir
 
 
 @pytest.fixture(scope="function")

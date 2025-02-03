@@ -134,7 +134,9 @@ class Container:  # pylint: disable=too-many-public-methods
     def close(self) -> None:
         """Close open files (in particular, the connection to the SQLite DB)."""
         if self._session is not None:
+            engine = self._session.bind
             self._session.close()
+            engine.dispose()
             self._session = None
 
     def __enter__(self) -> Container:
