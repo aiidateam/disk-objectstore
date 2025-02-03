@@ -223,7 +223,7 @@ def test_backup(temp_container, temp_dir, remote, verbosity):
     if verbosity:
         args += [f"--verbosity={verbosity}"]
 
-    result = CliRunner().invoke(cli.backup, args, obj=obj)
+    result = CliRunner().invoke(cli.backup, args, obj=obj, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert path.exists()

@@ -316,7 +316,7 @@ def main(
                 )
                 print(f"Exists Loose: {loose_path.exists()}")
                 session = (
-                    container._get_cached_session()  # pylint: disable=protected-access
+                    container._get_operation_session()  # pylint: disable=protected-access
                 )
                 stmt = select(
                     Obj.pack_id,
