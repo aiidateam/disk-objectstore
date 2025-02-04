@@ -39,13 +39,21 @@ jobs:
         run: |
           .github/workflows/setup-ssh-localhost.sh
           ssh -v localhost
-      - name: Install dependencies (including dev dependencies at frozen version)
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5.2.1
+        with:
+          version: 0.5.22
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies from uv lock
+        if: ${{ inputs.from-lock == 'true' }}
+        # NOTE: We're asserting that the lockfile is up to date
+        run: uv sync --locked --extra progressbar --extra optionaltests 
+        shell: bash
+      - name: Install disk-objectstore 
         # I'm using pip install -e to make sure that the coverage properly traces the runs
         # also of the concurrent tests (maybe we can achieve this differently)
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[progressbar,optionaltests]
-          pip install -r requirements.lock
+        run: uv pip install -e .[progressbar,optionaltests]
       - name: Test with pytest
         # No need to run the benchmarks, they will run in a different workflow
         # Also, run in very verbose mode so if there is an error we get a complete diff
