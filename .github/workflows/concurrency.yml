@@ -38,12 +38,12 @@ jobs:
     - name: Install dependencies from uv lock
       if: ${{ inputs.from-lock == 'true' }}
       # NOTE: We're asserting that the lockfile is up to date
-      run: uv sync --locked --extra optionaltests 
+      run: uv sync --locked --extra dev --extra optionaltests  
       shell: bash
     - name: Install disk-objectstore
       # I'm using pip install -e to make sure that the coverage properly traces the runs
       # also of the concurrent tests (maybe we can achieve this differently)
-      run: uv pip install -e .[optionaltests]
+      run: uv pip install -e .[dev,optionaltests]
     - name: Test with pytest
       # Run only the concurrency tests, and repeating them 5 times to increase the chance that, if there is an issue
       # only happening rarely, we notice it
