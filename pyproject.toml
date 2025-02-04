@@ -38,6 +38,7 @@ Source = 'https://github.com/aiidateam/disk-objectstore'
 
 [project.optional-dependencies]
 dev = [
+    'psutil',
     'coverage',
     'pre-commit',
     'pytest',
