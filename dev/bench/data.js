@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739182660555,
+  "lastUpdate": 1739182838556,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -17119,6 +17119,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 6.75193322176085e-8",
             "extra": "mean: 191.491033210748 nsec\nrounds: 172414"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6686ad0c3280bf90e1954b3b8052ec999e8532be",
+          "message": "Close connection of database after initialization correctly (#179)\n\nThe session created during initialization of the container was never\r\nproperly closed. This unclosed session was until py3.12 garbage\r\ncollected since it was unreferenced. With py3.13 the sessions however\r\nare not anymore garbage collected and thus remain open. Resulting in\r\nan open file descriptors of the `pack.idx` for each initialization of\r\nthe container.\r\n\r\nThis commit fixes it by keeping track of the session that initializes\r\nthe container `_container_session`. We adapt the name `_session` to\r\n`_operation_session` for a clearer distinction between the two\r\nsession types.",
+          "timestamp": "2025-02-10T11:16:18+01:00",
+          "tree_id": "0dccd8269f6cfe5bf027bd254b4e33f60134f5cb",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/6686ad0c3280bf90e1954b3b8052ec999e8532be"
+        },
+        "date": 1739182828703,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4301471783529867,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007373542345666109",
+            "extra": "mean: 699.2287333333337 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1401749748140614,
+            "unit": "iter/sec",
+            "range": "stddev: 0.029035409837128504",
+            "extra": "mean: 7.133940999999999 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.131357814157532,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008409569582542263",
+            "extra": "mean: 89.83629999999998 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 12.90569643361644,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002735580614154348",
+            "extra": "mean: 77.4851636363633 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.266766021539991,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009770711161592132",
+            "extra": "mean: 441.1571333333389 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5313315.349589917,
+            "unit": "iter/sec",
+            "range": "stddev: 2.7149535563920154e-8",
+            "extra": "mean: 188.206408655229 nsec\nrounds: 188680"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5262726.103139072,
+            "unit": "iter/sec",
+            "range": "stddev: 2.9377558701447818e-8",
+            "extra": "mean: 190.01558895574678 nsec\nrounds: 196079"
           }
         ]
       }
