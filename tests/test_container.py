@@ -360,9 +360,9 @@ def test_container_context_manager(temp_dir):
         container.init_container(clear=True)
         container.add_object(b"abc")
         container.pack_all_loose()
-        assert container._session is not None, "Session should be open"
+        assert container._operation_session is not None, "Session should be open"
     assert (
-        container._session is None
+        container._operation_session is None
     ), "Session should be closed when going out of the context manager"
 
 
@@ -677,15 +677,16 @@ def test_initialisation(temp_dir):
 
     # Check that the session cannot be obtained before initialising
     with pytest.raises(FileNotFoundError):
-        container._get_session(create=False, raise_if_missing=True)
-    assert container._get_session(create=False, raise_if_missing=False) is None
+        container._get_operation_session()
 
     container.init_container()
     assert container.is_initialised
+    container.close()
 
     # This call should go through
     container.init_container(clear=True)
     assert container.is_initialised
+    container.close()
 
     with pytest.raises(FileExistsError) as excinfo:
         container.init_container()
@@ -717,31 +718,32 @@ def test_initialisation(temp_dir):
 
 @pytest.mark.parametrize("hash_type", ["sha256", "sha1"])
 @pytest.mark.parametrize("compress", [True, False])
-def test_check_hash_computation(temp_container, hash_type, compress):
+def test_check_hash_computation(temp_dir, hash_type, compress):
     """Check that the hashes are correctly computed, when storing loose,
     directly to packs, and while repacking all loose.
 
     Check both compressed and uncompressed packed objects.
     """
     # Re-init the container with the correct hash type
-    temp_container.init_container(hash_type=hash_type, clear=True)
+    container = Container(temp_dir)
+    container.init_container(hash_type=hash_type, clear=True)
     content1 = b"1"
     content2 = b"222"
     content3 = b"n2fwd"
 
     expected_hasher = getattr(hashlib, hash_type)
 
-    hashkey1 = temp_container.add_object(content1)
+    hashkey1 = container.add_object(content1)
     assert hashkey1 == expected_hasher(content1).hexdigest()
 
-    hashkey2, hashkey3 = temp_container.add_objects_to_pack(
-        [content2, content3], compress=compress
-    )
+    hash_keys = container.add_objects_to_pack([content2, content3], compress=compress)
+    assert len(hash_keys) == 2
+    hashkey2, hashkey3 = hash_keys[0], hash_keys[1]
     assert hashkey2 == expected_hasher(content2).hexdigest()
     assert hashkey3 == expected_hasher(content3).hexdigest()
 
     # No exceptions should be aised
-    temp_container.pack_all_loose(compress=compress, validate_objects=True)
+    container.pack_all_loose(compress=compress, validate_objects=True)
 
 
 @pytest.mark.parametrize("validate_objects", [True, False])
@@ -2293,7 +2295,7 @@ def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid
     assert issues.is_valid()
 
     # Change the offset of the second object so that it's overlapping
-    temp_container._get_cached_session().query(database.Obj).filter(
+    temp_container._get_operation_session().query(database.Obj).filter(
         database.Obj.hashkey == hashkey_second
     ).update({database.Obj.offset: database.Obj.offset - 1})
 

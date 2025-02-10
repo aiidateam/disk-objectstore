@@ -52,6 +52,10 @@ container.get_object_content(hash2)
 
 # This third object will be stored as loose
 hash3 = container.add_object(b"third_content")
+
+# It is important to close the container after usage to free acquired as file
+# handlers and SQL connections
+container.close()
 ```
 
 ## Advanced usage
