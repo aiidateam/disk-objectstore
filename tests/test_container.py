@@ -1146,7 +1146,16 @@ def test_sizes(
         assert size_info["total_size_loose"] == 0
 
 
-def test_get_objects_stream_closes(temp_container, generate_random_data):
+def test_close_twice(temp_dir):
+    """Tests if the container can be closed twice without raising an error."""
+    temp_container = Container(temp_dir)
+    try:
+        temp_container.close()
+    finally:
+        temp_container.close()
+
+
+def test_get_objects_stream_closes(temp_dir, generate_random_data):
     """Test that get_objects_stream_and_meta closes intermediate streams.
 
     I also check that at most one additional file is open at any given time.
@@ -1155,124 +1164,167 @@ def test_get_objects_stream_closes(temp_container, generate_random_data):
        when it goes out of scope - so I add also the test that, inside the loop, at most one more file is open.
        The final check seems to always pass even if I forget to do close some file.
     """
-    data = generate_random_data()
-    # Store
-    obj_md5s = _add_objects_loose_loop(temp_container, data)
+    current_process = psutil.Process()
+    # We note the number of open of files, since Windows by default has some files open independent of the container
+    begin_test_open_files = len(current_process.open_files())
 
-    # I get all objects first - this will actually internally go through the same function
-    # `get_objects_stream_and_meta`, but I need to do it as this might open additional files,
-    # namely the SQLite DB (possibly more than one file due to the fact it's open in WAL mode).
-    # The following checks are still meaningful, I check that if I do it again I don't open more files.
-    temp_container.get_objects_content(obj_md5s.keys())
+    temp_container = Container(temp_dir)
+    try:
+        temp_container.init_container()
+
+        data = generate_random_data()
+        # Store
+        obj_md5s = _add_objects_loose_loop(temp_container, data)
+
+        # I get all objects first - this will actually internally go through the same function
+        # `get_objects_stream_and_meta`, but I need to do it as this might open additional files,
+        # namely the SQLite DB (possibly more than one file due to the fact it's open in WAL mode).
+        # The following checks are still meaningful, I check that if I do it again I don't open more files.
+        temp_container.get_objects_content(obj_md5s.keys())
+
+        start_open_files = len(current_process.open_files())
+
+        with temp_container.get_objects_stream_and_meta(
+            obj_md5s.keys(), skip_if_missing=True
+        ):
+            # I don't use the triplets
+            assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        with temp_container.get_objects_stream_and_meta(
+            obj_md5s.keys(), skip_if_missing=True
+        ) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        # I actually read the content
+        with temp_container.get_objects_stream_and_meta(
+            obj_md5s.keys(), skip_if_missing=True
+        ) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _, stream, _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+                stream.read()
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        ##############################
+        ##### Same test after packing
+        ##############################
+        temp_container.pack_all_loose()
+        # I get all objects first, again - this is because it might have closed the DB files while packing
+        temp_container.get_objects_content(obj_md5s.keys())
+        # I now update the count
+        start_open_files = len(current_process.open_files())
+
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
+            # I don't use the triplets
+            assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        # I actually read the content
+        with temp_container.get_objects_stream_and_meta(
+            obj_md5s.keys(), skip_if_missing=True
+        ) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _, stream, _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+                stream.read()
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        ##############################
+        ##### Same test after adding at least one loose object
+        ##############################
+        new_object_content = (
+            b"1" * 20000
+        )  # This should be long enough not to collide with the generated random data
+        new_hashkey = temp_container.add_object(new_object_content)
+        obj_md5s[new_hashkey] = new_object_content
+
+        # I get all objects first, again - this is because it might have closed the DB files
+        temp_container.get_objects_content(obj_md5s.keys())
+        # I now update the count
+        start_open_files = len(current_process.open_files())
+
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
+            # I don't use the triplets
+            assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+        # I actually read the content
+        with temp_container.get_objects_stream_and_meta(
+            obj_md5s.keys(), skip_if_missing=True
+        ) as triplets:
+            # I loop over the triplets, but I don't do anything
+            for _, stream, _ in triplets:
+                assert len(current_process.open_files()) <= start_open_files + 1
+                stream.read()
+        # Check that at the end nothing is left open
+        assert len(current_process.open_files()) == start_open_files
+
+    finally:
+        # Check if it goes back to 0
+        temp_container.close()
+        assert len(current_process.open_files()) == begin_test_open_files
+
+
+def test_deletion_closes_file_descriptors(temp_dir, generate_random_data):
+    """Test if deletion of container closes correctly open file descriptors."""
 
     current_process = psutil.Process()
-    start_open_files = len(current_process.open_files())
+    # We note the number of open of files, since Windows by default has some files open independent of the container
+    begin_test_open_files = len(current_process.open_files())
 
-    with temp_container.get_objects_stream_and_meta(
-        obj_md5s.keys(), skip_if_missing=True
-    ):
-        # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
+    # Open files
+    temp_container = Container(temp_dir)
+    try:
+        temp_container.init_container(clear=True)
+        # For Linux to open files it is required to reading from container, on macOS
+        # the initialization of container is enough
+        data = generate_random_data()
+        obj_md5s = _add_objects_loose_loop(temp_container, data)
+        _ = temp_container.get_objects_content(obj_md5s.keys())
 
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
+        # Checks if initalisation actually opens files
+        assert 0 < len(
+            current_process.open_files()
+        ), "No files have been opened during initalisation"
 
-    with temp_container.get_objects_stream_and_meta(
-        obj_md5s.keys(), skip_if_missing=True
-    ) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
+        # Checks if deleting the container will close the files
+        del temp_container
 
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    # I actually read the content
-    with temp_container.get_objects_stream_and_meta(
-        obj_md5s.keys(), skip_if_missing=True
-    ) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
-            stream.read()
-
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    ##############################
-    ##### Same test after packing
-    ##############################
-    temp_container.pack_all_loose()
-    # I get all objects first, again - this is because it might have closed the DB files while packing
-    temp_container.get_objects_content(obj_md5s.keys())
-    # I now update the count
-    start_open_files = len(current_process.open_files())
-
-    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
-        # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
-
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
-
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    # I actually read the content
-    with temp_container.get_objects_stream_and_meta(
-        obj_md5s.keys(), skip_if_missing=True
-    ) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
-            stream.read()
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    ##############################
-    ##### Same test after adding at least one loose object
-    ##############################
-    new_object_content = (
-        b"1" * 20000
-    )  # This should be long enough not to collide with the generated random data
-    new_hashkey = temp_container.add_object(new_object_content)
-    obj_md5s[new_hashkey] = new_object_content
-
-    # I get all objects first, again - this is because it might have closed the DB files
-    temp_container.get_objects_content(obj_md5s.keys())
-    # I now update the count
-    start_open_files = len(current_process.open_files())
-
-    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()):
-        # I don't use the triplets
-        assert len(current_process.open_files()) <= start_open_files + 1
-
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
-
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
-
-    # I actually read the content
-    with temp_container.get_objects_stream_and_meta(
-        obj_md5s.keys(), skip_if_missing=True
-    ) as triplets:
-        # I loop over the triplets, but I don't do anything
-        for _, stream, _ in triplets:
-            assert len(current_process.open_files()) <= start_open_files + 1
-            stream.read()
-    # Check that at the end nothing is left open
-    assert len(current_process.open_files()) == start_open_files
+        assert begin_test_open_files == len(current_process.open_files())
+    finally:
+        if "temp_container" in locals():
+            locals()["temp_container"].close()
 
 
 def test_get_objects_meta_doesnt_open(
