@@ -167,6 +167,10 @@ class Container:  # pylint: disable=too-many-public-methods
         """Close the session when exiting the context."""
         self.close()
 
+    def __del__(self) -> None:
+        """Closes all connections on deletion."""
+        self.close()
+
     def _get_sandbox_folder(self) -> Path:
         """Return the path to the sandbox folder that is used during a new object creation.
 
