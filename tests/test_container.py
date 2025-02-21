@@ -1197,7 +1197,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
             obj_md5s.keys(), skip_if_missing=True
         ) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _ in triplets:
+            for _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
 
         # Check that at the end nothing is left open
@@ -1208,7 +1208,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
             obj_md5s.keys(), skip_if_missing=True
         ) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _, stream, _ in triplets:
+            for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
                 stream.read()
 
@@ -1233,7 +1233,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
 
         with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _ in triplets:
+            for _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
 
         # Check that at the end nothing is left open
@@ -1244,7 +1244,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
             obj_md5s.keys(), skip_if_missing=True
         ) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _, stream, _ in triplets:
+            for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
                 stream.read()
         # Check that at the end nothing is left open
@@ -1273,7 +1273,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
 
         with temp_container.get_objects_stream_and_meta(obj_md5s.keys()) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _ in triplets:
+            for _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
 
         # Check that at the end nothing is left open
@@ -1284,7 +1284,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
             obj_md5s.keys(), skip_if_missing=True
         ) as triplets:
             # I loop over the triplets, but I don't do anything
-            for _, stream, _ in triplets:
+            for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
                 stream.read()
         # Check that at the end nothing is left open
