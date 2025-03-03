@@ -538,8 +538,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
-    ) -> Iterator[tuple[str, ObjectMeta]]:
-        ...
+    ) -> Iterator[tuple[str, ObjectMeta]]: ...
 
     @overload
     def _get_objects_stream_meta_generator(
@@ -547,8 +546,7 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
-    ) -> Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]:
-        ...
+    ) -> Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]: ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
@@ -1333,8 +1331,9 @@ class Container:  # pylint: disable=too-many-public-methods
         compress: bool | CompressMode = CompressMode.NO,
         validate_objects: bool = True,
         do_fsync: bool = True,
-        callback: None
-        | (Callable[[Arg(str, "action"), Arg(Any, "value")], None]) = None,
+        callback: None | (
+            Callable[[Arg(str, "action"), Arg(Any, "value")], None]
+        ) = None,
     ) -> None:
         """Pack all loose objects.
 
@@ -2630,8 +2629,9 @@ class Container:  # pylint: disable=too-many-public-methods
     def repack(
         self,
         compress_mode: CompressMode = CompressMode.KEEP,
-        callback: None
-        | (Callable[[Arg(str, "action"), Arg(Any, "value")], None]) = None,
+        callback: None | (
+            Callable[[Arg(str, "action"), Arg(Any, "value")], None]
+        ) = None,
     ) -> None:
         """Perform a repack of all packed objects.
 
@@ -2659,8 +2659,9 @@ class Container:  # pylint: disable=too-many-public-methods
         self,
         pack_id: str,
         compress_mode: CompressMode = CompressMode.KEEP,
-        callback: None
-        | (Callable[[Arg(str, "action"), Arg(Any, "value")], None]) = None,
+        callback: None | (
+            Callable[[Arg(str, "action"), Arg(Any, "value")], None]
+        ) = None,
     ) -> None:
         """Perform a repack of a given pack object.
 
@@ -2737,9 +2738,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     source_compressed,
                 ) in session.execute(stmt):
                     # This is the read handle of the bytes in the pack - it might be
-                    read_handle: (
-                        PackedObjectReader | ZlibStreamDecompresser
-                    ) = PackedObjectReader(read_pack, offset, length)
+                    read_handle: PackedObjectReader | ZlibStreamDecompresser = (
+                        PackedObjectReader(read_pack, offset, length)
+                    )
 
                     # Determine if I should compress or not the destination - this function will
                     # try to do it in a cheap way (e.g. if the source is already compressed, will just
