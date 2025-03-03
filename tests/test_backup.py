@@ -1,6 +1,4 @@
-"""Test the backup functionality.
-
-"""
+"""Test the backup functionality."""
 
 import logging
 import platform
