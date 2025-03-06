@@ -38,4 +38,4 @@ jobs:
     - name: Test with pytest
       # Run only the concurrency tests, and repeating them 5 times to increase the chance that, if there is an issue
       # only happening rarely, we notice it
-      run: uv pytest -vv tests/test_concurrency.py --concurrency-repetitions=5
+      run: pytest -vv tests/test_concurrency.py --concurrency-repetitions=5
