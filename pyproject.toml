@@ -38,7 +38,6 @@ Source = 'https://github.com/aiidateam/disk-objectstore'
 
 [project.optional-dependencies]
 dev = [
-    'psutil',
     'coverage',
     'pre-commit',
     'pytest',
@@ -57,7 +56,7 @@ examples = [
     'memory-profiler',
     'profilehooks',
     'psutil',
-    'pywin32;platform_system == "Windows"',
+    'pywin32==306;platform_system == "Windows"',
 ]
 progressbar = [
     'tqdm',
