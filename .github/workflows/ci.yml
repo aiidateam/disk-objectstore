@@ -3,7 +3,7 @@
 
 name: Continuous integration
 
-on: [push] # TODO put this back
+on: [push, pull_request]
 
 jobs:
   pre-commit:
