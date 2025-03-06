@@ -40,7 +40,7 @@ Source = 'https://github.com/aiidateam/disk-objectstore'
 dev = [
     'coverage',
     'pre-commit',
-    'pytest',
+    'pytest==7.3.2',
     'pytest-benchmark',
     'pytest-cov',
 ]
