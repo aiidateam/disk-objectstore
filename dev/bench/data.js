@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741246479078,
+  "lastUpdate": 1741246673916,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -17338,6 +17338,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.9377558701447818e-8",
             "extra": "mean: 190.01558895574678 nsec\nrounds: 196079"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alexander.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "distinct": true,
+          "id": "df85a35cff94e72214f9ac6d6184194f8a94887f",
+          "message": "Disable pylint `not-an-iterable` errors (#184)\n\npylint cannot detect correctly nested generator types, therefore we ignore the\nerrors. Seems related https://github.com/pylint-dev/pylint/issues/9252",
+          "timestamp": "2025-03-06T08:33:04+01:00",
+          "tree_id": "382aeb015c1cd75a41a2eef5aafd9e13eff06e92",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/df85a35cff94e72214f9ac6d6184194f8a94887f"
+        },
+        "date": 1741246665695,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4586766389581316,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0076313043393638254",
+            "extra": "mean: 685.5528999999999 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.11546345738604033,
+            "unit": "iter/sec",
+            "range": "stddev: 0.3046707798642822",
+            "extra": "mean: 8.6607488 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.238714223660644,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006808510760071212",
+            "extra": "mean: 88.97814999999909 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 13.76930470863134,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0015931921663809008",
+            "extra": "mean: 72.62530833333554 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.2857546891495795,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006001869589823149",
+            "extra": "mean: 437.4922666666616 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5327463.288401152,
+            "unit": "iter/sec",
+            "range": "stddev: 2.1300853025197777e-8",
+            "extra": "mean: 187.70659615391048 nsec\nrounds: 200000"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5273116.268757581,
+            "unit": "iter/sec",
+            "range": "stddev: 3.711513136889916e-8",
+            "extra": "mean: 189.64118161530797 nsec\nrounds: 181819"
           }
         ]
       }
