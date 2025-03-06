@@ -27,7 +27,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: 3.8
+        python-version: 3.9
     - name: Install dependencies (including dev dependencies at frozen version)
       # I'm using pip install -e to make sure that the coverage properly traces the runs
       # also of the concurrent tests (maybe we can achieve this differently)
