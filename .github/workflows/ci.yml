@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies from uv lock
         # I'm using pip install -e to make sure that the coverage properly traces the runs
         # also of the concurrent tests (maybe we can achieve this differently)
-        run: uv pip install -e .[dev,progressbar,optionaltests,examples]
+        run: uv pip install -e .[dev,examples,progressbar,optionaltests]
       - name: Test with pytest
         # No need to run the benchmarks, they will run in a different workflow
         # Also, run in very verbose mode so if there is an error we get a complete diff
