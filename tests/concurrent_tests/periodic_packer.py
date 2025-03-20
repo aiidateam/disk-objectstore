@@ -24,12 +24,8 @@ def timestamp():
     default='/tmp/test-container',
     help='The path to a test folder in which the container will be created.',
 )
-@click.option(
-    '-r', '--repetitions', default=10, help='Number of repetitions before stopping.'
-)
-@click.option(
-    '-w', '--wait-time', default=0.83, help='Time to wait between iterations.'
-)
+@click.option('-r', '--repetitions', default=10, help='Number of repetitions before stopping.')
+@click.option('-w', '--wait-time', default=0.83, help='Time to wait between iterations.')
 @click.help_option('-h', '--help')
 def main(path, repetitions, wait_time):
     """Periodically pack container."""

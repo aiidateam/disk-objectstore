@@ -11,13 +11,9 @@ def test_pack_write(temp_container, benchmark):
     """Add 10'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 10000
     data_content = [str(i).encode('ascii') for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
 
-    hashkeys = benchmark(
-        temp_container.add_objects_to_pack, data_content, compress=False
-    )
+    hashkeys = benchmark(temp_container.add_objects_to_pack, data_content, compress=False)
 
     assert len(hashkeys) == len(data_content)
     assert expected_hashkeys == hashkeys
@@ -28,9 +24,7 @@ def test_loose_write(temp_container, benchmark):
     """Add 1'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 1000
     data_content = [str(i).encode('ascii') for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
 
     def write_loose(container, contents):
         retval = []
@@ -49,9 +43,7 @@ def test_pack_read(temp_container, benchmark):
     """Add 10'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 10000
     data_content = [str(i).encode('ascii') for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
     expected_results_dict = dict(zip(expected_hashkeys, data_content))
 
     hashkeys = temp_container.add_objects_to_pack(data_content, compress=False)
@@ -89,14 +81,10 @@ def test_has_objects(temp_container, benchmark):
     num_files_half = 5000
     data_content_packed = [str(i).encode('ascii') for i in range(num_files_half)]
 
-    hashkeys_packed = temp_container.add_objects_to_pack(
-        data_content_packed, compress=False
-    )
+    hashkeys_packed = temp_container.add_objects_to_pack(data_content_packed, compress=False)
 
     # Different set of data for the loose objects, not colliding
-    data_content_loose = [
-        b'LOOSE' + str(i).encode('ascii') for i in range(num_files_half)
-    ]
+    data_content_loose = [b'LOOSE' + str(i).encode('ascii') for i in range(num_files_half)]
 
     hashkeys_loose = []
     for content in data_content_loose:

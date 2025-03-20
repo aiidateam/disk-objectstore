@@ -54,14 +54,10 @@ def test_lazy_opener_read():
             # The position should had moved by the right amount
             assert lazy.tell() == len(read_content)
 
-            assert (
-                len(current_process.open_files()) == start_open_files + 1
-            ), 'The count of open files is wrong!'
+            assert len(current_process.open_files()) == start_open_files + 1, 'The count of open files is wrong!'
             assert read_content == content, 'Unexpected content read from file'
 
-        assert (
-            len(current_process.open_files()) == start_open_files
-        ), 'The LazyOpener did not close the file on exit!'
+        assert len(current_process.open_files()) == start_open_files, 'The LazyOpener did not close the file on exit!'
 
         with pytest.raises(ValueError):
             # Should raise again after closing
@@ -151,11 +147,7 @@ def test_object_writer(temp_dir, loose_prefix_len):
     # that the prefix length is the expected one,
     # and that the content is correct
     if loose_prefix_len:
-        loose_filename = (
-            loose_folder
-            / obj_hashkey[:loose_prefix_len]
-            / obj_hashkey[loose_prefix_len:]
-        )
+        loose_filename = loose_folder / obj_hashkey[:loose_prefix_len] / obj_hashkey[loose_prefix_len:]
     else:
         loose_filename = loose_folder / obj_hashkey
     with open(loose_filename, 'rb') as fhandle:
@@ -195,9 +187,7 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
     )
     # The duplicates folder should be empty at the beginning
     duplicates_files = os.listdir(duplicates_folder)
-    assert (
-        len(duplicates_files) == 1
-    ), f'There is more than one file in the duplicates! {duplicates_files}'
+    assert len(duplicates_files) == 1, f'There is more than one file in the duplicates! {duplicates_files}'
     duplicates_file = duplicates_files[0]
     # The duplicate should start with the hashkey followed by a dot
     assert duplicates_file.startswith(f'{hashkey}.')
@@ -320,9 +310,7 @@ def test_object_writer_not_twice(temp_dir):
         fhandle.write(content)
 
     obj_hashkey = object_writer.get_hashkey()
-    loose_filename = (
-        loose_folder / obj_hashkey[:loose_prefix_len] / obj_hashkey[loose_prefix_len:]
-    )
+    loose_filename = loose_folder / obj_hashkey[:loose_prefix_len] / obj_hashkey[loose_prefix_len:]
     with open(loose_filename, 'rb') as fhandle:
         # I have written the content twice
         assert fhandle.read() == content + content
@@ -655,9 +643,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         # If I trust existing files, the content shouldn't have been touched
         # (and the logic for reappears_corrupted is not really triggered)
         assert object_content == corrupted_content
-    elif (
-        os.name == 'nt' and not trust_existing and reappears_corrupted and dest_is_open
-    ):
+    elif os.name == 'nt' and not trust_existing and reappears_corrupted and dest_is_open:
         # Only in this extreme case (don't trust existing, the file reappears, it is
         # corrupted, and I couldn't overwrite the dest (loose file) because it was open,
         # then I'm left with the old content)
@@ -928,9 +914,7 @@ def test_packed_object_reader():
 
     # Offset beyond the file limit
     with open(tempfhandle.name, 'rb') as fhandle:
-        packed_reader = utils.PackedObjectReader(
-            fhandle, offset=len(bytestream) + 10, length=length
-        )
+        packed_reader = utils.PackedObjectReader(fhandle, offset=len(bytestream) + 10, length=length)
         assert packed_reader.read() == b''
 
     # Offset before the file limit, but longer length
@@ -977,10 +961,7 @@ def test_packed_object_reader_seek(tmp_path):
         for start in range(last_byte + 1):
             packed_reader.seek(start)
             assert packed_reader.tell() == start
-            assert (
-                packed_reader.read(last_byte - start)
-                == expected_bytestream[start:last_byte]
-            )
+            assert packed_reader.read(last_byte - start) == expected_bytestream[start:last_byte]
             assert packed_reader.tell() == last_byte
 
         # Reset the stream
@@ -1033,9 +1014,7 @@ def test_packed_object_reader_context_man(tmp_path):
         handle.write(bytestream)
 
     with open(str(tmp_path / 'pack'), 'rb') as fhandle:
-        with utils.PackedObjectReader(
-            fhandle, offset=0, length=len(bytestream)
-        ) as packed_reader:
+        with utils.PackedObjectReader(fhandle, offset=0, length=len(bytestream)) as packed_reader:
             assert packed_reader.read() == bytestream
 
 
@@ -1047,9 +1026,7 @@ def test_packed_object_reader_add(temp_container, open_streams):
         fhandle.write(content)
         fhandle.seek(0)
         wrapped = utils.PackedObjectReader(fhandle, 0, len(content))
-        hashkey = temp_container.add_streamed_object_to_pack(
-            wrapped, open_streams=open_streams
-        )
+        hashkey = temp_container.add_streamed_object_to_pack(wrapped, open_streams=open_streams)
     assert temp_container.get_object_content(hashkey) == content
 
 
@@ -1098,9 +1075,7 @@ def test_stream_decompresser(compression_algorithm):
         # Read in one chunk
         tmp = decompresser.read(size=0)
         assert not tmp
-        assert (
-            original == decompresser.read()
-        ), 'Uncompressed data is wrong (single read)'
+        assert original == decompresser.read(), 'Uncompressed data is wrong (single read)'
 
     compressed_streams = []
     for data in original_data:
@@ -1540,9 +1515,7 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
                 description=description,
             )
         else:
-            wrapped = utils.CallbackStreamWrapper(
-                fhandle, callback=callback_instance.callback, description=description
-            )
+            wrapped = utils.CallbackStreamWrapper(fhandle, callback=callback_instance.callback, description=description)
 
         assert wrapped.mode == 'rb+'
         assert wrapped.seekable()
@@ -1596,9 +1569,7 @@ def test_callback_stream_wrapper_add(temp_container, open_streams):
         fhandle.write(content)
         fhandle.seek(0)
         wrapped = utils.CallbackStreamWrapper(fhandle, None)
-        hashkey = temp_container.add_streamed_object_to_pack(
-            wrapped, open_streams=open_streams
-        )
+        hashkey = temp_container.add_streamed_object_to_pack(wrapped, open_streams=open_streams)
     assert temp_container.get_object_content(hashkey) == content
 
 
@@ -1625,9 +1596,7 @@ def test_rename_callback(callback_instance):
     # Now call with the modified one
     wrapped = utils.CallbackStreamWrapper(
         io.BytesIO(content),
-        callback=utils.rename_callback(
-            callback_instance.callback, new_description=new_description
-        ),
+        callback=utils.rename_callback(callback_instance.callback, new_description=new_description),
         total_length=len(content),
         description=old_description,
     )

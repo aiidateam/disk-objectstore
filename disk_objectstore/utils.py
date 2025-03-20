@@ -185,8 +185,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! '
-            'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
         )
 
         return self._stream.seek(target, whence)
@@ -196,8 +195,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! '
-            'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
         )
         return self._stream.tell()
 
@@ -214,8 +212,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! '
-            'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
         )
         return self._stream.read(size)
 
@@ -338,15 +335,11 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
         if self._filehandle is not None:
             raise OSError('You have already opened this ObjectWriter instance')
         if self._stored:
-            raise ModificationNotAllowed(
-                f"You have already tried to store this object '{self.get_hashkey()}'"
-            )
+            raise ModificationNotAllowed(f"You have already tried to store this object '{self.get_hashkey()}'")
         # Create a new uniquely-named file in the sandbox.
         # It seems faster than using a NamedTemporaryFile, see benchmarks.
         self._obj_path = self._sandbox_folder / uuid.uuid4().hex
-        self._filehandle = HashWriterWrapper(
-            open(self._obj_path, 'wb'), hash_type=self.hash_type
-        )
+        self._filehandle = HashWriterWrapper(open(self._obj_path, 'wb'), hash_type=self.hash_type)
         return self._filehandle
 
     def __exit__(  # pylint: disable=too-many-branches, too-many-statements
@@ -360,9 +353,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
             if exc_type is None:
                 assert self._filehandle is not None and self._obj_path is not None
                 if self._filehandle.closed:
-                    raise ClosingNotAllowed(
-                        'You cannot close the file handle yourself!'
-                    )
+                    raise ClosingNotAllowed('You cannot close the file handle yourself!')
                 # Flush out of the buffer and sync to disk so data is preserved even for power failures
                 # NOTE: For now I don't use `fullsync` on Mac for performance reasons, for loose objects - to decide
                 # if we want to change this!
@@ -372,9 +363,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                 self._filehandle = None
 
                 if self._loose_prefix_len:
-                    parent_folder = (
-                        self._loose_folder / self._hashkey[: self._loose_prefix_len]
-                    )
+                    parent_folder = self._loose_folder / self._hashkey[: self._loose_prefix_len]
                     # Create parent folder the first time; done with try/except
                     # rather than with if/else to avoid problems at the beginning, for concurrent writing
                     try:
@@ -409,9 +398,7 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
                     # be wrong. But this is very difficult to catch, and in general
                     # the situation in which a process writes a corrupt node is really an error
                     try:
-                        existing_checksum = _compute_hash_for_file(
-                            filepath=dest_loose_object, hash_type=self.hash_type
-                        )
+                        existing_checksum = _compute_hash_for_file(filepath=dest_loose_object, hash_type=self.hash_type)
                     except PermissionError:
                         # On Windows I might get a PermissionError. I store a copy and return.
                         # This would happen if e.g. the file exists but is being moved in place and
@@ -562,22 +549,16 @@ class PackedObjectReader:
         Note that contrary to a standard file, also seeking beyond the borders will raise a ValueError.
         """
         if whence not in [0, 1, 2]:
-            raise ValueError(
-                'Invalid value for `whence`: only 0, 1 and 2 are currently implemented.'
-            )
+            raise ValueError('Invalid value for `whence`: only 0, 1 and 2 are currently implemented.')
 
         if whence in [0, 1]:
             if whence == 1:
                 target = self.tell() + target
 
             if target < 0:
-                raise ValueError(
-                    'specified target would exceed the lower boundary of bytes that are accessible.'
-                )
+                raise ValueError('specified target would exceed the lower boundary of bytes that are accessible.')
             if target > self._length:
-                raise ValueError(
-                    'specified target would exceed the upper boundary of bytes that are accessible.'
-                )
+                raise ValueError('specified target would exceed the upper boundary of bytes that are accessible.')
             new_pos = self._offset + target
         else:
             # Seek relative to the end
@@ -674,9 +655,7 @@ class CallbackStreamWrapper:
         self._since_last_update: int = 0
         if self._callback:
             # If we have a callback, compute the total count of objects in this pack
-            self._callback(
-                action='init', value={'total': total_length, 'description': description}
-            )
+            self._callback(action='init', value={'total': total_length, 'description': description})
 
     @property
     def mode(self) -> str:
@@ -810,9 +789,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._decompressor = self.decompressobj_class()
         self._internal_buffer = b''
         self._pos = 0
-        self._lazy_uncompressed_stream: None | (
-            LazyLooseStream
-        ) = lazy_uncompressed_stream
+        self._lazy_uncompressed_stream: None | (LazyLooseStream) = lazy_uncompressed_stream
         # If True, this class just proxies request to the underlying
         # uncompressed stream
         self._use_uncompressed_stream: bool = False
@@ -829,8 +806,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # don't use anymore the compressed one.
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! '
-                'This should not happen'
+                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
             )
             return self._lazy_uncompressed_stream.read(size)
         return self._read_compressed(size)
@@ -871,9 +847,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
         while len(self._internal_buffer) < size:
             old_unconsumed = self._decompressor.unconsumed_tail
-            next_chunk = self._compressed_stream.read(
-                max(0, self._CHUNKSIZE - len(old_unconsumed))
-            )
+            next_chunk = self._compressed_stream.read(max(0, self._CHUNKSIZE - len(old_unconsumed)))
 
             # In the previous step, I might have some leftover data
             # since I am using the max_size parameter of .decompress()
@@ -882,9 +856,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             # not need more than `size` bytes. Leftovers will be left in
             # .unconsumed_tail and reused a the next loop
             try:
-                decompressed_chunk = self._decompressor.decompress(
-                    compressed_chunk, size
-                )
+                decompressed_chunk = self._decompressor.decompress(compressed_chunk, size)
             except self.decompress_error as exc:
                 raise ValueError('Error while uncompressing data') from exc
             self._internal_buffer += decompressed_chunk
@@ -941,8 +913,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         """Return current position in file."""
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! '
-                'This should not happen'
+                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
             )
             return self._lazy_uncompressed_stream.tell()
         return self._pos
@@ -959,9 +930,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # to the slow option or re-decompressing everything from
         # the very start.
         if whence not in [0, 1, 2]:
-            raise ValueError(
-                'Invalid value for `whence`: only 0, 1 and 2 are valid values.'
-            )
+            raise ValueError('Invalid value for `whence`: only 0, 1 and 2 are valid values.')
         # If we didn't switch to the uncompressed stream
         # but we are asking for a potential random-access position
         # we ask to materialize/open the uncompressed stream, and switch to it.
@@ -977,16 +946,8 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # it cannot deal with (e.g. whence = 2) and raise, or accept that in this
         # case some operations will be (much) slower, potentially requiring to
         # re-decompress the file when seeking backwards.
-        should_uncompress = (
-            whence == 2
-            or (whence == 1 and target < 0)
-            or (whence == 1 and target < self._pos)
-        )
-        if (
-            not self._use_uncompressed_stream
-            and self._lazy_uncompressed_stream is not None
-            and should_uncompress
-        ):
+        should_uncompress = whence == 2 or (whence == 1 and target < 0) or (whence == 1 and target < self._pos)
+        if not self._use_uncompressed_stream and self._lazy_uncompressed_stream is not None and should_uncompress:
             # Request to open the uncompressed stream.
             # From now on, this class will directly proxy
             # tell/seek requests to the uncompressed stream
@@ -1018,8 +979,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # If we are using the uncompressed stream, I just proxy the request
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! '
-                'This should not happen'
+                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
             )
             return self._lazy_uncompressed_stream.seek(target, whence)
 
@@ -1027,9 +987,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         if whence == 1:
             target = self.tell() + target
         if whence == 2:
-            raise NotImplementedError(
-                'Cannot seek backwards for a compressed stream without container support'
-            )
+            raise NotImplementedError('Cannot seek backwards for a compressed stream without container support')
 
         if target < 0:
             raise ValueError(f'negative seek position {target}')
@@ -1087,9 +1045,7 @@ def _get_compression_algorithm_info(algorithm: str):
         algorithm_info = known_algorithms[algorithm_name]
     except KeyError:
         # pylint: disable=raise-missing-from)
-        raise ValueError(
-            f"Unknown or unsupported compression algorithm '{algorithm_name}'"
-        )
+        raise ValueError(f"Unknown or unsupported compression algorithm '{algorithm_name}'")
     try:
         kwargs = {
             algorithm_info['variant_name']: algorithm_info['variant_mapper'][variant]  # type: ignore
@@ -1097,9 +1053,7 @@ def _get_compression_algorithm_info(algorithm: str):
         compresser = algorithm_info['compressobj'](**kwargs)  # type: ignore
     except KeyError:
         # pylint: disable=raise-missing-from
-        raise ValueError(
-            f"Invalid variant '{variant}' for compression algorithm '{algorithm_name}'"
-        )
+        raise ValueError(f"Invalid variant '{variant}' for compression algorithm '{algorithm_name}'")
 
     decompresser = algorithm_info['decompresser']
 
@@ -1332,9 +1286,7 @@ def safe_flush_to_disk(
     )
 
     # Flush to disk
-    if hasattr(fcntl, 'F_FULLFSYNC') is not None and (
-        _MACOS_ALWAYS_USE_FULLSYNC or use_fullsync
-    ):
+    if hasattr(fcntl, 'F_FULLFSYNC') is not None and (_MACOS_ALWAYS_USE_FULLSYNC or use_fullsync):
         # This exists only on Mac OS X; See e.g. (link split on two lines, put them together):
         # https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/
         #          man2/fsync.2.html

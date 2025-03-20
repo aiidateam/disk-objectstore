@@ -29,9 +29,7 @@ class ContainerContext:
     def container(self) -> Container:
         """Get the container, creating if it does not exist."""
         if not self.path.exists():
-            raise click.ClickException(
-                f'Container does not exist (run create command): {self.path}'
-            )
+            raise click.ClickException(f'Container does not exist (run create command): {self.path}')
         return Container(str(self.path))
 
 
@@ -54,9 +52,7 @@ def main(ctx, path):
 
 
 @main.command('create')
-@click.option(
-    '-a', '--algorithm', default='zlib+1', help='Compression algorithm to use'
-)
+@click.option('-a', '--algorithm', default='zlib+1', help='Compression algorithm to use')
 @pass_dostore
 def create(dostore: ContainerContext, algorithm: str):
     """Create a container"""
@@ -106,9 +102,7 @@ def validate(dostore: ContainerContext, verbose: bool):
                 if action == 'init':
                     if self.progress_bar is not None:
                         self.progress_bar.close()  # pragma: no cover
-                    self.progress_bar = tqdm.tqdm(
-                        total=value['total'], desc=value['description']
-                    )
+                    self.progress_bar = tqdm.tqdm(total=value['total'], desc=value['description'])
                 elif action == 'update':
                     value = value or 1  # If 0 or None
                     if self.progress_bar is None:
@@ -151,9 +145,7 @@ def validate(dostore: ContainerContext, verbose: bool):
 def add_files(dostore: ContainerContext, files: List[str]):
     """Add file(s) to the container"""
     with dostore.container as container:
-        click.echo(
-            f'Adding {len(files)} file(s) to container: {container.get_folder()}'
-        )
+        click.echo(f'Adding {len(files)} file(s) to container: {container.get_folder()}')
         for filepath in files:
             with open(filepath, 'rb') as fobj:
                 hashkey = container.add_streamed_object(fobj)
@@ -168,13 +160,9 @@ def add_files(dostore: ContainerContext, files: List[str]):
     show_default=True,
     help='Compress objects before storing',
 )
-@click.option(
-    '--vacuum/--no-vacuum', default=True, show_default=True, help='Vacuum the database'
-)
+@click.option('--vacuum/--no-vacuum', default=True, show_default=True, help='Vacuum the database')
 @pass_dostore
-def optimize(
-    dostore: ContainerContext, non_interactive: bool, compress: bool, vacuum: bool
-):
+def optimize(dostore: ContainerContext, non_interactive: bool, compress: bool, vacuum: bool):
     """Optimize the container's memory use"""
     if not non_interactive:
         click.confirm('Is this the only process accessing the container?', abort=True)
@@ -207,9 +195,7 @@ def optimize(
     help='Set verbosity of the logger.',
 )
 @pass_dostore
-def backup(
-    dostore: ContainerContext, dest: str, keep: int, rsync_exe: str, verbosity: str
-):
+def backup(dostore: ContainerContext, dest: str, keep: int, rsync_exe: str, verbosity: str):
     """Create a backup of the container.
 
     The backup is created at the `DEST` destination, in a subfolder
@@ -251,9 +237,7 @@ def backup(
                 rsync_exe=rsync_exe,
             )
             backup_manager.backup_auto_folders(
-                lambda path, prev: backup_utils.backup_container(
-                    backup_manager, container, path, prev
-                )
+                lambda path, prev: backup_utils.backup_container(backup_manager, container, path, prev)
             )
         except (ValueError, backup_utils.BackupError) as e:
             click.echo(f'Error: {e}')

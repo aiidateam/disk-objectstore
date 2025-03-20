@@ -61,24 +61,18 @@ class BackupManager:
         # Validate the backup config inputs
 
         if self.keep is not None and self.keep < 0:
-            raise ValueError(
-                "Input validation failed: keep variable can't be negative!"
-            )
+            raise ValueError("Input validation failed: keep variable can't be negative!")
 
         if self.remote:
             self.check_if_remote_accessible()
 
         if not is_exe_found(self.rsync_exe):
-            raise ValueError(
-                f'Input validation failed: {self.rsync_exe} not accessible.'
-            )
+            raise ValueError(f'Input validation failed: {self.rsync_exe} not accessible.')
 
         if not self.check_path_exists(self.path):
             success = self.run_cmd(['mkdir', str(self.path)])[0]
             if not success:
-                raise ValueError(
-                    f"Input validation failed: Couldn't access/create '{self.path!s}'!"
-                )
+                raise ValueError(f"Input validation failed: Couldn't access/create '{self.path!s}'!")
 
         self.rsync_version = self.get_rsync_major_version()
 
@@ -202,9 +196,7 @@ class BackupManager:
         cmd_str = ' '.join(all_args)
         LOGGER.info("Running '%s'", cmd_str)
 
-        res = subprocess.run(
-            all_args, capture_output=capture_output, text=True, check=False
-        )
+        res = subprocess.run(all_args, capture_output=capture_output, text=True, check=False)
 
         info_text = f'rsync completed. Exit Code: {res.returncode}'
         if capture_output:
@@ -276,9 +268,7 @@ class BackupManager:
         last_folder = self.get_last_backup_folder()
 
         if last_folder:
-            LOGGER.info(
-                "Last backup is '%s', using it for rsync --link-dest.", str(last_folder)
-            )
+            LOGGER.info("Last backup is '%s', using it for rsync --link-dest.", str(last_folder))
         else:
             LOGGER.info("Couldn't find a previous backup to increment from.")
 
@@ -288,19 +278,13 @@ class BackupManager:
         )
 
         # move live-backup -> backup_<timestamp>_<randstr>
-        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-            '%Y%m%d%H%M%S'
-        )
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')
         randstr = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
         folder_name = f'backup_{timestamp}_{randstr}'
 
-        success = self.run_cmd(['mv', str(live_folder), str(self.path / folder_name)])[
-            0
-        ]
+        success = self.run_cmd(['mv', str(live_folder), str(self.path / folder_name)])[0]
         if not success:
-            raise BackupError(
-                f"Failed to move '{live_folder!s}' to '{self.path / folder_name!s}'"
-            )
+            raise BackupError(f"Failed to move '{live_folder!s}' to '{self.path / folder_name!s}'")
 
         LOGGER.info(
             "Backup moved from '%s' to '%s'.",
@@ -309,9 +293,7 @@ class BackupManager:
         )
 
         symlink_name = 'last-backup'
-        success = self.run_cmd(
-            ['ln', '-sfn', str(folder_name), str(self.path / symlink_name)]
-        )[0]
+        success = self.run_cmd(['ln', '-sfn', str(folder_name), str(self.path / symlink_name)])[0]
         if not success:
             LOGGER.warning(
                 "Couldn't create symlink '%s'. Perhaps the filesystem doesn't support it.",

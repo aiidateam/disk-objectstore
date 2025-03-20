@@ -18,9 +18,7 @@ NUM_WORKERS = 4
 # Do the same test multiple times (repetition*2*2); can be set to > 1 to increase probability of seeing problems.
 # This is specified on the command line when running pytest with ``--concurrency-repetitions=VALUE``
 # (VALUE=1 by default) and passed as `concurrency_repetition_index`.
-@pytest.mark.parametrize(
-    'with_packing', [True, False]
-)  # If it works with packing, no need to test also without
+@pytest.mark.parametrize('with_packing', [True, False])  # If it works with packing, no need to test also without
 @pytest.mark.parametrize('max_size', [1, 1000])
 def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, unused-argument
     temp_dir, with_packing, max_size, concurrency_repetition_index
@@ -118,9 +116,7 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
     error_messages = []
 
     if with_packing and packer_proc.returncode:
-        error_messages.append(
-            f'PACKER process failed with error code {packer_proc.returncode}!'
-        )
+        error_messages.append(f'PACKER process failed with error code {packer_proc.returncode}!')
         error_messages.append('PACKER output:')
         error_messages.append(packer_out.decode('utf8'))
         error_messages.append('-' * 78)
@@ -128,13 +124,9 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
         error_messages.append(packer_err.decode('utf8'))
         error_messages.append('=' * 78)
 
-    for idx, (worker_proc, worker_out, worker_err) in enumerate(
-        zip(worker_procs, worker_outs, worker_errs)
-    ):
+    for idx, (worker_proc, worker_out, worker_err) in enumerate(zip(worker_procs, worker_outs, worker_errs)):
         if worker_proc.returncode:
-            error_messages.append(
-                f'WORKER process #{idx} failed with error code {worker_proc.returncode}!'
-            )
+            error_messages.append(f'WORKER process #{idx} failed with error code {worker_proc.returncode}!')
             error_messages.append(f'WORKER {idx} output:')
             error_messages.append(worker_out.decode('utf8'))
             error_messages.append('-' * 78)
@@ -142,8 +134,5 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
             error_messages.append(worker_err.decode('utf8'))
             error_messages.append('=' * 78)
 
-    error_string = (
-        'At least one of the concurrent processes failed!\nMessages:\n'
-        + '\n'.join(error_messages)
-    )
+    error_string = 'At least one of the concurrent processes failed!\nMessages:\n' + '\n'.join(error_messages)
     assert len(error_messages) == 0, error_string

@@ -32,17 +32,13 @@ def main_run(container, size_gb, compress_packs):
     size_bytes = size_gb * 1024 * 1024 * 1024
 
     start_counts = container.count_objects()
-    print(
-        f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose"
-    )
+    print(f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose")
     print('Pack objects on disk:', start_counts['pack_files'])
 
     zero_stream = ZeroStream(length=size_bytes)
     start = time.time()
     # Store objects (directly to pack)
-    obj_hashkey = container.add_streamed_objects_to_pack(
-        stream_list=[zero_stream], compress=compress_packs
-    )[0]
+    obj_hashkey = container.add_streamed_objects_to_pack(stream_list=[zero_stream], compress=compress_packs)[0]
     tot_time = time.time() - start
     print(f'Time to store one file of zeros of size {size_gb} GB: {tot_time:.4} s')
 
@@ -110,19 +106,13 @@ def main_run(container, size_gb, compress_packs):
     is_flag=True,
     help='When profiling memory, also run a line profiler.',
 )
-@click.option(
-    '-z', '--compress-packs', is_flag=True, help='Compress objects while packing.'
-)
+@click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
 @click.help_option('-h', '--help')
-def main(
-    size_gb, path, clear, check_memory_measurement, with_line_profiler, compress_packs
-):
+def main(size_gb, path, clear, check_memory_measurement, with_line_profiler, compress_packs):
     """Testing performance and size on disk when storing a single big file containing only zeros."""
     start_mem = get_memory()
 
-    if (
-        check_memory_measurement
-    ):  # To test that the measurement of the memory is reliable
+    if check_memory_measurement:  # To test that the measurement of the memory is reliable
         # Test of memory allocation
         size_mb = 400
         size = size_mb * 1024 * 1024
@@ -177,7 +167,9 @@ def main(
             interval=memory_check_interval,
         )
         # Check that it's not an empty list
-        assert memory_report, f'>> Process too fast for checking memory usage with interval {memory_check_interval} s!!!'
+        assert (
+            memory_report
+        ), f'>> Process too fast for checking memory usage with interval {memory_check_interval} s!!!'
         print(
             f'>> Max memory usage (check interval {memory_check_interval} s, '
             f'{len(memory_report)} checks performed): {max(memory_report):.3f} MB'

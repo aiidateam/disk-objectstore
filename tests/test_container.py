@@ -129,8 +129,8 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
         counts['packed'] == 0
     ), f"The container should have no packed objects (but there are {counts['packed']} instead)"
     # I check with the length of the set because I could have picked to random identical objects
-    assert (
-        counts['loose'] == len(set(obj_md5s))
+    assert counts['loose'] == len(
+        set(obj_md5s)
     ), f"The container should have {len(set(obj_md5s))} loose objects (but there are {counts['loose']} instead)"
 
     # Retrieve objects (loose), in random order
@@ -174,9 +174,7 @@ def test_add_loose_from_stream(temp_container):
     'use_compression,retrieve_bulk',
     [(True, True), (True, False), (False, True), (False, False)],
 )
-def test_add_get_with_packing(
-    temp_container, generate_random_data, use_compression, retrieve_bulk
-):
+def test_add_get_with_packing(temp_container, generate_random_data, use_compression, retrieve_bulk):
     """Add a number of objects (one by one, loose) to the container.
 
     Then retrieve them and check the content is correct."""
@@ -191,8 +189,8 @@ def test_add_get_with_packing(
     temp_container.pack_all_loose(compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert (
-        counts['packed'] == len(set(obj_md5s))
+    assert counts['packed'] == len(
+        set(obj_md5s)
     ), f"The container should have {len(set(obj_md5s))} packed objects (but there are {counts['packed']} instead)"
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
@@ -204,9 +202,7 @@ def test_add_get_with_packing(
     temp_container.clean_storage()
     counts = temp_container.count_objects()
     # Now there shouldn't be any more loose objects
-    assert (
-        counts['loose'] == 0
-    ), f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -228,9 +224,7 @@ def test_add_get_with_packing(
 
 
 @pytest.mark.parametrize('use_compression', [True, False])
-def test_directly_to_pack_content(
-    temp_container, generate_random_data, use_compression
-):
+def test_directly_to_pack_content(temp_container, generate_random_data, use_compression):
     """Add a number of objects directly to packs.
 
     Then retrieve them and check the content is correct (always bulk retrieve for simplicity).
@@ -239,17 +233,13 @@ def test_directly_to_pack_content(
 
     data = generate_random_data()
 
-    obj_md5s = _add_objects_directly_to_pack(
-        temp_container, data, compress=use_compression
-    )
+    obj_md5s = _add_objects_directly_to_pack(temp_container, data, compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert (
-        counts['packed'] == len(set(data))
+    assert counts['packed'] == len(
+        set(data)
     ), f"The container should have {len(set(data))} packed objects (but there are {counts['packed']} instead)"
-    assert (
-        counts['loose'] == 0
-    ), f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -362,9 +352,7 @@ def test_container_context_manager(temp_dir):
         container.add_object(b'abc')
         container.pack_all_loose()
         assert container._operation_session is not None, 'Session should be open'
-    assert (
-        container._operation_session is None
-    ), 'Session should be closed when going out of the context manager'
+    assert container._operation_session is None, 'Session should be closed when going out of the context manager'
 
 
 def test_num_packs_with_target_size(temp_dir, generate_random_data):
@@ -405,9 +393,7 @@ def test_num_packs_with_target_size(temp_dir, generate_random_data):
     # Because of the length, they are surely different from previous data
     # Also, it's bigger than the pack_size_target.
     new_obj = list(
-        generate_random_data(
-            num_files=1, min_size=pack_size_target * 2, max_size=pack_size_target * 2
-        ).values()
+        generate_random_data(num_files=1, min_size=pack_size_target * 2, max_size=pack_size_target * 2).values()
     )[0]
     # Create three objects from this template, with different suffix, so hash key is different
     new_obj1 = new_obj + b'1'
@@ -447,9 +433,7 @@ def test_num_packs_with_target_size(temp_dir, generate_random_data):
     'use_compression,open_streams',
     [(True, True), (True, False), (False, True), (False, False)],
 )
-def test_directly_to_pack_streamed(
-    temp_dir, generate_random_data, use_compression, open_streams, pack_size_target
-):  # pylint: disable=too-many-locals
+def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compression, open_streams, pack_size_target):  # pylint: disable=too-many-locals
     """Add a number of objects directly to packs, using streams.
 
     Then retrieve them and check the content is correct (always bulk retrieve for simplicity).
@@ -480,9 +464,7 @@ def test_directly_to_pack_streamed(
             # I check that instead it fails if I forget to open the streams (and that it does not create side effects)
             # The error that I get here would be: "LazyOpener' object has no attribute 'read'"
             with pytest.raises(AttributeError):
-                temp_container.add_streamed_objects_to_pack(
-                    streams_copy, compress=use_compression, open_streams=False
-                )
+                temp_container.add_streamed_objects_to_pack(streams_copy, compress=use_compression, open_streams=False)
 
     else:
         streams = [UnopenableBytesIO(value) for value in values]
@@ -494,19 +476,15 @@ def test_directly_to_pack_streamed(
         # (and that it does not create side effects). Note that I disabled explicitly the __enter__ method
         # in the class UnopenableBytesIO to make sure that this raises
         with pytest.raises(AttributeError):
-            temp_container.add_streamed_objects_to_pack(
-                streams_copy, compress=use_compression, open_streams=True
-            )
+            temp_container.add_streamed_objects_to_pack(streams_copy, compress=use_compression, open_streams=True)
 
     obj_md5s = dict(zip(obj_hashkeys, keys))
 
     counts = temp_container.count_objects()
-    assert (
-        counts['packed'] == len(set(data))
+    assert counts['packed'] == len(
+        set(data)
     ), f"The container should have {len(set(data))} packed objects (but there are {counts['packed']} instead)"
-    assert (
-        counts['loose'] == 0
-    ), f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -531,14 +509,10 @@ def test_directly_to_pack_streamed(
     'loose_prefix_len,pack_size_target',
     [(0, 1000), (2, 1000), (3, 1000), (0, 40000000), (2, 40000000), (3, 40000000)],
 )
-def test_prefix_lengths(
-    temp_dir, generate_random_data, pack_size_target, loose_prefix_len
-):
+def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_prefix_len):
     """Check if the loose prefix length are honored, and if everything works also with vey small pack size target."""
     container = Container(temp_dir)
-    container.init_container(
-        clear=True, pack_size_target=pack_size_target, loose_prefix_len=loose_prefix_len
-    )
+    container.init_container(clear=True, pack_size_target=pack_size_target, loose_prefix_len=loose_prefix_len)
     # Check that the `get_folder` method returns the expected folder name
     assert container.get_folder() == temp_dir.resolve()
 
@@ -566,8 +540,8 @@ def test_prefix_lengths(
     assert (
         counts['packed'] == 0
     ), f"The container should have 0 packed objects (but there are {counts['packed']} instead)"
-    assert (
-        counts['loose'] == len(set(obj_md5s))
+    assert counts['loose'] == len(
+        set(obj_md5s)
     ), f"The container should have {len(set(obj_md5s))} loose objects (but there are {counts['loose']} instead)"
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
@@ -590,8 +564,8 @@ def test_prefix_lengths(
     )
 
     counts = container.count_objects()
-    assert (
-        counts['packed'] == len(set(obj_md5s))
+    assert counts['packed'] == len(
+        set(obj_md5s)
     ), f"The container should have {len(set(obj_md5s))} packed objects (but there are {counts['packed']} instead)"
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
@@ -603,9 +577,7 @@ def test_prefix_lengths(
     container.clean_storage()
     counts = container.count_objects()
     # Now there shouldn't be any more loose objects
-    assert (
-        counts['loose'] == 0
-    ), f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
@@ -627,17 +599,11 @@ def test_prefix_lengths(
     for pack_id in valid_pack_ids:
         assert container._is_valid_pack_id(pack_id), f"'{pack_id}' should be valid"
     for pack_id in invalid_pack_ids:
-        assert not container._is_valid_pack_id(
-            pack_id
-        ), f"'{pack_id}' should be invalid"
+        assert not container._is_valid_pack_id(pack_id), f"'{pack_id}' should be invalid"
     for loose_prefix in valid_loose_prefixes:
-        assert container._is_valid_loose_prefix(
-            loose_prefix
-        ), f"'{loose_prefix}' should be valid"
+        assert container._is_valid_loose_prefix(loose_prefix), f"'{loose_prefix}' should be valid"
     for loose_prefix in invalid_loose_prefixes:
-        assert not container._is_valid_loose_prefix(
-            loose_prefix
-        ), f"'{loose_prefix}' should be invalid"
+        assert not container._is_valid_loose_prefix(loose_prefix), f"'{loose_prefix}' should be invalid"
 
     # I close the container, as this is needed on Windows
     container.close()
@@ -762,22 +728,16 @@ def test_validation_while_packing(temp_container, compress, corrupt, validate_ob
 
     # Corrupt the content of a loose object
     if corrupt:
-        with open(
-            temp_container._get_loose_path_from_hashkey(hashkey2), 'wb'
-        ) as fhandle:
+        with open(temp_container._get_loose_path_from_hashkey(hashkey2), 'wb') as fhandle:
             fhandle.write(corrupted_content2)
 
     if corrupt and validate_objects:
         with pytest.raises(exc.InconsistentContent):
-            temp_container.pack_all_loose(
-                compress=compress, validate_objects=validate_objects
-            )
+            temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
         # hashkey2 should have been left as 'loose'. Hashkey1 could be either packed or loose, so we don't check.
         assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.LOOSE
     else:
-        temp_container.pack_all_loose(
-            compress=compress, validate_objects=validate_objects
-        )
+        temp_container.pack_all_loose(compress=compress, validate_objects=validate_objects)
         # Both should have been packed
         assert temp_container.get_object_meta(hashkey1)['type'] == ObjectType.PACKED
         assert temp_container.get_object_meta(hashkey2)['type'] == ObjectType.PACKED
@@ -792,12 +752,8 @@ def test_validation_while_packing(temp_container, compress, corrupt, validate_ob
 
 
 # Only three options: if pack_objects is False, the values of compress_packs is ignored
-@pytest.mark.parametrize(
-    'pack_objects,compress_packs', [(True, True), (True, False), (False, False)]
-)
-def test_unknown_hashkeys(
-    temp_container, generate_random_data, pack_objects, compress_packs
-):
+@pytest.mark.parametrize('pack_objects,compress_packs', [(True, True), (True, False), (False, False)])
+def test_unknown_hashkeys(temp_container, generate_random_data, pack_objects, compress_packs):
     """Put some data in the container, then check that unknown hash keys raise the correct error."""
     # Generate and store some data, just not to have an empty container
     data = generate_random_data()
@@ -842,9 +798,7 @@ def test_unknown_hashkeys(
     # skip_if_missing=True, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_objects_stream_and_meta(
-        hashkeys_list, skip_if_missing=True
-    ) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys_list, skip_if_missing=True) as triplets:
         for obj_hashkey, stream, meta in triplets:
             if stream is None:
                 assert meta['size'] is None
@@ -871,9 +825,7 @@ def test_unknown_hashkeys(
     # skip_if_missing=False, get streams
     missing = []
     check_md5s = {}
-    with temp_container.get_objects_stream_and_meta(
-        hashkeys_list, skip_if_missing=False
-    ) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys_list, skip_if_missing=False) as triplets:
         for obj_hashkey, stream, meta in triplets:
             if stream is None:
                 assert meta['size'] is None
@@ -944,9 +896,7 @@ def test_same_object_direct_pack(temp_container, generate_random_data):
     # Do it again; the object is already there
     new_obj_hashkeys = temp_container.add_objects_to_pack(all_test_data)
     assert len(set(obj_hashkeys)) == 1, 'Objects are not all identical'
-    assert (
-        obj_hashkeys[0] == new_obj_hashkeys[0]
-    ), 'In the second insertion, it generated a different hash key'
+    assert obj_hashkeys[0] == new_obj_hashkeys[0], 'In the second insertion, it generated a different hash key'
 
     # Check the number of objects again
     counts = temp_container.count_objects()
@@ -1063,21 +1013,14 @@ def test_locked_object_while_packing(  # pylint: disable=invalid-name
 # level as a keyword argument, as this was added only in python 3.6
 @pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 @pytest.mark.parametrize('compress_packs', [True, False])
-def test_sizes(
-    temp_container, generate_random_data, compress_packs, compression_algorithm
-):
+def test_sizes(temp_container, generate_random_data, compress_packs, compression_algorithm):
     """Check that the information on size is reliable."""
-    temp_container.init_container(
-        clear=True, compression_algorithm=compression_algorithm
-    )
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     size_info = temp_container.get_total_size()
     assert size_info['total_size_packed'] == 0
     assert size_info['total_size_packed_on_disk'] == 0
     assert size_info['total_size_packfiles_on_disk'] == 0
-    assert (
-        size_info['total_size_packindexes_on_disk']
-        == temp_container._get_pack_index_path().stat().st_size
-    )
+    assert size_info['total_size_packindexes_on_disk'] == temp_container._get_pack_index_path().stat().st_size
     assert size_info['total_size_loose'] == 0
 
     data = generate_random_data()
@@ -1085,10 +1028,7 @@ def test_sizes(
     obj_md5s = _add_objects_loose_loop(temp_container, data)
     # Try to count size after retrieving, just to be sure
     assert (
-        sum(
-            len(content)
-            for content in temp_container.get_objects_content(obj_md5s.keys()).values()
-        )
+        sum(len(content) for content in temp_container.get_objects_content(obj_md5s.keys()).values())
         == total_object_size
     )
 
@@ -1097,10 +1037,7 @@ def test_sizes(
     assert size_info['total_size_packed'] == 0
     assert size_info['total_size_packed_on_disk'] == 0
     assert size_info['total_size_packfiles_on_disk'] == 0
-    assert (
-        size_info['total_size_packindexes_on_disk']
-        == temp_container._get_pack_index_path().stat().st_size
-    )
+    assert size_info['total_size_packindexes_on_disk'] == temp_container._get_pack_index_path().stat().st_size
     assert size_info['total_size_loose'] == total_object_size
 
     # Pack without compression
@@ -1110,10 +1047,7 @@ def test_sizes(
 
     # Try to count size after retrieving, just to be sure
     assert (
-        sum(
-            len(content)
-            for content in temp_container.get_objects_content(obj_md5s.keys()).values()
-        )
+        sum(len(content) for content in temp_container.get_objects_content(obj_md5s.keys()).values())
         == total_object_size
     )
 
@@ -1130,20 +1064,14 @@ def test_sizes(
         assert size_info['total_size_packed'] == total_object_size
         assert size_info['total_size_packed_on_disk'] == total_compressed_size
         assert size_info['total_size_packfiles_on_disk'] == total_compressed_size
-        assert (
-            size_info['total_size_packindexes_on_disk']
-            == temp_container._get_pack_index_path().stat().st_size
-        )
+        assert size_info['total_size_packindexes_on_disk'] == temp_container._get_pack_index_path().stat().st_size
         assert size_info['total_size_loose'] == 0
     else:
         size_info = temp_container.get_total_size()
         assert size_info['total_size_packed'] == total_object_size
         assert size_info['total_size_packed_on_disk'] == total_object_size
         assert size_info['total_size_packfiles_on_disk'] == total_object_size
-        assert (
-            size_info['total_size_packindexes_on_disk']
-            == temp_container._get_pack_index_path().stat().st_size
-        )
+        assert size_info['total_size_packindexes_on_disk'] == temp_container._get_pack_index_path().stat().st_size
         assert size_info['total_size_loose'] == 0
 
 
@@ -1185,18 +1113,14 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
 
         start_open_files = len(current_process.open_files())
 
-        with temp_container.get_objects_stream_and_meta(
-            obj_md5s.keys(), skip_if_missing=True
-        ):
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True):
             # I don't use the triplets
             assert len(current_process.open_files()) <= start_open_files + 1
 
         # Check that at the end nothing is left open
         assert len(current_process.open_files()) == start_open_files
 
-        with temp_container.get_objects_stream_and_meta(
-            obj_md5s.keys(), skip_if_missing=True
-        ) as triplets:
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
             # I loop over the triplets, but I don't do anything
             for _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
@@ -1205,9 +1129,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
         assert len(current_process.open_files()) == start_open_files
 
         # I actually read the content
-        with temp_container.get_objects_stream_and_meta(
-            obj_md5s.keys(), skip_if_missing=True
-        ) as triplets:
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
             # I loop over the triplets, but I don't do anything
             for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
@@ -1241,9 +1163,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
         assert len(current_process.open_files()) == start_open_files
 
         # I actually read the content
-        with temp_container.get_objects_stream_and_meta(
-            obj_md5s.keys(), skip_if_missing=True
-        ) as triplets:
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
             # I loop over the triplets, but I don't do anything
             for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
@@ -1254,9 +1174,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
         ##############################
         ##### Same test after adding at least one loose object
         ##############################
-        new_object_content = (
-            b'1' * 20000
-        )  # This should be long enough not to collide with the generated random data
+        new_object_content = b'1' * 20000  # This should be long enough not to collide with the generated random data
         new_hashkey = temp_container.add_object(new_object_content)
         obj_md5s[new_hashkey] = new_object_content
 
@@ -1281,9 +1199,7 @@ def test_get_objects_stream_closes(temp_dir, generate_random_data):
         assert len(current_process.open_files()) == start_open_files
 
         # I actually read the content
-        with temp_container.get_objects_stream_and_meta(
-            obj_md5s.keys(), skip_if_missing=True
-        ) as triplets:
+        with temp_container.get_objects_stream_and_meta(obj_md5s.keys(), skip_if_missing=True) as triplets:
             # I loop over the triplets, but I don't do anything
             for _, stream, _ in triplets:  # pylint: disable=not-an-iterable
                 assert len(current_process.open_files()) <= start_open_files + 1
@@ -1315,9 +1231,7 @@ def test_deletion_closes_file_descriptors(temp_dir, generate_random_data):
         _ = temp_container.get_objects_content(obj_md5s.keys())
 
         # Checks if initalisation actually opens files
-        assert 0 < len(
-            current_process.open_files()
-        ), 'No files have been opened during initalisation'
+        assert 0 < len(current_process.open_files()), 'No files have been opened during initalisation'
 
         # Checks if deleting the container will close the files
         del temp_container
@@ -1370,9 +1284,7 @@ def test_get_objects_meta_doesnt_open(temp_container, generate_random_data):  # 
     ##############################
     ##### Same test after adding at least one loose object
     ##############################
-    new_object_content = (
-        b'1' * 20000
-    )  # This should be long enough not to collide with the generated random data
+    new_object_content = b'1' * 20000  # This should be long enough not to collide with the generated random data
     new_hashkey = temp_container.add_object(new_object_content)
     obj_md5s[new_hashkey] = new_object_content
 
@@ -1398,9 +1310,7 @@ def test_stream_meta(  # pylint: disable=too-many-locals
     temp_container, compress, skip_if_missing, compression_algorithm
 ):
     """Validate the meta dictionary returned by the get_objects_stream_and_meta and get_objects_meta."""
-    temp_container.init_container(
-        clear=True, compression_algorithm=compression_algorithm
-    )
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     # This is the list of all known meta keys.
     # I do also an explicit check that all and only these are present
     # This is implicit since I will later also compare the exact dictionaries and not only their keys,
@@ -1417,17 +1327,13 @@ def test_stream_meta(  # pylint: disable=too-many-locals
 
     content_packed = b'sffssdf383939'
     content_loose = b'v9fpaM'
-    hashkey_packed = temp_container.add_objects_to_pack(
-        [content_packed], compress=compress
-    )[0]
+    hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
     hashkey_loose = temp_container.add_object(content_loose)
     hashkey_missing = 'unknown'
     compresser = utils.get_compressobj_instance(compression_algorithm)
     content_packed_compressed = compresser.compress(content_packed)
     content_packed_compressed += compresser.flush()
-    object_pack_length = (
-        len(content_packed) if not compress else len(content_packed_compressed)
-    )
+    object_pack_length = len(content_packed) if not compress else len(content_packed_compressed)
 
     expected_skip_missing_true = {
         hashkey_packed: {
@@ -1497,13 +1403,9 @@ def test_stream_meta(  # pylint: disable=too-many-locals
         check_dict[hashkey] = meta
 
     if skip_if_missing:
-        assert check_dict == {
-            k: v['meta'] for k, v in expected_skip_missing_true.items()
-        }
+        assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_true.items()}
     else:
-        assert check_dict == {
-            k: v['meta'] for k, v in expected_skip_missing_false.items()
-        }
+        assert check_dict == {k: v['meta'] for k, v in expected_skip_missing_false.items()}
 
 
 # Note that until when we want to support py3.5, we cannot specify the
@@ -1514,9 +1416,7 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
     """Validate the meta dictionary returned by the single-object methods.
 
     (i.e., get_object_stream_and_meta and get_object_meta)."""
-    temp_container.init_container(
-        clear=True, compression_algorithm=compression_algorithm
-    )
+    temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
     # This is the list of all known meta keys.
     # I do also an explicit check that all and only these are present
     # This is implicit since I will later also compare the exact dictionaries and not only their keys,
@@ -1533,17 +1433,13 @@ def test_stream_meta_single(temp_container, compress, compression_algorithm):
 
     content_packed = b'sffssdf383939'
     content_loose = b'v9fpaM'
-    hashkey_packed = temp_container.add_objects_to_pack(
-        [content_packed], compress=compress
-    )[0]
+    hashkey_packed = temp_container.add_objects_to_pack([content_packed], compress=compress)[0]
     hashkey_loose = temp_container.add_object(content_loose)
     hashkey_missing = 'unknown'
     compresser = utils.get_compressobj_instance(compression_algorithm)
     content_packed_compressed = compresser.compress(content_packed)
     content_packed_compressed += compresser.flush()
-    object_pack_length = (
-        len(content_packed) if not compress else len(content_packed_compressed)
-    )
+    object_pack_length = len(content_packed) if not compress else len(content_packed_compressed)
 
     expected_skip_missing_true = {
         hashkey_packed: {
@@ -1645,9 +1541,7 @@ def test_length_get_objects(temp_container):
     partial_hashkeys = list(data_dict)[:2]
     hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_meta(
-        hashkeys=hashkeys, skip_if_missing=False
-    ) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=False) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     # I should iterate on them ONLY ONCE
@@ -1659,9 +1553,7 @@ def test_length_get_objects(temp_container):
     partial_hashkeys = list(data_dict)[:2]
     hashkeys = partial_hashkeys + partial_hashkeys + unknown_hashkeys + unknown_hashkeys
     iterated_hashkeys = []
-    with temp_container.get_objects_stream_and_meta(
-        hashkeys=hashkeys, skip_if_missing=True
-    ) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys=hashkeys, skip_if_missing=True) as triplets:
         for obj_hashkey, _, _ in triplets:
             iterated_hashkeys.append(obj_hashkey)
     # I should iterate on them ONLY ONCE
@@ -1930,28 +1822,20 @@ def test_has_objects(temp_container):
     hashkey_pack1 = temp_container.add_object(b'1')
     hashkey_pack2 = temp_container.add_object(b'2')
     assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
-    assert temp_container.has_objects(
-        [hashkey_pack2, unknown_hashkey, hashkey_pack1]
-    ) == [True, False, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
 
     # Verify that it still works after packing the object
     temp_container.pack_all_loose()
     assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
-    assert temp_container.has_objects(
-        [hashkey_pack2, unknown_hashkey, hashkey_pack1]
-    ) == [True, False, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
 
     # Add a few more loose objects, and check that all works also with mixed loose and packed objects
     hashkey_loose1 = temp_container.add_object(b'3')
     hashkey_loose2 = temp_container.add_object(b'4')
     assert temp_container.has_objects([hashkey_pack1, hashkey_pack2]) == [True, True]
-    assert temp_container.has_objects(
-        [hashkey_pack2, unknown_hashkey, hashkey_pack1]
-    ) == [True, False, True]
+    assert temp_container.has_objects([hashkey_pack2, unknown_hashkey, hashkey_pack1]) == [True, False, True]
     assert temp_container.has_objects([hashkey_loose1, hashkey_loose2]) == [True, True]
-    assert temp_container.has_objects(
-        [hashkey_loose2, unknown_hashkey, hashkey_loose1]
-    ) == [True, False, True]
+    assert temp_container.has_objects([hashkey_loose2, unknown_hashkey, hashkey_loose1]) == [True, False, True]
     assert temp_container.has_objects(
         [hashkey_loose2, hashkey_pack1, unknown_hashkey, hashkey_loose1, hashkey_pack2]
     ) == [True, True, False, True, True]
@@ -2015,9 +1899,7 @@ def test_get_objects_meta_to_dict(temp_container):
     # Check tha the dict contains the right data
     assert all(meta['type'] == ObjectType.LOOSE for meta in meta_dict.values())
 
-    assert expected_sizes == {
-        hashkey: meta['size'] for hashkey, meta in meta_dict.items()
-    }
+    assert expected_sizes == {hashkey: meta['size'] for hashkey, meta in meta_dict.items()}
 
 
 @pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
@@ -2118,9 +2000,7 @@ def test_list_all_objects_extraneous(temp_dir, loose_prefix_len):  # pylint: dis
             pass
 
         # creating now a valid first_level folder (if not present already), and an invalid name inside it
-        first_level_subfolder = temp_container._get_loose_folder() / (
-            '0' * loose_prefix_len
-        )
+        first_level_subfolder = temp_container._get_loose_folder() / ('0' * loose_prefix_len)
         try:
             # Creating if it does not exist - this is a valid name
             os.mkdir(first_level_subfolder)
@@ -2164,9 +2044,7 @@ def test_import_to_pack(
         other_container.init_container(clear=True, hash_type=other_container_hash_type)
 
         hashkey1 = temp_container.add_object(obj1)
-        hashkey2, hashkey3 = temp_container.add_objects_to_pack(
-            [obj2, obj3], compress=compress_source
-        )
+        hashkey2, hashkey3 = temp_container.add_objects_to_pack([obj2, obj3], compress=compress_source)
 
         # Initial state
         assert temp_container.count_objects()['loose'] == 1
@@ -2297,9 +2175,7 @@ def test_validate_corrupt_packed(temp_container):
     assert issues.is_valid()
 
     # Corrupt the object
-    with open(
-        temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb'
-    ) as fhandle:
+    with open(temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb') as fhandle:
         fhandle.write(b'CORRU890890890809PT')
 
     # I don't use the dataclass .is_valid() method of ValidationIssues because I want to
@@ -2326,9 +2202,7 @@ def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid
     assert meta2['type'] == ObjectType.PACKED
 
     # Hashkey of the object stored later in the pack
-    hashkey_second = (
-        hashkey2 if meta1['pack_offset'] < meta2['pack_offset'] else hashkey1
-    )
+    hashkey_second = hashkey2 if meta1['pack_offset'] < meta2['pack_offset'] else hashkey1
 
     # No errors yet
     temp_container.validate()
@@ -2336,9 +2210,9 @@ def test_validate_overlapping_packed(temp_container):  # pylint: disable=invalid
     assert issues.is_valid()
 
     # Change the offset of the second object so that it's overlapping
-    temp_container._get_operation_session().query(database.Obj).filter(
-        database.Obj.hashkey == hashkey_second
-    ).update({database.Obj.offset: database.Obj.offset - 1})
+    temp_container._get_operation_session().query(database.Obj).filter(database.Obj.hashkey == hashkey_second).update(
+        {database.Obj.offset: database.Obj.offset - 1}
+    )
 
     errors = dataclasses.asdict(temp_container.validate())
     problems = errors.pop('overlapping_packed')
@@ -2362,9 +2236,7 @@ def test_validate_corrupt_packed_size(temp_container):  # pylint: disable=invali
     assert issues.is_valid()
 
     # Corrupt the object
-    with open(
-        temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb'
-    ) as fhandle:
+    with open(temp_container._get_pack_path_from_pack_id(str(meta['pack_id'])), 'wb') as fhandle:
         # Short corrupted string so also the size is wrong
         fhandle.write(b'COR')
 
@@ -2405,8 +2277,7 @@ def test_validate_callback(temp_container, callback_instance):
 
     # I convert to dict because I the order of the actions can change
     performed_actions_dict = {
-        action['start_value']['description']: action
-        for action in callback_instance.performed_actions
+        action['start_value']['description']: action for action in callback_instance.performed_actions
     }
 
     assert performed_actions_dict == {
@@ -2435,9 +2306,7 @@ def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
             stream, callback_size_hint=length, callback=callback_instance.callback
         )
     else:
-        hashkey = temp_container.add_streamed_object_to_pack(
-            stream, callback=callback_instance.callback
-        )
+        hashkey = temp_container.add_streamed_object_to_pack(stream, callback=callback_instance.callback)
 
     assert temp_container.get_object_content(hashkey) == content
 
@@ -2456,9 +2325,7 @@ def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
     ]
 
 
-@pytest.mark.parametrize(
-    'no_holes,no_holes_read_twice', [[True, True], [True, False], [False, False]]
-)
+@pytest.mark.parametrize('no_holes,no_holes_read_twice', [[True, True], [True, False], [False, False]])
 def test_add_streamed_objects_to_pack_callback(  # pylint: disable=invalid-name
     temp_container, callback_instance, no_holes, no_holes_read_twice
 ):
@@ -2518,9 +2385,7 @@ def test_add_streamed_objects_to_pack_callback(  # pylint: disable=invalid-name
 
 # Check both with the same hash type and with a different one
 @pytest.mark.parametrize('other_container_hash_type', ['sha256', 'sha1'])
-def test_import_objects_callback(
-    temp_container, callback_instance, other_container_hash_type
-):
+def test_import_objects_callback(temp_container, callback_instance, other_container_hash_type):
     """Test the correctness of the callback of import_objects."""
     # Add packed objects (2001, 10 chars each)
     len_packed = 2001
@@ -2533,18 +2398,10 @@ def test_import_objects_callback(
         other_container.init_container(clear=True, hash_type=other_container_hash_type)
 
         # Import objects
-        other_container.import_objects(
-            hashkeys, temp_container, callback=callback_instance.callback
-        )
+        other_container.import_objects(hashkeys, temp_container, callback=callback_instance.callback)
 
-        assert (
-            other_container.count_objects()['loose']
-            == temp_container.count_objects()['loose']
-        )
-        assert (
-            other_container.count_objects()['packed']
-            == temp_container.count_objects()['packed']
-        )
+        assert other_container.count_objects()['loose'] == temp_container.count_objects()['loose']
+        assert other_container.count_objects()['packed'] == temp_container.count_objects()['packed']
 
         # close before exiting the context manager, so files are closed.
         other_container.close()
@@ -2583,9 +2440,7 @@ def test_delete(temp_container, compress, ask_deleting_unknown):  # pylint: disa
     obj2 = b'jklf2wv'  # Will be loose
     obj3 = b'9z0vx0'  # Will be stored directly packed
 
-    unknown_hashkey = utils.get_hash_cls(temp_container.hash_type)(
-        b'NOT_EXISTING_OBJECT_CONTENT'
-    ).hexdigest()
+    unknown_hashkey = utils.get_hash_cls(temp_container.hash_type)(b'NOT_EXISTING_OBJECT_CONTENT').hexdigest()
 
     hashkey1 = temp_container.add_object(obj1)
     temp_container.pack_all_loose(compress=compress)
@@ -2927,10 +2782,11 @@ def test_clean_storage_with_duplicates(
     assert set(temp_container.list_all_objects()) == {hashkey1, hashkey2, hashkey3}
 
     # All contents have been restored, and no mistake has been done by replacing the content of wrong objects
-    assert {
-        hashkey: temp_container.get_object_content(hashkey)
-        for hashkey in [hashkey1, hashkey2, hashkey3]
-    } == {hashkey1: content1, hashkey2: content2, hashkey3: content3}
+    assert {hashkey: temp_container.get_object_content(hashkey) for hashkey in [hashkey1, hashkey2, hashkey3]} == {
+        hashkey1: content1,
+        hashkey2: content2,
+        hashkey3: content3,
+    }
 
 
 def test_clean_storage_with_duplicates_all_corrupt(
@@ -3070,14 +2926,10 @@ def test_clean_storage_with_duplicates_original_deleted(
     assert not list(temp_container.list_all_objects())
 
 
-@pytest.mark.parametrize(
-    'no_holes, no_holes_read_twice', [[True, True], [True, False], [False, True]]
-)
+@pytest.mark.parametrize('no_holes, no_holes_read_twice', [[True, True], [True, False], [False, True]])
 @pytest.mark.parametrize('use_streams', [True, False])
 @pytest.mark.parametrize('compress', [True, False])
-def test_packs_no_holes(
-    temp_container, no_holes, no_holes_read_twice, use_streams, compress, monkeypatch
-):
+def test_packs_no_holes(temp_container, no_holes, no_holes_read_twice, use_streams, compress, monkeypatch):
     """Test what happens when writing directly to packs and asking not to leave back holes."""
     content1 = b'1234567'
     content2 = b'wefvmafsf'
@@ -3115,16 +2967,11 @@ def test_packs_no_holes(
     assert sizes['total_size_packed'] == len(content1) + len(content2) + len(content3)
 
     if no_holes:
-        assert (
-            sizes['total_size_packed_on_disk'] == sizes['total_size_packfiles_on_disk']
-        )
+        assert sizes['total_size_packed_on_disk'] == sizes['total_size_packfiles_on_disk']
     else:
         # We have added twice each object. Note: we cannot use total_size_packed because this would be
         # before compression
-        assert (
-            2 * sizes['total_size_packed_on_disk']
-            == sizes['total_size_packfiles_on_disk']
-        )
+        assert 2 * sizes['total_size_packed_on_disk'] == sizes['total_size_packfiles_on_disk']
 
     # Add again the same objects, in a new call
     # I first monkeypatch the method `_write_data_to_packfile`. This writes to disk, and should never be called
@@ -3145,9 +2992,7 @@ def test_packs_no_holes(
     monkeypatch.setattr(
         temp_container,
         '_write_data_to_packfile',
-        functools.partial(
-            new_write_data_to_packfile, self=temp_container, call_counter=call_counter
-        ),
+        functools.partial(new_write_data_to_packfile, self=temp_container, call_counter=call_counter),
     )
 
     if use_streams:
@@ -3178,29 +3023,17 @@ def test_packs_no_holes(
 
     new_sizes = temp_container.get_total_size()
     # No new objects, so same size
-    assert new_sizes['total_size_packed'] == len(content1) + len(content2) + len(
-        content3
-    )
+    assert new_sizes['total_size_packed'] == len(content1) + len(content2) + len(content3)
 
     if no_holes:
         # Shouldn't have created more space on disk
-        assert (
-            new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
-        )
-        assert (
-            new_sizes['total_size_packfiles_on_disk']
-            == sizes['total_size_packfiles_on_disk']
-        )
+        assert new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
+        assert new_sizes['total_size_packfiles_on_disk'] == sizes['total_size_packfiles_on_disk']
     else:
         # We have doubled the space on disk
-        assert (
-            new_sizes['total_size_packfiles_on_disk']
-            == 2 * sizes['total_size_packfiles_on_disk']
-        )
+        assert new_sizes['total_size_packfiles_on_disk'] == 2 * sizes['total_size_packfiles_on_disk']
         # (but shouldn't have increased the size of packed objects on disk)
-        assert (
-            new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
-        )
+        assert new_sizes['total_size_packed_on_disk'] == sizes['total_size_packed_on_disk']
 
 
 def test_packs_read_in_order(temp_dir):
@@ -3238,9 +3071,7 @@ def test_packs_read_in_order(temp_dir):
     last_pack = None
     seen_packs = set()
 
-    with temp_container.get_objects_stream_and_meta(
-        hashkeys, skip_if_missing=False
-    ) as triplets:
+    with temp_container.get_objects_stream_and_meta(hashkeys, skip_if_missing=False) as triplets:
         for _, _, meta in triplets:  # pylint: disable=not-an-iterable
             assert meta['type'] == ObjectType.PACKED
             if last_pack is None:
@@ -3361,13 +3192,9 @@ def test_repack(temp_dir, compress_mode):
     assert size['total_size_packed'] == 10 * (len(data) - len(to_delete))
     # This time also the size on disk should be adapted (it's the main goal of repacking)
     objects_meta = dict(
-        temp_container.get_objects_meta(
-            [hashkeys[idx] for idx in range(len(hashkeys)) if idx not in idx_to_delete]
-        )
+        temp_container.get_objects_meta([hashkeys[idx] for idx in range(len(hashkeys)) if idx not in idx_to_delete])
     )
-    assert size['total_size_packfiles_on_disk'] == sum(
-        list(meta['pack_length'] for meta in objects_meta.values())
-    )
+    assert size['total_size_packfiles_on_disk'] == sum(list(meta['pack_length'] for meta in objects_meta.values()))
 
     # Check that the content is still correct
     # Should not raise
@@ -3381,9 +3208,7 @@ def test_repack(temp_dir, compress_mode):
 @pytest.mark.parametrize('repack_compress_mode', list(CompressMode))
 @pytest.mark.parametrize('compress_pack', [True, False])
 @pytest.mark.parametrize('small_size', [True, False])
-def test_repack_compress_modes(
-    temp_container: Container, small_size, compress_pack, repack_compress_mode
-):
+def test_repack_compress_modes(temp_container: Container, small_size, compress_pack, repack_compress_mode):
     """Check that repack() uses the correct compression mode."""
 
     # Write 10*1_000_000 = 10 million bytes, larger than a chunk
@@ -3402,14 +3227,8 @@ def test_repack_compress_modes(
 
     temp_container.pack_all_loose(compress=compress_pack)
     # Both should have the expected compression mode from the variable `compress_mode`
-    assert (
-        temp_container.get_object_meta(hashkey_compr)['pack_compressed']
-        == compress_pack
-    )
-    assert (
-        temp_container.get_object_meta(hashkey_uncompr)['pack_compressed']
-        == compress_pack
-    )
+    assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] == compress_pack
+    assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] == compress_pack
 
     # We now repack, and check if everything is correct
     temp_container.repack(compress_mode=repack_compress_mode)
@@ -3422,31 +3241,19 @@ def test_repack_compress_modes(
     if repack_compress_mode == CompressMode.NO:
         # All should be uncompressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is False
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
     elif repack_compress_mode == CompressMode.YES:
         # All should be compressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is True
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is True
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is True
     elif repack_compress_mode == CompressMode.KEEP:
         # Should not have changed
-        assert (
-            temp_container.get_object_meta(hashkey_compr)['pack_compressed']
-            == compress_pack
-        )
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed']
-            == compress_pack
-        )
+        assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] == compress_pack
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] == compress_pack
     elif repack_compress_mode == CompressMode.AUTO:
         # Only really compressible streams should be compressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is True
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
     else:
         raise AssertionError(
             f'Unknown {repack_compress_mode=}, most probably you added a new CompressMode and need to update the tests'
@@ -3501,9 +3308,7 @@ def test_repack_progress_bar(temp_container: Container):
     def progress(action, value):
         """A dummy progress function."""
         if action == 'init':
-            assert (
-                value['total'] == temp_container.get_total_size()['total_size_packed']
-            )
+            assert value['total'] == temp_container.get_total_size()['total_size_packed']
             nonlocal passed_total
             passed_total = value['total']
             assert value['description'] == 'Repack 0'
@@ -3542,27 +3347,19 @@ def test_pack_all_loose_compress_modes(temp_container: Container, compress_mode)
     if compress_mode == CompressMode.NO or compress_mode is False:
         # All should be uncompressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is False
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
     elif compress_mode == CompressMode.YES or compress_mode is True:
         # All should be compressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is True
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is True
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is True
     elif compress_mode == CompressMode.KEEP:
         # Should not have changed - so it should be False since loose objects are always uncompressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is False
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
     elif compress_mode == CompressMode.AUTO:
         # Only really compressible streams should be compressed
         assert temp_container.get_object_meta(hashkey_compr)['pack_compressed'] is True
-        assert (
-            temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
-        )
+        assert temp_container.get_object_meta(hashkey_uncompr)['pack_compressed'] is False
     else:
         raise AssertionError(
             f'Unknown {compress_mode=}, most probably you added a new CompressMode and need to update the tests'
@@ -3641,9 +3438,7 @@ def test_container_id(temp_container):
 def test_unknown_compressers(temp_container, compression_algorithm):
     """Check that unknown or invalid compressers give a ValueError."""
     with pytest.raises(ValueError):
-        temp_container.init_container(
-            clear=True, compression_algorithm=compression_algorithm
-        )
+        temp_container.init_container(clear=True, compression_algorithm=compression_algorithm)
 
 
 ## I add tests for the LazyLooseStream here - even if it's in the `utils`,
@@ -3785,9 +3580,7 @@ def test_lazy_loose_stream_context_man(temp_container):
 
 
 @pytest.mark.parametrize('num_iterations_delete', [3, 10])
-def test_lazy_loose_loosen_and_delete(
-    temp_container, num_iterations_delete, monkeypatch
-):
+def test_lazy_loose_loosen_and_delete(temp_container, num_iterations_delete, monkeypatch):
     """
     Test what happens if a loose file is deleted right after it's loosened.
 

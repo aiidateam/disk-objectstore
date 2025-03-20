@@ -193,9 +193,7 @@ def test_validate_no_progressbar(temp_container, verbose, monkeypatch):
     assert 'No errors found' in result.stdout
 
 
-@pytest.mark.skipif(
-    platform.system() == 'Windows', reason='Backup not supported on Windows'
-)
+@pytest.mark.skipif(platform.system() == 'Windows', reason='Backup not supported on Windows')
 @pytest.mark.parametrize(
     'remote, verbosity',
     [
@@ -234,9 +232,7 @@ def test_backup(temp_container, temp_dir, remote, verbosity):
     assert path.exists()
 
     path_contents = [entry.name for entry in path.iterdir()]
-    backup_dirs = [
-        entry for entry in path.iterdir() if entry.name.startswith('backup_')
-    ]
+    backup_dirs = [entry for entry in path.iterdir() if entry.name.startswith('backup_')]
 
     assert 'last-backup' in path_contents
     assert len(backup_dirs) == 1
@@ -255,9 +251,7 @@ def test_backup(temp_container, temp_dir, remote, verbosity):
     assert 'No errors found' in result.stdout
 
 
-@pytest.mark.skipif(
-    platform.system() == 'Windows', reason='Backup not supported on Windows'
-)
+@pytest.mark.skipif(platform.system() == 'Windows', reason='Backup not supported on Windows')
 @pytest.mark.parametrize('remote', [False, True])
 def test_backup_repeated(temp_container, temp_dir, remote):
     """Test the backup command repeated 3 times.
@@ -285,17 +279,13 @@ def test_backup_repeated(temp_container, temp_dir, remote):
 
     assert path.exists()
     path_contents = [entry.name for entry in path.iterdir()]
-    backup_dirs = [
-        entry for entry in path.iterdir() if entry.name.startswith('backup_')
-    ]
+    backup_dirs = [entry for entry in path.iterdir() if entry.name.startswith('backup_')]
 
     assert 'last-backup' in path_contents
     assert len(backup_dirs) == 2
 
 
-@pytest.mark.skipif(
-    platform.system() == 'Windows', reason='Backup not supported on Windows'
-)
+@pytest.mark.skipif(platform.system() == 'Windows', reason='Backup not supported on Windows')
 def test_backup_failure(temp_container):
     """Test failure when providing invalid destination"""
 

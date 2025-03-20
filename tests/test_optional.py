@@ -7,9 +7,7 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.parametrize(
-    'do_pack,compress', [[False, False], [True, False], [True, True]]
-)
+@pytest.mark.parametrize('do_pack,compress', [[False, False], [True, False], [True, True]])
 @pytest.mark.parametrize('hdf5_compression', [None, 'gzip'])
 def test_hdf5(temp_container, temp_dir, hdf5_compression, do_pack, compress):
     """Write and read a h5py file.

@@ -12,9 +12,7 @@ import pytest
 from disk_objectstore import backup_utils
 from disk_objectstore.backup_utils import BackupError, BackupManager
 
-pytestmark = pytest.mark.skipif(
-    platform.system() == 'Windows', reason='Backup not supported on Windows'
-)
+pytestmark = pytest.mark.skipif(platform.system() == 'Windows', reason='Backup not supported on Windows')
 
 
 def _random_string(n=10):
@@ -159,9 +157,7 @@ def test_sqlite_failure(monkeypatch, temp_container, tmp_path):
     with pytest.raises(BackupError, match="'.*' failed to be created."):
         manager = BackupManager(str(dest))
         manager.backup_auto_folders(
-            lambda path, prev: backup_utils.backup_container(
-                manager, temp_container, path, prev
-            )
+            lambda path, prev: backup_utils.backup_container(manager, temp_container, path, prev)
         )
 
 
@@ -196,9 +192,7 @@ def test_mv_failure(monkeypatch, temp_container, tmp_path):
     with pytest.raises(BackupError, match='Failed to move'):
         manager = BackupManager(str(dest))
         manager.backup_auto_folders(
-            lambda path, prev: backup_utils.backup_container(
-                manager, temp_container, path, prev
-            )
+            lambda path, prev: backup_utils.backup_container(manager, temp_container, path, prev)
         )
 
 
@@ -231,11 +225,7 @@ def test_ln_failure(monkeypatch, temp_container, tmp_path, caplog):
 
     dest = tmp_path / 'backup'
     manager = BackupManager(str(dest))
-    manager.backup_auto_folders(
-        lambda path, prev: backup_utils.backup_container(
-            manager, temp_container, path, prev
-        )
-    )
+    manager.backup_auto_folders(lambda path, prev: backup_utils.backup_container(manager, temp_container, path, prev))
     assert "Couldn't create symlink" in caplog.text
 
 
@@ -271,8 +261,6 @@ def test_rm_failure(monkeypatch, temp_container, tmp_path, caplog):
     manager = BackupManager(str(dest), keep=0)
     for _ in range(2):
         manager.backup_auto_folders(
-            lambda path, prev: backup_utils.backup_container(
-                manager, temp_container, path, prev
-            )
+            lambda path, prev: backup_utils.backup_container(manager, temp_container, path, prev)
         )
     assert "Warning: couldn't delete old backup" in caplog.text

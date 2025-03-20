@@ -21,14 +21,10 @@ class Obj(Base):  # pylint: disable=too-few-public-methods
     # If you really do not want a uniqueness field, you will need to adapt the code.
     hashkey = Column(String, nullable=False, unique=True, index=True)
     compressed = Column(Boolean, nullable=False)
-    size = Column(
-        Integer, nullable=False
-    )  # uncompressed size; if uncompressed, size == length
+    size = Column(Integer, nullable=False)  # uncompressed size; if uncompressed, size == length
     offset = Column(Integer, nullable=False)
     length = Column(Integer, nullable=False)
-    pack_id = Column(
-        Integer, nullable=False
-    )  # integer ID of the pack in which this entry is stored
+    pack_id = Column(Integer, nullable=False)  # integer ID of the pack in which this entry is stored
 
 
 def get_session(path: Path, create: bool = False) -> Session:
@@ -81,8 +77,6 @@ def get_session(path: Path, create: bool = False) -> Session:
     Base.metadata.bind = engine
 
     # We set autoflush = False to avoid to lock the DB if just doing queries/reads
-    session = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, future=True
-    )()
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)()
 
     return session

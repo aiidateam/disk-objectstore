@@ -38,9 +38,7 @@ def test_concurrent_append_read(temp_dir):
             write_handle.flush()
 
             # Check that the file size on disk is the expected one
-            assert fpath.stat().st_size == len(first_part) + len(intermediate) + len(
-                second_part
-            )
+            assert fpath.stat().st_size == len(first_part) + len(intermediate) + len(second_part)
 
             # Now, jump to the beginning of the second part for reading (skipping 'intermediate')
             read_handle.seek(len(first_part) + len(intermediate))
@@ -86,9 +84,7 @@ def test_concurrent_append_read_multiprocess(temp_dir):
             ]
         )
 
-        assert filesize_str == str(
-            len(first_part) + len(intermediate) + len(second_part)
-        ).encode('ascii')
+        assert filesize_str == str(len(first_part) + len(intermediate) + len(second_part)).encode('ascii')
 
         # Now, jump to the beginning of the second part for reading (skipping 'intermediate')
         read_chunk = subprocess.check_output(
@@ -212,16 +208,10 @@ def test_deletion_while_open(temp_dir, bytes_read_pre):
             # - os.streerror(exc.errno) == 'Permission denied'
             output = exc.output or b''  # It could be none
             assert b'PermissionError' in output
-            assert (
-                fpath.is_file()
-            ), 'The file was actually deleted on Windows, unexpected!'
+            assert fpath.is_file(), 'The file was actually deleted on Windows, unexpected!'
         else:
-            assert (
-                os.name == 'posix'
-            ), "I should be able to delete a file while it's still open only on POSIX!"
-            assert (
-                not fpath.is_file()
-            ), "The file wasn't really deleted in POSIX, unexpected!"
+            assert os.name == 'posix', "I should be able to delete a file while it's still open only on POSIX!"
+            assert not fpath.is_file(), "The file wasn't really deleted in POSIX, unexpected!"
 
         # In either case (I got an exception on Windows, I could delete the file on POSIX)
         # I should still be able to read the correct content.
@@ -281,9 +271,7 @@ def test_rename_when_existing(temp_dir):
             assert fpath_replacement.exists()
             # I continue
         else:
-            assert (
-                os.name == 'posix'
-            ), 'I should be able to rername a file to an open destination on POSIX!'
+            assert os.name == 'posix', 'I should be able to rername a file to an open destination on POSIX!'
 
             # The source should still not be there anymore
             assert not fpath_replacement.exists()

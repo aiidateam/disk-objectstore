@@ -44,9 +44,7 @@ def test_example_objectstore(temp_dir, idx_and_options):
         if tempfile_idx is not None:
             options[tempfile_idx] = tmpfile.name
         script = EXAMPLES_DIR / 'example_objectstore.py'
-        output = subprocess.check_output(
-            [sys.executable, script, '-p', str(temp_dir / str(idx))] + options
-        )
+        output = subprocess.check_output([sys.executable, script, '-p', str(temp_dir / str(idx))] + options)
         assert output != ''
 
 
@@ -68,7 +66,5 @@ def test_example_profile_zeros(temp_dir, idx_and_options):
     """Test the example/profiling script 'profile_zeros'."""
     idx, options = idx_and_options
     script = EXAMPLES_DIR / 'profile_zeros.py'
-    output = subprocess.check_output(
-        [sys.executable, str(script), '-p', str(temp_dir / str(idx))] + options
-    )
+    output = subprocess.check_output([sys.executable, str(script), '-p', str(temp_dir / str(idx))] + options)
     assert output != ''

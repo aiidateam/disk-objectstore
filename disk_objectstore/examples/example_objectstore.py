@@ -37,12 +37,8 @@ from disk_objectstore import Container
     is_flag=True,
     help='Clear the repository path folder before starting.',
 )
-@click.option(
-    '-B', '--num-bulk-calls', default=10, help='Number of bulk calls to get the files.'
-)
-@click.option(
-    '-z', '--compress-packs', is_flag=True, help='Compress objects while packing.'
-)
+@click.option('-B', '--num-bulk-calls', default=10, help='Number of bulk calls to get the files.')
+@click.option('-z', '--compress-packs', is_flag=True, help='Compress objects while packing.')
 @click.option(
     '-P',
     '--profile-file',
@@ -75,9 +71,7 @@ def main(
     files = {}
 
     start_counts = container.count_objects()
-    print(
-        f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose"
-    )
+    print(f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose")
     print('Pack objects on disk:', start_counts['pack_files'])
 
     print(f'Generating {num_files} files in memory...')
@@ -87,9 +81,7 @@ def main(
         content = os.urandom(size)
         files[filename] = content
     total_size = sum(len(content) for content in files.values())
-    print(
-        f'Done. Total size: {total_size} bytes (~{total_size // 1024 / 1024:.3f} MB).'
-    )
+    print(f'Done. Total size: {total_size} bytes (~{total_size // 1024 / 1024:.3f} MB).')
 
     if directly_to_pack:
         # Store objects (directly to pack)
@@ -99,9 +91,7 @@ def main(
         hashkeys = container.add_objects_to_pack(files_content, compress=compress_packs)
         hashkey_mapping = dict(zip(filenames, hashkeys))
         tot_time = time.time() - start
-        print(
-            f'Time to store {num_files} objects DIRECTLY TO THE PACKS: {tot_time:.4} s'
-        )
+        print(f'Time to store {num_files} objects DIRECTLY TO THE PACKS: {tot_time:.4} s')
 
         # Check that no loose files were created
         counts = container.count_objects()
@@ -137,9 +127,7 @@ def main(
 
         # Check that the content is correct
         for filename, item in retrieved.items():
-            assert (
-                item == files[filename]
-            ), f'Mismatch (content) for {filename}, {item!r} vs {files[filename]!r}'
+            assert item == files[filename], f'Mismatch (content) for {filename}, {item!r} vs {files[filename]!r}'
 
         # Check that num_files new loose files are present now
         counts = container.count_objects()
@@ -208,9 +196,7 @@ def main(
     start = time.time()
 
     if profile_file is not None:
-        func = profile(sort='cumtime', filename=profile_file, stdout=False)(
-            bulk_read_data
-        )
+        func = profile(sort='cumtime', filename=profile_file, stdout=False)(bulk_read_data)
     else:
         func = bulk_read_data
     raw_retrieved = func(container=container, hashkey_list=all_hashkeys)
@@ -218,12 +204,8 @@ def main(
         print(f"You can check the profiling results running 'snakeviz {profile_file}'")
 
     tot_time = time.time() - start
-    print(
-        f'Time to retrieve {num_files} packed objects in random order WITH ONE BULK CALL: {tot_time} s'
-    )
-    retrieved = {
-        reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()
-    }
+    print(f'Time to retrieve {num_files} packed objects in random order WITH ONE BULK CALL: {tot_time} s')
+    retrieved = {reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()}
     for filename in retrieved:
         assert retrieved[filename] == files[filename], f'Mismatch for {filename}'
 
@@ -238,24 +220,15 @@ def main(
     chunk_len = len(all_hashkeys) // num_bulk_calls
     if len(all_hashkeys) % num_bulk_calls != 0:
         chunk_len += 1
-    split_iterator = (
-        all_hashkeys[start : start + chunk_len]
-        for start in range(0, len(all_hashkeys), chunk_len)
-    )
+    split_iterator = (all_hashkeys[start : start + chunk_len] for start in range(0, len(all_hashkeys), chunk_len))
 
     # Retrieve in num_bulk_call chunks
     for chunk_of_hashkeys in split_iterator:
-        raw_retrieved.update(
-            container.get_objects_content(chunk_of_hashkeys, skip_if_missing=False)
-        )
+        raw_retrieved.update(container.get_objects_content(chunk_of_hashkeys, skip_if_missing=False))
 
     tot_time = time.time() - start
-    print(
-        f'Time to retrieve {num_files} packed objects in random order WITH {num_bulk_calls} BULK CALLS: {tot_time} s'
-    )
-    retrieved = {
-        reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()
-    }
+    print(f'Time to retrieve {num_files} packed objects in random order WITH {num_bulk_calls} BULK CALLS: {tot_time} s')
+    retrieved = {reverse_hashkey_mapping[key]: val for key, val in raw_retrieved.items()}
     for filename in retrieved:
         assert retrieved[filename] == files[filename], f'Mismatch for {filename}'
 
@@ -272,9 +245,7 @@ def main(
     print(f'Time to retrieve {num_files} packed objects in random order: {tot_time} s')
 
     for filename, content in retrieved.items():
-        assert (
-            content == files[filename]
-        ), f'Mismatch (content) for {filename}, {content!r} vs {files[filename]!r}'
+        assert content == files[filename], f'Mismatch (content) for {filename}, {content!r} vs {files[filename]!r}'
 
     print('All tests passed')
 
