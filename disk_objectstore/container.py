@@ -749,8 +749,15 @@ class Container:  # pylint: disable=too-many-public-methods
             # Note that this is an expensive operation!
             # This means that asking for non-existing objects will be
             # slow.
+
             if self._operation_session is not None:
+                binding = self._operation_session.bind
                 self._operation_session.close()
+                if isinstance(binding, Engine):
+                    binding.dispose()
+                elif isinstance(binding, Connection):
+                    binding.invalidate()
+                    binding.close()
                 self._operation_session = None
 
             packs = defaultdict(list)
