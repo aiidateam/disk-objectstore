@@ -145,7 +145,6 @@ class Container:  # pylint: disable=too-many-public-methods
             if isinstance(binding, Engine):
                 binding.dispose()
             elif isinstance(binding, Connection):
-                binding.invalidate()
                 binding.close()
             self._operation_session = None
 
@@ -155,7 +154,6 @@ class Container:  # pylint: disable=too-many-public-methods
             if isinstance(binding, Engine):
                 binding.dispose()
             elif isinstance(binding, Connection):
-                binding.invalidate()
                 binding.close()
             self._container_session = None
 
@@ -756,7 +754,6 @@ class Container:  # pylint: disable=too-many-public-methods
                 if isinstance(binding, Engine):
                     binding.dispose()
                 elif isinstance(binding, Connection):
-                    binding.invalidate()
                     binding.close()
                 self._operation_session = None
 
