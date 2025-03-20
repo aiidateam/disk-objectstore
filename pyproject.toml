@@ -19,15 +19,16 @@ classifiers = [
     'Operating System :: Microsoft :: Windows',
     'Operating System :: POSIX :: Linux',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
     'Programming Language :: Python :: Implementation :: CPython',
     'Topic :: Software Development :: Libraries :: Python Modules',
 ]
 keywords = ['object store', 'repository', 'file store', 'key-value store']
-requires-python = '>=3.8'
+requires-python = '>=3.9'
 dependencies = [
     'click',
     'sqlalchemy>=1.4.22',
