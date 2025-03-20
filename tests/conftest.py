@@ -1,4 +1,5 @@
 """Configuration file for pytest tests."""
+
 import hashlib
 import os
 import random
@@ -14,10 +15,10 @@ from disk_objectstore import Container
 def pytest_addoption(parser):
     """Parse a new option for the number of repetitions for the concurrency tests."""
     parser.addoption(
-        "--concurrency-repetitions",
+        '--concurrency-repetitions',
         type=int,
         default=1,
-        help="Specify how many time to repeat the concurrency tests",
+        help='Specify how many time to repeat the concurrency tests',
     )
 
 
@@ -26,14 +27,14 @@ def pytest_generate_tests(metafunc):
 
     The number of repetitions can be specified on the command line with ``--concurrency-repetitions=3``.
     """
-    if "concurrency_repetition_index" in metafunc.fixturenames:
+    if 'concurrency_repetition_index' in metafunc.fixturenames:
         metafunc.parametrize(
-            "concurrency_repetition_index",
+            'concurrency_repetition_index',
             range(metafunc.config.option.concurrency_repetitions),
         )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def callback_instance():
     """Return the CallbackClass for the tests."""
 
@@ -48,15 +49,15 @@ def callback_instance():
         def callback(self, action, value):
             """Check how the callback is called."""
 
-            if action == "init":
+            if action == 'init':
                 assert (
                     self.current_action is None
                 ), f"Starting a new action '{action}' without closing the old one {self.current_action}"
-                self.current_action = {"start_value": value, "value": 0}
-            elif action == "update":
+                self.current_action = {'start_value': value, 'value': 0}
+            elif action == 'update':
                 # Track the current position
-                self.current_action["value"] += value
-            elif action == "close":
+                self.current_action['value'] += value
+            elif action == 'close':
                 # Add to list of performed actions
                 self.performed_actions.append(self.current_action)
                 self.current_action = None
@@ -66,7 +67,7 @@ def callback_instance():
     yield CallbackClass()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     """Return an object-store container in a given temporary directory.
 
@@ -80,7 +81,7 @@ def temp_container(temp_dir):  # pylint: disable=redefined-outer-name
     container.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def temp_dir():
     """Get a temporary directory.
 
@@ -95,7 +96,7 @@ def temp_dir():
         shutil.rmtree(dirpath)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def generate_random_data():
     """Return a function to generate a number of random byte strings.
 
@@ -132,7 +133,7 @@ def generate_random_data():
     yield _generate_random_data
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope='function')
 def lock_file_on_windows():
     """
     Return a function that, given a file desciptor (as returned by ``os.open``, locks it (on Windows)
@@ -148,7 +149,7 @@ def lock_file_on_windows():
 
         :param file_descriptor: a file descriptor, opened with `os.open()`
         """
-        assert os.name == "nt", "This fixture can only be used on Windows"
+        assert os.name == 'nt', 'This fixture can only be used on Windows'
 
         # This should run on Windows, but the linter runs on Ubuntu where these modules
         # do not exist. Therefore, ignore errors in this function.

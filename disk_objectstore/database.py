@@ -1,4 +1,5 @@
 """Models for the container index file (SQLite DB)."""
+
 from pathlib import Path
 
 from sqlalchemy import Boolean, Column, Integer, String, create_engine, event
@@ -12,7 +13,7 @@ Base = declarative_base()  # pylint: disable=invalid-name,useless-suppression
 class Obj(Base):  # pylint: disable=too-few-public-methods
     """The main (and only) table to store object metadata (hashkey, offset, length, ...)."""
 
-    __tablename__ = "db_object"
+    __tablename__ = 'db_object'
 
     id = Column(Integer, primary_key=True)  # pylint: disable=invalid-name
 
@@ -36,13 +37,13 @@ def get_session(path: Path, create: bool = False) -> Session:
     :param create: if True, creates the sqlite file and schema.
     """
     if not create and not path.exists():
-        raise FileNotFoundError("Pack index does not exist")
+        raise FileNotFoundError('Pack index does not exist')
 
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = create_engine(f'sqlite:///{path}', future=True)
 
     # For the next two bindings, see background on
     # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-    @event.listens_for(engine, "connect")
+    @event.listens_for(engine, 'connect')
     def do_connect(dbapi_connection, _):
         """Hook function that is called upon connection.
 
@@ -60,15 +61,15 @@ def get_session(path: Path, create: bool = False) -> Session:
         # so you need to close and reload the session to see the newly written data.
         # Docs on WAL: https://www.sqlite.org/wal.html
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=wal;")
+        cursor.execute('PRAGMA journal_mode=wal;')
         cursor.close()
 
     # For this binding, see background on
     # https://docs.sqlalchemy.org/en/13/dialects/sqlite.html#serializable-isolation-savepoints-transactional-ddl
-    @event.listens_for(engine, "begin")
+    @event.listens_for(engine, 'begin')
     def do_begin(conn):  # pylint: disable=unused-variable
         # emit our own BEGIN
-        conn.execute(text("BEGIN"))
+        conn.execute(text('BEGIN'))
 
     if create:
         # Create all tables in the engine. This is equivalent to "Create Table"

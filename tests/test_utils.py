@@ -1,4 +1,5 @@
 """Test of the utils wrappers."""
+
 # pylint: disable=too-many-lines,protected-access
 import functools
 import hashlib
@@ -16,22 +17,20 @@ from disk_objectstore import utils
 # I need these definitions later for the mocked function
 os._actual_replace_function = os.replace  # pylint: disable=protected-access
 os._actual_rename_function = os.rename  # pylint: disable=protected-access
-utils._actual_compute_hash_for_file = (
-    utils._compute_hash_for_file
-)  # pylint: disable=protected-access
+utils._actual_compute_hash_for_file = utils._compute_hash_for_file  # pylint: disable=protected-access
 
 # This is used by the mockreplace function to store files that are
 # reopened as locked, to be closed before the test finishes
 LOCKED_FILES_FD = []
 
 # NOTE: test_compressers must be adapted by hand when adding new algorithms
-COMPRESSION_ALGORITHMS_TO_TEST = ["zlib+1", "zlib+9"]
+COMPRESSION_ALGORITHMS_TO_TEST = ['zlib+1', 'zlib+9']
 
 
 def test_lazy_opener_read():
     """Test the LazyOpener."""
-    content = b"sfdssdfd 34fwfd"
-    with tempfile.NamedTemporaryFile(mode="bw", delete=False) as fhandle:
+    content = b'sfdssdfd 34fwfd'
+    with tempfile.NamedTemporaryFile(mode='bw', delete=False) as fhandle:
         fhandle.write(content)
 
     try:
@@ -40,14 +39,14 @@ def test_lazy_opener_read():
         lazy = utils.LazyOpener(Path(fhandle.name))
 
         assert lazy.path == Path(fhandle.name)
-        assert lazy.mode == "rb"
+        assert lazy.mode == 'rb'
         with pytest.raises(ValueError):
             # This is not open yet
             lazy.tell()
 
         assert (
             len(current_process.open_files()) == start_open_files
-        ), "The LazyOpener is not lazy, but axtually opened the file instead!"
+        ), 'The LazyOpener is not lazy, but axtually opened the file instead!'
         with lazy as fhandle:
             # Shoul be opened at position zero at the beginnign
             assert lazy.tell() == 0
@@ -57,12 +56,12 @@ def test_lazy_opener_read():
 
             assert (
                 len(current_process.open_files()) == start_open_files + 1
-            ), "The count of open files is wrong!"
-            assert read_content == content, "Unexpected content read from file"
+            ), 'The count of open files is wrong!'
+            assert read_content == content, 'Unexpected content read from file'
 
         assert (
             len(current_process.open_files()) == start_open_files
-        ), "The LazyOpener did not close the file on exit!"
+        ), 'The LazyOpener did not close the file on exit!'
 
         with pytest.raises(ValueError):
             # Should raise again after closing
@@ -73,8 +72,8 @@ def test_lazy_opener_read():
 
 def test_lazy_opener_not_twice():
     """Test that the LazyOpener cannot be opened twice."""
-    content = b"sfdfsdj2322d"
-    with tempfile.NamedTemporaryFile(mode="bw", delete=False) as fhandle:
+    content = b'sfdfsdj2322d'
+    with tempfile.NamedTemporaryFile(mode='bw', delete=False) as fhandle:
         fhandle.write(content)
 
     try:
@@ -86,7 +85,7 @@ def test_lazy_opener_not_twice():
             with pytest.raises(IOError) as excinfo:
                 with lazy:
                     pass
-            assert "already open" in str(excinfo.value)
+            assert 'already open' in str(excinfo.value)
             # The exception should not have corrupted the first stream
             assert fhandle.read() == content
     finally:
@@ -95,21 +94,21 @@ def test_lazy_opener_not_twice():
 
 def test_nullcontext():
     """Test the nullcontext."""
-    result = "something"
+    result = 'something'
     with utils.nullcontext(enter_result=result) as manager:
         assert manager == result
 
 
-@pytest.mark.parametrize("loose_prefix_len", [0, 2, 3])
+@pytest.mark.parametrize('loose_prefix_len', [0, 2, 3])
 def test_object_writer(temp_dir, loose_prefix_len):
     """Test the ObjectWriter, directly writing objects (loose, via a sandbox)."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
 
-    hash_type = "sha256"
-    expected_hash = "9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b"
-    content = b"some-content-to-hash"
+    hash_type = 'sha256'
+    expected_hash = '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'
+    content = b'some-content-to-hash'
 
     # Create the two folders, make sure they
     # are empty
@@ -159,15 +158,15 @@ def test_object_writer(temp_dir, loose_prefix_len):
         )
     else:
         loose_filename = loose_folder / obj_hashkey
-    with open(loose_filename, "rb") as fhandle:
+    with open(loose_filename, 'rb') as fhandle:
         assert fhandle.read() == content
 
 
 def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid-name
     """Test that the _store_duplicate_copy function works."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
@@ -175,8 +174,8 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
     # The duplicates folder should be empty at the beginning
     assert not os.listdir(duplicates_folder)
 
-    content = b"24tq34waSDV"
-    hash_type = "sha256"
+    content = b'24tq34waSDV'
+    hash_type = 'sha256'
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
@@ -186,8 +185,8 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
         hash_type=hash_type,
     )
 
-    temp_path = sandbox_folder / "tmp-file-name"
-    with open(temp_path, "wb") as fhandle:
+    temp_path = sandbox_folder / 'tmp-file-name'
+    with open(temp_path, 'wb') as fhandle:
         fhandle.write(content)
     hashkey = getattr(hashlib, hash_type)(content).hexdigest()
 
@@ -198,30 +197,30 @@ def test_object_writer_duplicates_function(temp_dir):  # pylint: disable=invalid
     duplicates_files = os.listdir(duplicates_folder)
     assert (
         len(duplicates_files) == 1
-    ), f"There is more than one file in the duplicates! {duplicates_files}"
+    ), f'There is more than one file in the duplicates! {duplicates_files}'
     duplicates_file = duplicates_files[0]
     # The duplicate should start with the hashkey followed by a dot
-    assert duplicates_file.startswith(f"{hashkey}.")
+    assert duplicates_file.startswith(f'{hashkey}.')
 
 
 def test_object_writer_with_exc(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
         duplicates_folder=duplicates_folder,
-        hash_type="sha256",
+        hash_type='sha256',
     )
 
     assert not os.listdir(sandbox_folder)
@@ -236,8 +235,8 @@ def test_object_writer_with_exc(temp_dir):
             assert len(os.listdir(sandbox_folder)) == 1
             assert not os.listdir(loose_folder)
 
-            raise ValueError("My Error")
-    assert str(excinfo.value) == "My Error"
+            raise ValueError('My Error')
+    assert str(excinfo.value) == 'My Error'
 
     # Since the exception was raised, both
     # the sandbox folder and the loose folder should
@@ -248,22 +247,22 @@ def test_object_writer_with_exc(temp_dir):
 
 def test_object_writer_manual_close(temp_dir):
     """Test that the ObjectWriter does not allow manually closing the stream."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
         duplicates_folder=duplicates_folder,
-        hash_type="sha256",
+        hash_type='sha256',
     )
 
     assert not os.listdir(sandbox_folder)
@@ -279,7 +278,7 @@ def test_object_writer_manual_close(temp_dir):
             assert not os.listdir(loose_folder)
             fhandle.close()
 
-    assert "You cannot close" in str(excinfo.value)
+    assert 'You cannot close' in str(excinfo.value)
 
     # Since the exception was raised, both
     # the sandbox folder and the loose folder should
@@ -290,22 +289,22 @@ def test_object_writer_manual_close(temp_dir):
 
 def test_object_writer_not_twice(temp_dir):
     """Test that the ObjectWriter cannot be opened twice."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
 
     object_writer = utils.ObjectWriter(
         sandbox_folder=sandbox_folder,
         loose_folder=loose_folder,
         loose_prefix_len=loose_prefix_len,
         duplicates_folder=duplicates_folder,
-        hash_type="sha256",
+        hash_type='sha256',
     )
 
     # The first open should go through
@@ -316,7 +315,7 @@ def test_object_writer_not_twice(temp_dir):
         with pytest.raises(IOError) as excinfo:
             with object_writer:
                 pass
-        assert "already opened" in str(excinfo.value)
+        assert 'already opened' in str(excinfo.value)
         # The exception should not have corrupted the first stream. I write again something
         fhandle.write(content)
 
@@ -324,7 +323,7 @@ def test_object_writer_not_twice(temp_dir):
     loose_filename = (
         loose_folder / obj_hashkey[:loose_prefix_len] / obj_hashkey[loose_prefix_len:]
     )
-    with open(loose_filename, "rb") as fhandle:
+    with open(loose_filename, 'rb') as fhandle:
         # I have written the content twice
         assert fhandle.read() == content + content
 
@@ -332,34 +331,34 @@ def test_object_writer_not_twice(temp_dir):
         # Should not allow to reuse the same object_writer after storing
         with object_writer:
             pass
-    assert "already tried to store" in str(excinfo.value)
+    assert 'already tried to store' in str(excinfo.value)
 
 
-@pytest.mark.skipif(os.name != "nt", reason="This test only makes sense on Windows")
-@pytest.mark.parametrize("trust_existing", [True, False])
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
+@pytest.mark.parametrize('trust_existing', [True, False])
 def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     temp_dir, trust_existing, lock_file_on_windows
 ):
     """If I am adding a new loose object, and it exists already, and it's locked, I cannot check its content.
 
     Therefore, I should be creating a copy, unless I am trusting existing files."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
     loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     os.mkdir(loose_file.parent)
-    with open(loose_file, "wb") as fhandle:
+    with open(loose_file, 'wb') as fhandle:
         fhandle.write(content)
 
     # Check the starting condition
@@ -393,8 +392,8 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
         duplicates_files = os.listdir(duplicates_folder)
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
-        assert duplicates_file.startswith(f"{hashkey}.")
-        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
+        assert duplicates_file.startswith(f'{hashkey}.')
+        with open(duplicates_folder / duplicates_file, 'rb') as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
 
@@ -405,10 +404,10 @@ def test_object_writer_existing_locked(  # pylint: disable=invalid-name
     assert len(os.listdir(loose_file.parent)) == 1
 
 
-@pytest.mark.skipif(os.name != "nt", reason="This test only makes sense on Windows")
-@pytest.mark.parametrize("lock_new_file", [True, False])
-@pytest.mark.parametrize("reappears_corrupted", [True, False])
-@pytest.mark.parametrize("trust_existing", [True, False])
+@pytest.mark.skipif(os.name != 'nt', reason='This test only makes sense on Windows')
+@pytest.mark.parametrize('lock_new_file', [True, False])
+@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.parametrize('trust_existing', [True, False])
 def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too-many-arguments),too-many-locals
     temp_dir,
     trust_existing,
@@ -426,21 +425,21 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         NOTE: This can only be done on Windows.
     """
     # Needed by the mocked function, but we need as well here to close the files before the test ends
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
-    corrupted_content = b"SOME_CORRUPTED_CONTENT"
+    corrupted_content = b'SOME_CORRUPTED_CONTENT'
 
     loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     # Just prepare the parent folder, but don't put any file
@@ -470,7 +469,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         if Path(dest).resolve() == Path(mocked_dest).resolve():
             # Write a file just before calling the rename function, in this case
             # The folder should have been already created
-            with open(dest, "wb") as fhandle:
+            with open(dest, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
 
             if lock_new_file:
@@ -485,7 +484,7 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
     new_bytes_content = corrupted_content if reappears_corrupted else content
     monkeypatch.setattr(
         os,
-        "rename",
+        'rename',
         functools.partial(
             mockrename,
             mocked_dest=loose_file,
@@ -521,19 +520,19 @@ def test_object_writer_appears_concurrently(  # pylint: disable=invalid-name,too
         duplicates_files = os.listdir(duplicates_folder)
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
-        assert duplicates_file.startswith(f"{hashkey}.")
-        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
+        assert duplicates_file.startswith(f'{hashkey}.')
+        with open(duplicates_folder / duplicates_file, 'rb') as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
 
     # Let's check the content of the file - this should never have changed from what we wrote at the beginning
-    with open(loose_file, "rb") as fhandle:
+    with open(loose_file, 'rb') as fhandle:
         assert fhandle.read() == new_bytes_content
 
 
-@pytest.mark.parametrize("dest_is_open", [True, False])
-@pytest.mark.parametrize("reappears_corrupted", [True, False])
-@pytest.mark.parametrize("trust_existing", [True, False])
+@pytest.mark.parametrize('dest_is_open', [True, False])
+@pytest.mark.parametrize('reappears_corrupted', [True, False])
+@pytest.mark.parametrize('trust_existing', [True, False])
 def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-name, too-many-locals, too-many-statements
     temp_dir, trust_existing, reappears_corrupted, dest_is_open, monkeypatch
 ):
@@ -547,26 +546,26 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     so I should get a duplicate *ONLY* if I don't trust existing objects AND I rewrite a corrupted file AND the file
     is kept open, so I cannot rewrite it.
     """
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
     # Some content that does not match the hash key
-    corrupted_content = b"CORRUPTED CONTENT"
+    corrupted_content = b'CORRUPTED CONTENT'
 
     loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     os.mkdir(loose_file.parent)
-    with open(loose_file, "wb") as fhandle:
+    with open(loose_file, 'wb') as fhandle:
         fhandle.write(corrupted_content)
 
     # Check the starting condition
@@ -592,20 +591,16 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
         """
         if Path(dest).resolve() == Path(mocked_dest).resolve():
             # Write back the file, with possibly a different content
-            with open(dest, "wb") as fhandle:
+            with open(dest, 'wb') as fhandle:
                 fhandle.write(new_bytes_content)
 
             # Call the actual replace function, but while the file is open in read mode
             # This will fail on Windows
             if dest_is_open:
-                with open(dest, "rb") as fhandle:
-                    os._actual_replace_function(
-                        src, dest
-                    )  # pylint: disable=protected-access
+                with open(dest, 'rb') as fhandle:
+                    os._actual_replace_function(src, dest)  # pylint: disable=protected-access
             else:
-                os._actual_replace_function(
-                    src, dest
-                )  # pylint: disable=protected-access
+                os._actual_replace_function(src, dest)  # pylint: disable=protected-access
         else:
             # It's a different path: just pipe through
             # I renamed this at module load to avoid infinite recursion, see above
@@ -614,7 +609,7 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     new_bytes_content = corrupted_content if reappears_corrupted else content
     monkeypatch.setattr(
         os,
-        "replace",
+        'replace',
         functools.partial(
             mockreplacefail,
             mocked_dest=loose_file,
@@ -627,14 +622,14 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     with object_writer as fhandle:
         fhandle.write(content)
 
-    if os.name == "nt" and not trust_existing and dest_is_open:
+    if os.name == 'nt' and not trust_existing and dest_is_open:
         # On Windows, if the file reappears, is corrupted, and cannot be replaced (is open),
         # then we store a duplicate copy.
         duplicates_files = os.listdir(duplicates_folder)
         assert len(duplicates_files) == 1
         duplicates_file = duplicates_files[0]
-        assert duplicates_file.startswith(f"{hashkey}.")
-        with open(duplicates_folder / duplicates_file, "rb") as fhandle:
+        assert duplicates_file.startswith(f'{hashkey}.')
+        with open(duplicates_folder / duplicates_file, 'rb') as fhandle:
             # Check that the duplicate has the right content
             assert fhandle.read() == content
     else:
@@ -653,31 +648,27 @@ def test_object_writer_existing_corrupted_reappears(  # pylint: disable=invalid-
     assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
-    with open(loose_file, "rb") as fhandle:
+    with open(loose_file, 'rb') as fhandle:
         object_content = fhandle.read()
 
     if trust_existing:
         # If I trust existing files, the content shouldn't have been touched
         # (and the logic for reappears_corrupted is not really triggered)
         assert object_content == corrupted_content
+    elif (
+        os.name == 'nt' and not trust_existing and reappears_corrupted and dest_is_open
+    ):
+        # Only in this extreme case (don't trust existing, the file reappears, it is
+        # corrupted, and I couldn't overwrite the dest (loose file) because it was open,
+        # then I'm left with the old content)
+        assert object_content == corrupted_content
     else:
-        if (
-            os.name == "nt"
-            and not trust_existing
-            and reappears_corrupted
-            and dest_is_open
-        ):
-            # Only in this extreme case (don't trust existing, the file reappears, it is
-            # corrupted, and I couldn't overwrite the dest (loose file) because it was open,
-            # then I'm left with the old content)
-            assert object_content == corrupted_content
-        else:
-            # In all other cases, if I don't trust existing files, the content should have been replaced,
-            # and and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
-            assert object_content == content
+        # In all other cases, if I don't trust existing files, the content should have been replaced,
+        # and and if the DynamicInconsistentContent exception wasn't raised, the content must be correct
+        assert object_content == content
 
 
-@pytest.mark.parametrize("object_existed", [True, False])
+@pytest.mark.parametrize('object_existed', [True, False])
 def test_object_writer_deleted_while_checking_content(  # pylint: disable=invalid-name
     temp_dir, object_existed, monkeypatch
 ):
@@ -686,17 +677,17 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     I check both the case in which the object existed, and the one in which it didn't (in which case, the
     mocking shouldn't do anything).
     """
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     trust_existing = False  # This branch is only called in this case
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
@@ -707,7 +698,7 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
 
     # Create the object, if `object_existed` is True (meaning that it existed before calling the ObjectWriter)
     if object_existed:
-        with open(loose_file, "wb") as fhandle:
+        with open(loose_file, 'wb') as fhandle:
             fhandle.write(content)
 
     # Check the starting condition
@@ -734,7 +725,7 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
 
     monkeypatch.setattr(
         utils,
-        "_compute_hash_for_file",
+        '_compute_hash_for_file',
         functools.partial(mock_compute_hash, mocked_filename=loose_file),
     )
 
@@ -762,21 +753,19 @@ def test_object_writer_deleted_while_checking_content(  # pylint: disable=invali
     assert len(os.listdir(loose_file.parent)) == (0 if object_existed else 1)
 
 
-@pytest.mark.parametrize("trust_existing", [True, False])
-def test_object_writer_existing_OK(
-    temp_dir, trust_existing
-):  # pylint: disable=invalid-name
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_OK(temp_dir, trust_existing):  # pylint: disable=invalid-name
     """Test that the ObjectWriter works if the loose object already exists (with the correct content)."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
@@ -784,7 +773,7 @@ def test_object_writer_existing_OK(
     # Write already the content in place
     loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     os.mkdir(loose_file.parent)
-    with open(loose_file, "wb") as fhandle:
+    with open(loose_file, 'wb') as fhandle:
         fhandle.write(content)
 
     # Check the starting condition
@@ -812,37 +801,35 @@ def test_object_writer_existing_OK(
     assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
-    with open(loose_file, "rb") as fhandle:
+    with open(loose_file, 'rb') as fhandle:
         object_content = fhandle.read()
 
     assert object_content == content
 
 
-@pytest.mark.parametrize("trust_existing", [True, False])
-def test_object_writer_existing_corrupted(
-    temp_dir, trust_existing
-):  # pylint: disable=invalid-name
+@pytest.mark.parametrize('trust_existing', [True, False])
+def test_object_writer_existing_corrupted(temp_dir, trust_existing):  # pylint: disable=invalid-name
     """Test that the ObjectWriter replaces an existing corrupted (wrong hash) loose object."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
-    hash_type = "sha256"
+    hash_type = 'sha256'
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
     os.mkdir(duplicates_folder)
 
-    content = b"523453dfvsd"
+    content = b'523453dfvsd'
     hasher = utils.get_hash_cls(hash_type=hash_type)()
     hasher.update(content)
     hashkey = hasher.hexdigest()
 
     # Some content that does not match the hash key
-    corrupted_content = b"CORRUPTED CONTENT"
+    corrupted_content = b'CORRUPTED CONTENT'
 
     loose_file = loose_folder / hashkey[:loose_prefix_len] / hashkey[loose_prefix_len:]
     os.mkdir(loose_file.parent)
-    with open(loose_file, "wb") as fhandle:
+    with open(loose_file, 'wb') as fhandle:
         fhandle.write(corrupted_content)
 
     # Check the starting condition
@@ -870,7 +857,7 @@ def test_object_writer_existing_corrupted(
     assert len(os.listdir(loose_file.parent)) == 1
 
     # Check now the content
-    with open(loose_file, "rb") as fhandle:
+    with open(loose_file, 'rb') as fhandle:
         object_content = fhandle.read()
 
     if trust_existing:
@@ -883,9 +870,9 @@ def test_object_writer_existing_corrupted(
 
 def test_unknown_hash_type(temp_dir):
     """Test that the ObjectWriter does not write anything if there is an exception."""
-    sandbox_folder = temp_dir / "sandbox"
-    loose_folder = temp_dir / "loose"
-    duplicates_folder = temp_dir / "duplicates"
+    sandbox_folder = temp_dir / 'sandbox'
+    loose_folder = temp_dir / 'loose'
+    duplicates_folder = temp_dir / 'duplicates'
     loose_prefix_len = 2
     os.mkdir(sandbox_folder)
     os.mkdir(loose_folder)
@@ -897,18 +884,18 @@ def test_unknown_hash_type(temp_dir):
             loose_folder=loose_folder,
             loose_prefix_len=loose_prefix_len,
             duplicates_folder=duplicates_folder,
-            hash_type="unknown_hash_string",
+            hash_type='unknown_hash_string',
         )
         # The exception is actually raised here
         with object_writer as fhandle:
             # Write some content first
-            fhandle.write("something")
+            fhandle.write('something')
 
 
 def test_packed_object_reader():
     """Test the functionality of the PackedObjectReader."""
-    bytestream = b"0123456789abcdef"
-    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as tempfhandle:
+    bytestream = b'0123456789abcdef'
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tempfhandle:
         tempfhandle.write(bytestream)
 
     offset = 3
@@ -916,7 +903,7 @@ def test_packed_object_reader():
     expected_bytestream = bytestream[offset : offset + length]
 
     # Read 1 byte at a time
-    with open(tempfhandle.name, "rb") as fhandle:
+    with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
 
         data = []
@@ -925,10 +912,10 @@ def test_packed_object_reader():
             if not piece:
                 break
             data.append(piece)
-        assert b"".join(data) == expected_bytestream
+        assert b''.join(data) == expected_bytestream
 
     # Read 2 bytes at a time (note that the length is odd, so it's not a multiple)
-    with open(tempfhandle.name, "rb") as fhandle:
+    with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
 
         data = []
@@ -937,32 +924,32 @@ def test_packed_object_reader():
             if not piece:
                 break
             data.append(piece)
-        assert b"".join(data) == expected_bytestream
+        assert b''.join(data) == expected_bytestream
 
     # Offset beyond the file limit
-    with open(tempfhandle.name, "rb") as fhandle:
+    with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(
             fhandle, offset=len(bytestream) + 10, length=length
         )
-        assert packed_reader.read() == b""
+        assert packed_reader.read() == b''
 
     # Offset before the file limit, but longer length
-    with open(tempfhandle.name, "rb") as fhandle:
+    with open(tempfhandle.name, 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=1000000)
         assert packed_reader.read() == bytestream[offset:]
 
 
 def test_packed_object_reader_seek(tmp_path):
     """Test the `PackedObjectReader.seek` method."""
-    bytestream = b"0123456789abcdef"
-    with open(str(tmp_path / "pack"), mode="wb") as handle:
+    bytestream = b'0123456789abcdef'
+    with open(str(tmp_path / 'pack'), mode='wb') as handle:
         handle.write(bytestream)
 
     offset = 3
     length = 5
     expected_bytestream = bytestream[offset : offset + length]
 
-    with open(str(tmp_path / "pack"), "rb") as fhandle:
+    with open(str(tmp_path / 'pack'), 'rb') as fhandle:
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=length)
 
         # Check that it is properly marked as seekable
@@ -1033,7 +1020,7 @@ def test_packed_object_reader_mode():
     with tempfile.TemporaryFile() as handle:
         reader = utils.PackedObjectReader(handle, 0, 0)
 
-        assert hasattr(reader, "mode")
+        assert hasattr(reader, 'mode')
         assert reader.mode == handle.mode
 
 
@@ -1041,22 +1028,22 @@ def test_packed_object_reader_context_man(tmp_path):
     """Test the use the of the PackedObjectReader with a context  manager.
 
     Actually, this does not do much, so I'm just testing that it works."""
-    bytestream = b"0123456789abcdef"
-    with open(str(tmp_path / "pack"), mode="wb") as handle:
+    bytestream = b'0123456789abcdef'
+    with open(str(tmp_path / 'pack'), mode='wb') as handle:
         handle.write(bytestream)
 
-    with open(str(tmp_path / "pack"), "rb") as fhandle:
+    with open(str(tmp_path / 'pack'), 'rb') as fhandle:
         with utils.PackedObjectReader(
             fhandle, offset=0, length=len(bytestream)
         ) as packed_reader:
             assert packed_reader.read() == bytestream
 
 
-@pytest.mark.parametrize("open_streams", [True, False])
+@pytest.mark.parametrize('open_streams', [True, False])
 def test_packed_object_reader_add(temp_container, open_streams):
     """Test using `PackedObjectReader` with add_streamed_object_to_pack."""
-    content = b"content"
-    with tempfile.TemporaryFile(mode="rb+") as fhandle:
+    content = b'content'
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
         fhandle.write(content)
         fhandle.seek(0)
         wrapped = utils.PackedObjectReader(fhandle, 0, len(content))
@@ -1066,7 +1053,7 @@ def test_packed_object_reader_add(temp_container, open_streams):
     assert temp_container.get_object_content(hashkey) == content
 
 
-@pytest.mark.parametrize("compression_algorithm", COMPRESSION_ALGORITHMS_TO_TEST)
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 def test_stream_decompresser(compression_algorithm):
     """Test the stream decompresser."""
     StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
@@ -1074,10 +1061,10 @@ def test_stream_decompresser(compression_algorithm):
     )
 
     # A short binary string (1025 bytes, an odd number to avoid possible alignments with the chunk size)
-    original_data_short = b"0123456789abcdef" * 64 + b"E"
+    original_data_short = b'0123456789abcdef' * 64 + b'E'
     # A longish binary string (2097153 bytes ~ 2MB
     # an odd number to avoid possible alignments with the chunk size), compressible
-    original_data_long = b"0123456789abcdef" * 1024 * 128 + b"E"
+    original_data_long = b'0123456789abcdef' * 1024 * 128 + b'E'
     # A longish binary string (~4MB) with random data
     # so typically uncompressible (compressed size is typically larger)
     original_data_long_random = os.urandom(4000000)
@@ -1092,7 +1079,7 @@ def test_stream_decompresser(compression_algorithm):
         compressed_streams.append(io.BytesIO(compressed))
     for original, compressed_stream in zip(original_data, compressed_streams):
         decompresser = StreamDecompresser(compressed_stream)
-        assert decompresser.mode == "rb"
+        assert decompresser.mode == 'rb'
         # Read in one chunk
         with decompresser as handle:
             chunk = handle.read()
@@ -1113,7 +1100,7 @@ def test_stream_decompresser(compression_algorithm):
         assert not tmp
         assert (
             original == decompresser.read()
-        ), "Uncompressed data is wrong (single read)"
+        ), 'Uncompressed data is wrong (single read)'
 
     compressed_streams = []
     for data in original_data:
@@ -1131,18 +1118,18 @@ def test_stream_decompresser(compression_algorithm):
             data_chunks.append(chunk)
             if not chunk:
                 break
-        data = b"".join(data_chunks)
+        data = b''.join(data_chunks)
 
-        assert original == data, "Uncompressed data is wrong (chunked read)"
+        assert original == data, 'Uncompressed data is wrong (chunked read)'
 
 
-@pytest.mark.parametrize("compression_algorithm", COMPRESSION_ALGORITHMS_TO_TEST)
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 def test_stream_decompresser_seek(compression_algorithm):
     """Test the seek (and tell) functionality of the StreamDecompresser."""
     StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
         compression_algorithm
     )
-    original_data = b"0123456789abcdefABCDEF"
+    original_data = b'0123456789abcdefABCDEF'
     length = len(original_data)
 
     compresser = utils.get_compressobj_instance(compression_algorithm)
@@ -1208,7 +1195,7 @@ def test_stream_decompresser_seek(compression_algorithm):
         assert decompresser.tell() == length
 
 
-@pytest.mark.parametrize("compression_algorithm", COMPRESSION_ALGORITHMS_TO_TEST)
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 def test_decompresser_corrupt(compression_algorithm):
     """Test that the stream decompresser raises on a corrupt input."""
     StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
@@ -1216,13 +1203,13 @@ def test_decompresser_corrupt(compression_algorithm):
     )
 
     # Check that we get an error for an invalid stream of bytes
-    decompresser = StreamDecompresser(io.BytesIO(b"1234543"))
+    decompresser = StreamDecompresser(io.BytesIO(b'1234543'))
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
-    assert "Error while uncompressing data" in str(excinfo.value)
+    assert 'Error while uncompressing data' in str(excinfo.value)
 
     # Check that we get an error for a truncated stream of bytes
-    original_data = b"someDATAotherTHINGS"
+    original_data = b'someDATAotherTHINGS'
     compresser = utils.get_compressobj_instance(compression_algorithm)
     compressed_data = compresser.compress(original_data)
     compressed_data += compresser.flush()
@@ -1232,7 +1219,7 @@ def test_decompresser_corrupt(compression_algorithm):
     decompresser = StreamDecompresser(corrupted_stream)
     with pytest.raises(ValueError) as excinfo:
         print(decompresser.read())
-    assert "problem in the incoming buffer" in str(excinfo.value)
+    assert 'problem in the incoming buffer' in str(excinfo.value)
 
 
 def test_zero_stream_mode():
@@ -1240,7 +1227,7 @@ def test_zero_stream_mode():
     length = 23523
     zero_stream = utils.ZeroStream(length=length)
 
-    assert zero_stream.mode == "rb"
+    assert zero_stream.mode == 'rb'
 
 
 def test_zero_stream_single_read():
@@ -1248,8 +1235,8 @@ def test_zero_stream_single_read():
     length = 23523
     zero_stream = utils.ZeroStream(length=length)
     data = zero_stream.read()
-    assert len(data) == length, "The zero stream produced data of the wrong length"
-    assert data == b"\x00" * length, "The zero stream produced non-zero data"
+    assert len(data) == length, 'The zero stream produced data of the wrong length'
+    assert data == b'\x00' * length, 'The zero stream produced non-zero data'
 
 
 def test_zero_stream_multi_read():
@@ -1264,26 +1251,26 @@ def test_zero_stream_multi_read():
         data_chunks.append(chunk)
         if not chunk:
             break
-    data = b"".join(data_chunks)
-    assert len(data) == length, "The zero stream produced data of the wrong length"
-    assert data == b"\x00" * length, "The zero stream produced non-zero data"
+    data = b''.join(data_chunks)
+    assert len(data) == length, 'The zero stream produced data of the wrong length'
+    assert data == b'\x00' * length, 'The zero stream produced non-zero data'
 
 
 # Set as the second parameter the hash of the 'content' string written below
 # inside the test function
 @pytest.mark.parametrize(
-    "hash_type,expected_hash",
+    'hash_type,expected_hash',
     [
-        ["sha256", "9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b"],
-        ["sha1", "2a0439b5b34b74808b6cc7a2bf04dd02604c20b0"],
+        ['sha256', '9975d00a6e715d830aeaa035347b3e601a0c0bb457a7f87816300e7c01c0c39b'],
+        ['sha1', '2a0439b5b34b74808b6cc7a2bf04dd02604c20b0'],
     ],
 )
 def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
     """Test some functionality of the HashWriterWrapper class."""
-    content = b"some-content-to-hash"
-    filename = "test_file"
+    content = b'some-content-to-hash'
+    filename = 'test_file'
 
-    with open(temp_dir / filename, "wb") as fhandle:
+    with open(temp_dir / filename, 'wb') as fhandle:
         wrapped = utils.HashWriterWrapper(fhandle, hash_type=hash_type)
         wrapped.write(content)
         # Check that the flush command does not raise
@@ -1291,9 +1278,9 @@ def test_hash_writer_wrapper(temp_dir, hash_type, expected_hash):
         assert wrapped.hexdigest() == expected_hash
         assert wrapped.hash_type == hash_type
         # Check the mode
-        assert wrapped.mode == "wb"
+        assert wrapped.mode == 'wb'
 
-    with open(temp_dir / filename, "rb") as fhandle:
+    with open(temp_dir / filename, 'rb') as fhandle:
         assert fhandle.read() == content
 
 
@@ -1321,23 +1308,23 @@ def test_chunk_iterator():
 
 def test_compute_hash_from_filename(temp_dir):
     """Check the functionality of the _compute_hash_from_filename function."""
-    content = b"2345j43"
+    content = b'2345j43'
     expected_hash = hashlib.sha256(content).hexdigest()
 
-    fpath = temp_dir / "testfile"
+    fpath = temp_dir / 'testfile'
 
-    with open(fpath, "wb") as fhandle:
+    with open(fpath, 'wb') as fhandle:
         fhandle.write(content)
 
     assert (
         utils._compute_hash_for_file(  # pylint: disable=protected-access
-            fpath, "sha256"
+            fpath, 'sha256'
         )
         == expected_hash
     )
     assert (
         utils._compute_hash_for_file(  # pylint: disable=protected-access
-            temp_dir / "NOT_EXISTENT_FILE", "sha256"
+            temp_dir / 'NOT_EXISTENT_FILE', 'sha256'
         )
         is None
     )
@@ -1346,19 +1333,19 @@ def test_compute_hash_from_filename(temp_dir):
 def test_is_known_hash():
     """Check the functionality of the is_known_hash function."""
     # At least sha256 should be supported
-    assert utils.is_known_hash("sha256")
+    assert utils.is_known_hash('sha256')
     # sha1 should also be supported
-    assert utils.is_known_hash("sha1")
+    assert utils.is_known_hash('sha1')
     # A weird string should not be a valid known hash
-    assert not utils.is_known_hash("SOME_UNKNOWN_HASH_TYPE")
+    assert not utils.is_known_hash('SOME_UNKNOWN_HASH_TYPE')
 
 
-@pytest.mark.parametrize("hash_type", ["sha256", "sha1"])
+@pytest.mark.parametrize('hash_type', ['sha256', 'sha1'])
 def test_compute_hash_and_size(hash_type):
     """Check the funtion to compute the hash and size."""
 
     # Try both a small object, and something larger than the chunk size to have full coverage
-    for content in [b"wgarwfsfsdf", b"3gvn3rnv3o" * 100000]:
+    for content in [b'wgarwfsfsdf', b'3gvn3rnv3o' * 100000]:
         stream = io.BytesIO(content)
 
         expected_hash = getattr(hashlib, hash_type)(content).hexdigest()
@@ -1415,7 +1402,7 @@ LEFT_RIGHT_PAIRS = [
 ]
 
 
-@pytest.mark.parametrize("left,right", LEFT_RIGHT_PAIRS)
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS)
 def test_detect_where(left, right):
     """Test the detect_where_sorted function."""
     # Compute the expected result
@@ -1478,7 +1465,7 @@ LEFT_RIGHT_PAIRS_UNSORTED = [
 ]
 
 
-@pytest.mark.parametrize("left,right", LEFT_RIGHT_PAIRS_UNSORTED)
+@pytest.mark.parametrize('left,right', LEFT_RIGHT_PAIRS_UNSORTED)
 def test_detect_where_unsorted(left, right):
     """Test the detect_where_sorted function when the lists are not sorted."""
     with pytest.raises(ValueError):
@@ -1514,34 +1501,34 @@ def test_merge_sorted():
 
 def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
     """Test the callback stream wrapper with no actual callback."""
-    with tempfile.TemporaryFile(mode="rb+") as fhandle:
-        fhandle.write(b"abc")
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
+        fhandle.write(b'abc')
         fhandle.seek(0)
 
         wrapped = utils.CallbackStreamWrapper(fhandle, callback=None)
 
-        assert wrapped.mode == "rb+"
+        assert wrapped.mode == 'rb+'
         assert wrapped.seekable()
         # Seek forward; read from byte 1
         wrapped.seek(1)
         assert wrapped.tell() == 1
-        assert wrapped.read() == b"bc"
+        assert wrapped.read() == b'bc'
         assert wrapped.tell() == 3
         # Seek backwards; read from byte 0
         wrapped.seek(0)
-        assert wrapped.read() == b"abc"
+        assert wrapped.read() == b'abc'
 
         wrapped.close_callback()
 
 
-@pytest.mark.parametrize("with_total_length", [True, False])
+@pytest.mark.parametrize('with_total_length', [True, False])
 def test_callback_stream_wrapper(callback_instance, with_total_length):
     """Test the callback stream wrapper."""
-    description = "SOME CALLBACK DESCRIPTION"
+    description = 'SOME CALLBACK DESCRIPTION'
     # Long string so we trigger the update_every logic
-    content = b"abc" * 4000
+    content = b'abc' * 4000
 
-    with tempfile.TemporaryFile(mode="rb+") as fhandle:
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
         fhandle.write(content)
         fhandle.seek(0)
 
@@ -1557,7 +1544,7 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
                 fhandle, callback=callback_instance.callback, description=description
             )
 
-        assert wrapped.mode == "rb+"
+        assert wrapped.mode == 'rb+'
         assert wrapped.seekable()
         # Seek forward; read from byte 10
         wrapped.seek(10)
@@ -1578,34 +1565,34 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
 
     assert callback_instance.performed_actions == [
         {
-            "start_value": {
-                "total": len(content) if with_total_length else 0,
-                "description": description,
+            'start_value': {
+                'total': len(content) if with_total_length else 0,
+                'description': description,
             },
-            "value": len(content),
+            'value': len(content),
         },
         {
-            "start_value": {
-                "total": len(content) if with_total_length else 0,
-                "description": f"{description} [rewind]",
+            'start_value': {
+                'total': len(content) if with_total_length else 0,
+                'description': f'{description} [rewind]',
             },
-            "value": len(content),
+            'value': len(content),
         },
         {
-            "start_value": {
-                "total": len(content) if with_total_length else 0,
-                "description": f"{description} [rewind]",
+            'start_value': {
+                'total': len(content) if with_total_length else 0,
+                'description': f'{description} [rewind]',
             },
-            "value": 2,
+            'value': 2,
         },
     ]
 
 
-@pytest.mark.parametrize("open_streams", [True, False])
+@pytest.mark.parametrize('open_streams', [True, False])
 def test_callback_stream_wrapper_add(temp_container, open_streams):
     """Test using callback stream wrapper with add_streamed_object_to_pack."""
-    content = b"content"
-    with tempfile.TemporaryFile(mode="rb+") as fhandle:
+    content = b'content'
+    with tempfile.TemporaryFile(mode='rb+') as fhandle:
         fhandle.write(content)
         fhandle.seek(0)
         wrapped = utils.CallbackStreamWrapper(fhandle, None)
@@ -1617,9 +1604,9 @@ def test_callback_stream_wrapper_add(temp_container, open_streams):
 
 def test_rename_callback(callback_instance):
     """Check the rename_callback function."""
-    old_description = "original description"
-    new_description = "SOME NEW DESC"
-    content = b"some content"
+    old_description = 'original description'
+    new_description = 'SOME NEW DESC'
+    content = b'some content'
 
     assert utils.rename_callback(None, new_description=new_description) is None
 
@@ -1651,30 +1638,30 @@ def test_rename_callback(callback_instance):
 
     assert callback_instance.performed_actions == [
         {
-            "start_value": {"total": len(content), "description": old_description},
-            "value": len(content),
+            'start_value': {'total': len(content), 'description': old_description},
+            'value': len(content),
         },
         {
-            "start_value": {
-                "total": len(content),
+            'start_value': {
+                'total': len(content),
                 # Here there should be the new description
-                "description": new_description,
+                'description': new_description,
             },
-            "value": len(content),
+            'value': len(content),
         },
     ]
 
 
 @pytest.mark.parametrize(
-    "compression_algorithm,compressed_expected",
+    'compression_algorithm,compressed_expected',
     [
-        ["zlib+1", b"x\x013426153\xb7\xb040Df\x01\xf9\x00G\xb2\x05R"],
-        ["zlib+9", b"x\xda3426153\xb7\xb040Df\x01I\x00G\xb2\x05R"],
+        ['zlib+1', b'x\x013426153\xb7\xb040Df\x01\xf9\x00G\xb2\x05R'],
+        ['zlib+9', b'x\xda3426153\xb7\xb040Df\x01I\x00G\xb2\x05R'],
     ],
 )
 def test_compressers(compression_algorithm, compressed_expected):
     """Check that the data is compressed as expected."""
-    uncompressed = b"12345678901234567890123890"
+    uncompressed = b'12345678901234567890123890'
     compresser = utils.get_compressobj_instance(compression_algorithm)
     compressed = compresser.compress(uncompressed)
     compressed += compresser.flush()
@@ -1685,12 +1672,12 @@ def test_compressers(compression_algorithm, compressed_expected):
 def test_unknown_compressers():
     """Check that unknown or invalid compressers give a ValueError."""
     invalid_methods = [
-        "gzip",  # unknown
-        "zlib",  # no variant
-        "zlib+a",
-        "zlib+-1",
-        "zlib+10",
-        "unknown-method",  # Invalid variant
+        'gzip',  # unknown
+        'zlib',  # no variant
+        'zlib+a',
+        'zlib+-1',
+        'zlib+10',
+        'unknown-method',  # Invalid variant
     ]
     for invalid in invalid_methods:
         with pytest.raises(ValueError):
@@ -1699,8 +1686,8 @@ def test_unknown_compressers():
             utils.get_stream_decompresser(invalid)
 
 
-@pytest.mark.parametrize("source_compressed", [True, False])
-@pytest.mark.parametrize("compress_mode", list(utils.CompressMode))
+@pytest.mark.parametrize('source_compressed', [True, False])
+@pytest.mark.parametrize('compress_mode', list(utils.CompressMode))
 def test_should_compress(compress_mode, source_compressed):
     """Check if the should_compress method behaves as we expect on typical files.
 
@@ -1708,17 +1695,17 @@ def test_should_compress(compress_mode, source_compressed):
     """
     # Write 10*1_000_000 = 10 million bytes, larger than a chunk
     # this should be quite compressible even with the heuristics
-    content_compr = b"0123456789" * 1_000_000
+    content_compr = b'0123456789' * 1_000_000
     # This instead is 10 million random bytes, probably uncompressible
     content_uncompr = os.urandom(10_000_000)
 
     if source_compressed:
-        compresser = utils.get_compressobj_instance("zlib+1")
+        compresser = utils.get_compressobj_instance('zlib+1')
         compressed_compr = compresser.compress(content_compr)
         compressed_compr += compresser.flush()
         stream_compr = io.BytesIO(compressed_compr)
 
-        compresser = utils.get_compressobj_instance("zlib+1")
+        compresser = utils.get_compressobj_instance('zlib+1')
         compressed_uncompr = compresser.compress(content_uncompr)
         compressed_uncompr += compresser.flush()
         stream_uncompr = io.BytesIO(compressed_uncompr)
@@ -1763,11 +1750,11 @@ def test_should_compress(compress_mode, source_compressed):
 
 def test_should_compress_invalid_mode():
     """Check that an invalid compress_mode will raise."""
-    content = b"0123456789"
+    content = b'0123456789'
     with pytest.raises(NotImplementedError):
         utils.should_compress(
             io.BytesIO(content),
-            compress_mode="UNKNOWN_MODE",
+            compress_mode='UNKNOWN_MODE',
             source_compressed=False,
             source_length=len(content),
             source_size=len(content),
@@ -1776,7 +1763,7 @@ def test_should_compress_invalid_mode():
 
 def test_should_compress_empty_stream():
     """Check that it does not recommend to compress an empty stream."""
-    content = b""
+    content = b''
     assert not utils.should_compress(
         io.BytesIO(content),
         compress_mode=utils.CompressMode.AUTO,

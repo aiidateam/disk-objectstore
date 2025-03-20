@@ -33,35 +33,18 @@ repos:
       - mdformat-black
       files: (?x)^(README\.md|CHANGELOG\.md)$
 
-  - repo: https://github.com/pycqa/isort
-    rev: '5.12.0'
-    hooks:
-    - id: isort
-
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.14.0
     hooks:
     - id: pyupgrade
       args: [--py37-plus]
 
-  - repo: https://github.com/psf/black
-    rev: '23.9.1'
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
     hooks:
-    - id: black
-
-  - repo: https://github.com/PyCQA/pylint
-    rev: v3.0.0
-    hooks:
-    - id: pylint
-      additional_dependencies:
-      - sqlalchemy==1.4.22
-      - click==8.0.1
-      - memory-profiler==0.58.0
-      - profilehooks==1.12.0
-      - psutil==5.8.0
-      - pytest==6.2.4
-      - numpy
-      - h5py
+    - id: ruff-format
+    - id: ruff
+      args: [--fix, --exit-non-zero-on-fix, --show-fixes]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.5.1

@@ -9,6 +9,6 @@ from .container import CompressMode, Container, ObjectType
 
 LOGGER = logging.getLogger(__name__)
 
-__all__ = ("Container", "ObjectType", "CompressMode")
+__all__ = ('CompressMode', 'Container', 'ObjectType')
 
-__version__ = "1.2.0"
+__version__ = '1.2.0'
