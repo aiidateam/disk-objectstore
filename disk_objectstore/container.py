@@ -137,8 +137,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the folder that will host the object-store container."""
         return self._folder
 
-    def close(self) -> None:
-        """Close open files (in particular, the connection to the SQLite DB)."""
+    def _close_operation_session(self):
         if self._operation_session is not None:
             binding = self._operation_session.bind
             self._operation_session.close()
@@ -147,6 +146,10 @@ class Container:  # pylint: disable=too-many-public-methods
             elif isinstance(binding, Connection):
                 binding.close()
             self._operation_session = None
+
+    def close(self) -> None:
+        """Close open files (in particular, the connection to the SQLite DB)."""
+        self._close_operation_session()
 
         if self._container_session is not None:
             binding = self._container_session.bind
@@ -747,15 +750,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # Note that this is an expensive operation!
             # This means that asking for non-existing objects will be
             # slow.
-
-            if self._operation_session is not None:
-                binding = self._operation_session.bind
-                self._operation_session.close()
-                if isinstance(binding, Engine):
-                    binding.dispose()
-                elif isinstance(binding, Connection):
-                    binding.close()
-                self._operation_session = None
+            self._close_operation_session()
 
             packs = defaultdict(list)
             session = self._get_operation_session()
