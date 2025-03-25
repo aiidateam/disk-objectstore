@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742894447127,
+  "lastUpdate": 1742895734561,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6070,6 +6070,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.518096142394799e-8",
             "extra": "mean: 154.53368353988475 nsec\nrounds: 195313"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34e2185b55555216102dc0e7e5568b6e0912e609",
+          "message": "Replace pylint and black with ruff (#187)\n\nThis makes this repo more consistent with aiida-core. Ruff is in general\nalso more capable of fixing errors automatically. Further running\n`pre-commit run --all-files`.",
+          "timestamp": "2025-03-25T10:41:23+01:00",
+          "tree_id": "b1667bf960decc94fb071d33fb85b7cf4dfe78c6",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/34e2185b55555216102dc0e7e5568b6e0912e609"
+        },
+        "date": 1742895733827,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.6888456414365107,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012805471852887143",
+            "extra": "mean: 271.08751549999255 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.4649710722954583,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0291831926236126",
+            "extra": "mean: 682.6073353333205 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.08350533481024,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009055116585457993",
+            "extra": "mean: 90.22416372727093 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 33.2017743247867,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006896215161158719",
+            "extra": "mean: 30.118872269228476 msec\nrounds: 26"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 5.024077548338331,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0011091576908080231",
+            "extra": "mean: 199.04151366667122 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 6560331.059221871,
+            "unit": "iter/sec",
+            "range": "stddev: 2.0899131242899356e-8",
+            "extra": "mean: 152.43133173809076 nsec\nrounds: 199641"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 6416030.121791037,
+            "unit": "iter/sec",
+            "range": "stddev: 2.048711828789177e-8",
+            "extra": "mean: 155.85961739856867 nsec\nrounds: 190840"
           }
         ]
       }
