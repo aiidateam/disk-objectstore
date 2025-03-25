@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742892997133,
+  "lastUpdate": 1742893015607,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -5924,6 +5924,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.073392894578405e-8",
             "extra": "mean: 233.1955136253754 nsec\nrounds: 196117"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e3619708927c1a36d1d47e6427d68efd9c3564c",
+          "message": "Replace requirements.lock with uv.lock (#181)\n\nIntroduce uv as environement and dependency manager for CI.",
+          "timestamp": "2025-03-25T09:55:56+01:00",
+          "tree_id": "a05185b3618c9000db29020afc11df0f462dda81",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/2e3619708927c1a36d1d47e6427d68efd9c3564c"
+        },
+        "date": 1742893015149,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.6769411826341596,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010813703075572858",
+            "extra": "mean: 271.9651879999887 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.9815691654307012,
+            "unit": "iter/sec",
+            "range": "stddev: 0.06694573809920454",
+            "extra": "mean: 1.0187769086666567 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.388794685630067,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007800486918032802",
+            "extra": "mean: 87.80560433333306 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 35.04436993636268,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00041510261853111184",
+            "extra": "mean: 28.535254074075443 msec\nrounds: 27"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 5.206680438278583,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00227124843119027",
+            "extra": "mean: 192.06095166666634 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 6507154.097951578,
+            "unit": "iter/sec",
+            "range": "stddev: 1.71934461116809e-8",
+            "extra": "mean: 153.67701224638208 nsec\nrounds: 196503"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 6686854.633670625,
+            "unit": "iter/sec",
+            "range": "stddev: 1.1494075421987155e-8",
+            "extra": "mean: 149.54714208445017 nsec\nrounds: 59134"
           }
         ]
       }
