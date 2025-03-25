@@ -1,35 +1,30 @@
 """Test the performance of the container implementation."""
+
 import hashlib
 import random
 
 import pytest
 
 
-@pytest.mark.benchmark(group="write", min_rounds=3)
+@pytest.mark.benchmark(group='write', min_rounds=3)
 def test_pack_write(temp_container, benchmark):
     """Add 10'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 10000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
 
-    hashkeys = benchmark(
-        temp_container.add_objects_to_pack, data_content, compress=False
-    )
+    hashkeys = benchmark(temp_container.add_objects_to_pack, data_content, compress=False)
 
     assert len(hashkeys) == len(data_content)
     assert expected_hashkeys == hashkeys
 
 
-@pytest.mark.benchmark(group="write", min_rounds=3)
+@pytest.mark.benchmark(group='write', min_rounds=3)
 def test_loose_write(temp_container, benchmark):
     """Add 1'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 1000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
 
     def write_loose(container, contents):
         retval = []
@@ -43,14 +38,12 @@ def test_loose_write(temp_container, benchmark):
     assert expected_hashkeys == hashkeys
 
 
-@pytest.mark.benchmark(group="read")
+@pytest.mark.benchmark(group='read')
 def test_pack_read(temp_container, benchmark):
     """Add 10'000 objects to the container in packed form, and benchmark write and read speed."""
     num_files = 10000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
-    expected_hashkeys = [
-        hashlib.sha256(content).hexdigest() for content in data_content
-    ]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
+    expected_hashkeys = [hashlib.sha256(content).hexdigest() for content in data_content]
     expected_results_dict = dict(zip(expected_hashkeys, data_content))
 
     hashkeys = temp_container.add_objects_to_pack(data_content, compress=False)
@@ -61,11 +54,11 @@ def test_pack_read(temp_container, benchmark):
     assert results == expected_results_dict
 
 
-@pytest.mark.benchmark(group="read")
+@pytest.mark.benchmark(group='read')
 def test_loose_read(temp_container, benchmark):
     """Add 1'000 objects to the container in loose form, and benchmark write and read speed."""
     num_files = 1000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
     hashkeys = []
     for content in data_content:
         hashkeys.append(temp_container.add_object(content))
@@ -78,7 +71,7 @@ def test_loose_read(temp_container, benchmark):
     assert results == expected_results
 
 
-@pytest.mark.benchmark(group="check", min_rounds=3)
+@pytest.mark.benchmark(group='check', min_rounds=3)
 def test_has_objects(temp_container, benchmark):
     """Benchmark speed to check object existence.
 
@@ -86,16 +79,12 @@ def test_has_objects(temp_container, benchmark):
     of these 10'000 and of 5'000 more that do not exist.
     """
     num_files_half = 5000
-    data_content_packed = [str(i).encode("ascii") for i in range(num_files_half)]
+    data_content_packed = [str(i).encode('ascii') for i in range(num_files_half)]
 
-    hashkeys_packed = temp_container.add_objects_to_pack(
-        data_content_packed, compress=False
-    )
+    hashkeys_packed = temp_container.add_objects_to_pack(data_content_packed, compress=False)
 
     # Different set of data for the loose objects, not colliding
-    data_content_loose = [
-        b"LOOSE" + str(i).encode("ascii") for i in range(num_files_half)
-    ]
+    data_content_loose = [b'LOOSE' + str(i).encode('ascii') for i in range(num_files_half)]
 
     hashkeys_loose = []
     for content in data_content_loose:
@@ -108,7 +97,7 @@ def test_has_objects(temp_container, benchmark):
     for hashkey in hashkeys_loose:
         existence_array.append((hashkey, True))
     for idx in range(num_files_half):
-        existence_array.append((f"UNKNOWN{idx}", False))
+        existence_array.append((f'UNKNOWN{idx}', False))
 
     # Shuffle pairs
     random.shuffle(existence_array)
@@ -121,11 +110,11 @@ def test_has_objects(temp_container, benchmark):
     assert result == list(expected_result)
 
 
-@pytest.mark.benchmark(group="read")
+@pytest.mark.benchmark(group='read')
 def test_list_all_packed(temp_container, benchmark):
     """Add 100'000 objects to the container in packed form, and benchmark list speed."""
     num_files = 100000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
 
     hashkeys = temp_container.add_objects_to_pack(data_content, compress=False)
 
@@ -135,11 +124,11 @@ def test_list_all_packed(temp_container, benchmark):
     assert set(results) == set(hashkeys)
 
 
-@pytest.mark.benchmark(group="read")
+@pytest.mark.benchmark(group='read')
 def test_list_all_loose(temp_container, benchmark):
     """Add 10'000 loose objects to the container in packed form, and benchmark list speed."""
     num_files = 10000
-    data_content = [str(i).encode("ascii") for i in range(num_files)]
+    data_content = [str(i).encode('ascii') for i in range(num_files)]
 
     hashkeys = []
     for content in data_content:

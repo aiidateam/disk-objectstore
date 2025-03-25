@@ -26,13 +26,13 @@ class BackupError(Exception):
 
 def split_remote_and_path(dest: str):
     """extract remote and path from <remote>:<path>"""
-    split_dest = dest.split(":")
+    split_dest = dest.split(':')
     if len(split_dest) == 1:
         return None, Path(dest)
     if len(split_dest) == 2:
         return split_dest[0], Path(split_dest[1])
     # more than 1 colon:
-    raise ValueError("Invalid destination format: <remote>:<path>")
+    raise ValueError('Invalid destination format: <remote>:<path>')
 
 
 def is_exe_found(exe: str) -> bool:
@@ -56,42 +56,36 @@ class BackupManager:
         self.dest = dest
         self.keep = keep
         self.remote, self.path = split_remote_and_path(dest)
-        self.rsync_exe = rsync_exe if rsync_exe is not None else "rsync"
+        self.rsync_exe = rsync_exe if rsync_exe is not None else 'rsync'
 
         # Validate the backup config inputs
 
         if self.keep is not None and self.keep < 0:
-            raise ValueError(
-                "Input validation failed: keep variable can't be negative!"
-            )
+            raise ValueError("Input validation failed: keep variable can't be negative!")
 
         if self.remote:
             self.check_if_remote_accessible()
 
         if not is_exe_found(self.rsync_exe):
-            raise ValueError(
-                f"Input validation failed: {self.rsync_exe} not accessible."
-            )
+            raise ValueError(f'Input validation failed: {self.rsync_exe} not accessible.')
 
         if not self.check_path_exists(self.path):
-            success = self.run_cmd(["mkdir", str(self.path)])[0]
+            success = self.run_cmd(['mkdir', str(self.path)])[0]
             if not success:
-                raise ValueError(
-                    f"Input validation failed: Couldn't access/create '{str(self.path)}'!"
-                )
+                raise ValueError(f"Input validation failed: Couldn't access/create '{self.path!s}'!")
 
         self.rsync_version = self.get_rsync_major_version()
 
     def check_if_remote_accessible(self):
         """Check if remote host is accessible via ssh"""
         LOGGER.info("Checking if '%s' is accessible...", self.remote)
-        success = self.run_cmd(["exit"])[0]
+        success = self.run_cmd(['exit'])[0]
         if not success:
             raise BackupError(f"Remote '{self.remote}' is not accessible!")
         LOGGER.info("Success! '%s' is accessible!", self.remote)
 
     def check_path_exists(self, path: Path) -> bool:
-        cmd = ["[", "-e", str(path), "]"]
+        cmd = ['[', '-e', str(path), ']']
         return self.run_cmd(cmd)[0]
 
     def run_cmd(
@@ -103,12 +97,12 @@ class BackupManager:
         """
         all_args = args[:]
         if self.remote:
-            all_args = ["ssh", self.remote] + all_args
+            all_args = ['ssh', self.remote] + all_args
 
         res = subprocess.run(all_args, capture_output=True, text=True, check=False)
 
         LOGGER.debug(
-            "Command: %s\n  Exit Code: %d\n  stdout/stderr: %s\n%s",
+            'Command: %s\n  Exit Code: %d\n  stdout/stderr: %s\n%s',
             str(all_args),
             res.returncode,
             res.stdout,
@@ -124,15 +118,15 @@ class BackupManager:
         Get the rsync major version.
         """
         result = subprocess.run(
-            [self.rsync_exe, "--version"],
+            [self.rsync_exe, '--version'],
             capture_output=True,
             text=True,
             check=False,
         )
-        pattern = r"rsync\s+version\s+(\d+\.\d+\.\d+)"
+        pattern = r'rsync\s+version\s+(\d+\.\d+\.\d+)'
         match = re.search(pattern, result.stdout)
         if match:
-            return int(match.group(1).split(".")[0])
+            return int(match.group(1).split('.')[0])
         return None
 
     def call_rsync(  # pylint: disable=too-many-arguments,too-many-branches
@@ -160,8 +154,8 @@ class BackupManager:
 
         all_args = [
             self.rsync_exe,
-            "-azh",
-            "--no-whole-file",
+            '-azh',
+            '--no-whole-file',
         ]
 
         capture_output = True
@@ -170,49 +164,47 @@ class BackupManager:
             if self.rsync_version and self.rsync_version >= 3:
                 # These options show progress in a nicer way but
                 # they're only available for rsync version 3+
-                all_args += ["--info=progress2,stats1"]
+                all_args += ['--info=progress2,stats1']
             else:
                 LOGGER.info("rsync version <3 detected: showing 'legacy' progress.")
-                all_args += ["--progress"]
+                all_args += ['--progress']
 
         if LOGGER.isEnabledFor(logging.DEBUG):
-            all_args += ["-vv"]
+            all_args += ['-vv']
         if extra_args:
             all_args += extra_args
         if link_dest:
             if not self.remote:
                 # for local paths, use resolve() to get absolute path
                 link_dest = link_dest.resolve()
-            all_args += [f"--link-dest={link_dest}"]
+            all_args += [f'--link-dest={link_dest}']
 
         if src_trailing_slash:
-            all_args += [str(src) + "/"]
+            all_args += [str(src) + '/']
         else:
             all_args += [str(src)]
 
         dest_str = str(dest)
         if dest_trailing_slash:
-            dest_str += "/"
+            dest_str += '/'
 
         if not self.remote:
             all_args += [dest_str]
         else:
-            all_args += [f"{self.remote}:{dest_str}"]
+            all_args += [f'{self.remote}:{dest_str}']
 
-        cmd_str = " ".join(all_args)
+        cmd_str = ' '.join(all_args)
         LOGGER.info("Running '%s'", cmd_str)
 
-        res = subprocess.run(
-            all_args, capture_output=capture_output, text=True, check=False
-        )
+        res = subprocess.run(all_args, capture_output=capture_output, text=True, check=False)
 
-        info_text = f"rsync completed. Exit Code: {res.returncode}"
+        info_text = f'rsync completed. Exit Code: {res.returncode}'
         if capture_output:
-            info_text += f"\nstdout/stderr: {res.stdout}\n{res.stderr}"
+            info_text += f'\nstdout/stderr: {res.stdout}\n{res.stderr}'
         LOGGER.info(info_text)
 
         if res.returncode != 0:
-            raise BackupError(f"rsync failed for: {str(src)} to {str(dest)}")
+            raise BackupError(f'rsync failed for: {src!s} to {dest!s}')
 
     # ----
     # Utilities to manage multiple folders of backups, e.g. hard-linking to previous backup;
@@ -223,20 +215,20 @@ class BackupManager:
         """Get all folders matching the backup folder name pattern."""
         success, stdout = self.run_cmd(
             [
-                "find",
+                'find',
                 str(self.path),
-                "-maxdepth",
-                "1",
-                "-type",
-                "d",
-                "-name",
-                "backup_*_*",
-                "-print",
+                '-maxdepth',
+                '1',
+                '-type',
+                'd',
+                '-name',
+                'backup_*_*',
+                '-print',
             ]
         )
 
         if not success:
-            raise BackupError("Existing backups determination failed.")
+            raise BackupError('Existing backups determination failed.')
 
         return stdout.splitlines()
 
@@ -251,9 +243,9 @@ class BackupManager:
             sorted_folders = sorted(self.get_existing_backup_folders())
             to_delete = sorted_folders[: -(self.keep + 1)]
             for folder in to_delete:
-                success = self.run_cmd(["rm", "-rf", folder])[0]
+                success = self.run_cmd(['rm', '-rf', folder])[0]
                 if success:
-                    LOGGER.info("Deleted old backup: %s", folder)
+                    LOGGER.info('Deleted old backup: %s', folder)
                 else:
                     LOGGER.warning("Warning: couldn't delete old backup: %s", folder)
 
@@ -271,14 +263,12 @@ class BackupManager:
 
         """
 
-        live_folder = self.path / "live-backup"
+        live_folder = self.path / 'live-backup'
 
         last_folder = self.get_last_backup_folder()
 
         if last_folder:
-            LOGGER.info(
-                "Last backup is '%s', using it for rsync --link-dest.", str(last_folder)
-            )
+            LOGGER.info("Last backup is '%s', using it for rsync --link-dest.", str(last_folder))
         else:
             LOGGER.info("Couldn't find a previous backup to increment from.")
 
@@ -288,19 +278,13 @@ class BackupManager:
         )
 
         # move live-backup -> backup_<timestamp>_<randstr>
-        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-            "%Y%m%d%H%M%S"
-        )
-        randstr = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
-        folder_name = f"backup_{timestamp}_{randstr}"
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')
+        randstr = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        folder_name = f'backup_{timestamp}_{randstr}'
 
-        success = self.run_cmd(["mv", str(live_folder), str(self.path / folder_name)])[
-            0
-        ]
+        success = self.run_cmd(['mv', str(live_folder), str(self.path / folder_name)])[0]
         if not success:
-            raise BackupError(
-                f"Failed to move '{str(live_folder)}' to '{str(self.path / folder_name)}'"
-            )
+            raise BackupError(f"Failed to move '{live_folder!s}' to '{self.path / folder_name!s}'")
 
         LOGGER.info(
             "Backup moved from '%s' to '%s'.",
@@ -308,10 +292,8 @@ class BackupManager:
             str(self.path / folder_name),
         )
 
-        symlink_name = "last-backup"
-        success = self.run_cmd(
-            ["ln", "-sfn", str(folder_name), str(self.path / symlink_name)]
-        )[0]
+        symlink_name = 'last-backup'
+        success = self.run_cmd(['ln', '-sfn', str(folder_name), str(self.path / symlink_name)])[0]
         if not success:
             LOGGER.warning(
                 "Couldn't create symlink '%s'. Perhaps the filesystem doesn't support it.",
@@ -363,28 +345,28 @@ def backup_container(
     prev_backup_loose = prev_backup / loose_path_rel if prev_backup else None
 
     manager.call_rsync(loose_path, path, link_dest=prev_backup_loose)
-    LOGGER.info("Transferred %s to %s", str(loose_path), str(path))
+    LOGGER.info('Transferred %s to %s', str(loose_path), str(path))
 
     # step 2: back up sqlite db
 
     # make a temporary directory to dump sqlite db locally
     with tempfile.TemporaryDirectory() as temp_dir_name:
-        sqlite_temp_loc = Path(temp_dir_name) / "packs.idx"
+        sqlite_temp_loc = Path(temp_dir_name) / 'packs.idx'
         _sqlite_backup(sqlite_path, sqlite_temp_loc)
 
         if sqlite_temp_loc.is_file():
-            LOGGER.info("Dumped the SQLite database to %s", str(sqlite_temp_loc))
+            LOGGER.info('Dumped the SQLite database to %s', str(sqlite_temp_loc))
         else:
-            raise BackupError(f"'{str(sqlite_temp_loc)}' failed to be created.")
+            raise BackupError(f"'{sqlite_temp_loc!s}' failed to be created.")
 
         # step 3: transfer the SQLITE database file
         manager.call_rsync(sqlite_temp_loc, path, link_dest=prev_backup)
-        LOGGER.info("Transferred SQLite database to %s", str(path))
+        LOGGER.info('Transferred SQLite database to %s', str(path))
 
     # step 4: transfer the packed files
     packs_path_rel = packs_path.relative_to(container_root_path)
     manager.call_rsync(packs_path, path, link_dest=prev_backup)
-    LOGGER.info("Transferred %s to %s", str(packs_path), str(path))
+    LOGGER.info('Transferred %s to %s', str(packs_path), str(path))
 
     # step 5: transfer anything else in the container folder
     manager.call_rsync(
@@ -393,11 +375,11 @@ def backup_container(
         link_dest=prev_backup,
         src_trailing_slash=True,
         extra_args=[
-            "--exclude",
+            '--exclude',
             str(loose_path_rel),
-            "--exclude",
-            "packs.idx",
-            "--exclude",
+            '--exclude',
+            'packs.idx',
+            '--exclude',
             str(packs_path_rel),
         ],
     )

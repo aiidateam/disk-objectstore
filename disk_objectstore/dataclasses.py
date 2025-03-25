@@ -2,6 +2,7 @@
 Definition of the dataclasses used as return values of
 a number of methods.
 """
+
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -50,7 +51,7 @@ class ObjectMeta:
         Set to `None` if `type` is not `packed`.
     """
 
-    type: "ObjectType"
+    type: 'ObjectType'
     size: Optional[int]
     pack_id: Optional[str]
     pack_compressed: Optional[bool]
