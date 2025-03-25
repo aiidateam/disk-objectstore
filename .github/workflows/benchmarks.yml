@@ -28,7 +28,7 @@ jobs:
       uses: astral-sh/setup-uv@v5.2.1
       with:
         version: 0.5.22
-        python-version: 3.8
+        python-version: 3.9
     - name: Install dependencies from uv lock
       # I'm using pip install -e to make sure that the coverage properly traces the runs
       # also of the concurrent tests (maybe we can achieve this differently)

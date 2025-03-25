@@ -20,10 +20,10 @@ jobs:
         -   name: Checkout source
             uses: actions/checkout@v2
 
-        -   name: Install Python 3.8
+        -   name: Install Python 3.9
             uses: actions/setup-python@v4
             with:
-                python-version: '3.8'
+                python-version: '3.9'
 
         -   name: Validate the tag version against the package version
             run: python .github/workflows/check_release_tag.py $GITHUB_REF disk_objectstore/__init__.py
@@ -40,7 +40,7 @@ jobs:
         -   name: Install Python
             uses: actions/setup-python@v4
             with:
-                python-version: '3.8'
+                python-version: '3.9'
                 cache: 'pip'
                 cache-dependency-path: pyproject.toml
 
@@ -56,10 +56,10 @@ jobs:
         -   name: Checkout source
             uses: actions/checkout@v2
 
-        -   name: Install Python 3.8
+        -   name: Install Python 3.9
             uses: actions/setup-python@v4
             with:
-                python-version: '3.8'
+                python-version: '3.9'
 
         -   name: Install flit
             run: pip install flit~=3.4
