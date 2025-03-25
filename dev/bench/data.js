@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1742894275901,
+  "lastUpdate": 1742894447127,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -17995,6 +17995,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.803323719848973e-8",
             "extra": "mean: 191.45175661269508 nsec\nrounds: 185186"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "33acc6b305fa8088ecb067dd74d03626a9f57159",
+          "message": "Upgrade packages in lock file (#186)\n\nRunning `uv lock --upgrade`. This is a preparation for supporting\n>py3.11 as certain packages need to be upgraded as `greenlet`. To\nsimplify the process we upgrade everything.",
+          "timestamp": "2025-03-25T10:16:57+01:00",
+          "tree_id": "c9f330d90a53f98a3196b48e1a0d3b8a0fdbd72a",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/33acc6b305fa8088ecb067dd74d03626a9f57159"
+        },
+        "date": 1742894431070,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.4653866872159476,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008240164505841849",
+            "extra": "mean: 682.4137333333331 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1707134819179853,
+            "unit": "iter/sec",
+            "range": "stddev: 0.4602070945735785",
+            "extra": "mean: 5.857768166666667 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 11.443585412632904,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0068556227685328906",
+            "extra": "mean: 87.38519999999923 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 14.41848969444439,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0016670857945195207",
+            "extra": "mean: 69.35539166666753 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.318525349867424,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005310062868113982",
+            "extra": "mean: 431.30863333333025 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5385763.827420603,
+            "unit": "iter/sec",
+            "range": "stddev: 1.3896633164875172e-8",
+            "extra": "mean: 185.67468460256126 nsec\nrounds: 52632"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5161279.623792318,
+            "unit": "iter/sec",
+            "range": "stddev: 2.926503371889243e-8",
+            "extra": "mean: 193.75040162364223 nsec\nrounds: 196079"
           }
         ]
       }
