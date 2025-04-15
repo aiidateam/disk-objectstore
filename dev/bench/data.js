@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744706896653,
+  "lastUpdate": 1744706910056,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6143,6 +6143,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.048711828789177e-8",
             "extra": "mean: 155.85961739856867 nsec\nrounds: 190840"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "alex.goscinski@posteo.de",
+            "name": "Alexander Goscinski",
+            "username": "agoscinski"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b02a50360749db1ea28ebe20661bf074d6c63a0",
+          "message": "Remove support of py3.8 and add support for up to py3.13 (#180)\n\nRequired an update of the sphinx dependencies for py3.9 which we use for RTD.",
+          "timestamp": "2025-04-15T10:47:40+02:00",
+          "tree_id": "339a5693fbf102cee0e75945f4188eebc7dc083d",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/9b02a50360749db1ea28ebe20661bf074d6c63a0"
+        },
+        "date": 1744706909361,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.7419246471365475,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013447512450914101",
+            "extra": "mean: 267.24215324999534 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.4718921275301389,
+            "unit": "iter/sec",
+            "range": "stddev: 0.027945133555849763",
+            "extra": "mean: 679.3976143333396 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.795817399234405,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008366618440365436",
+            "extra": "mean: 92.62846554545429 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 34.50141824788334,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0002643769471956951",
+            "extra": "mean: 28.984315740740595 msec\nrounds: 27"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 5.244053921302659,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000891664995712745",
+            "extra": "mean: 190.6921658333355 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5089748.17649299,
+            "unit": "iter/sec",
+            "range": "stddev: 3.978034130297711e-8",
+            "extra": "mean: 196.4733745804067 nsec\nrounds: 195734"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5131739.716291178,
+            "unit": "iter/sec",
+            "range": "stddev: 2.7366083594928885e-8",
+            "extra": "mean: 194.8656898605782 nsec\nrounds: 198453"
           }
         ]
       }
