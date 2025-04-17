@@ -185,7 +185,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! This should not happen'
         )
 
         return self._stream.seek(target, whence)
@@ -195,7 +195,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! This should not happen'
         )
         return self._stream.tell()
 
@@ -212,7 +212,7 @@ class LazyLooseStream:
         if self.closed:
             raise ValueError('I/O operation on closed file.')
         assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
+            'LazyLooseStream has an open stream, but the stream is None! This should not happen'
         )
         return self._stream.read(size)
 
@@ -806,7 +806,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # don't use anymore the compressed one.
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
+                'Using internally an uncompressed stream, but it is None! This should not happen'
             )
             return self._lazy_uncompressed_stream.read(size)
         return self._read_compressed(size)
@@ -913,7 +913,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         """Return current position in file."""
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
+                'Using internally an uncompressed stream, but it is None! This should not happen'
             )
             return self._lazy_uncompressed_stream.tell()
         return self._pos
@@ -979,7 +979,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # If we are using the uncompressed stream, I just proxy the request
         if self._use_uncompressed_stream:
             assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
+                'Using internally an uncompressed stream, but it is None! This should not happen'
             )
             return self._lazy_uncompressed_stream.seek(target, whence)
 
