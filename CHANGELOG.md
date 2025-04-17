@@ -1,13 +1,5 @@
 # Changelog
 
-## v1.3.0 (17 April 2025)
-
-- Change API of `database.get_session` to always raise an error [\[6686ad0\]](https://github.com/aiidateam/disk-objectstore/commit/6686ad0c3280bf90e1954b3b8052ec999e8532be)
-
-- Add support for Python 3.13 [\[9b02a50\]](https://github.com/aiidateam/disk-objectstore/commit/9b02a50360749db1ea28ebe20661bf074d6c63a0)
-
-- Properly close SQL connections that led to open file descriptors in Python3.13 [\[6686ad0\]](https://github.com/aiidateam/disk-objectstore/commit/6686ad0c3280bf90e1954b3b8052ec999e8532be) and [\[f5eed0f\]](https://github.com/aiidateam/disk-objectstore/commit/f5eed0f1afd1576f17e5d71d31df9717041fc9f3)
-
 ## v1.2.0 (26 September 2024)
 
 This only enforces proper semantic versioning as the last release added a new functionality. No changes have been added.
