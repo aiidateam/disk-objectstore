@@ -44,7 +44,7 @@ jobs:
                 cache: 'pip'
                 cache-dependency-path: pyproject.toml
 
-        -   uses: pre-commit/action@v2.0.0
+        -   uses: pre-commit/action@v3.0.1
 
     publish:
 
