@@ -538,12 +538,12 @@ class PackedObjectReader:
     def mode(self) -> str:
         return self._fhandle.mode
 
-    @property
-    def readable(self) -> bool:
+    @staticmethod
+    def readable() -> bool:
         return True
 
-    @property
-    def writable(self) -> bool:
+    @staticmethod
+    def writable() -> bool:
         return False
 
     @property
@@ -673,12 +673,12 @@ class CallbackStreamWrapper:
     def mode(self) -> str:
         return self._stream.mode
 
-    @property
-    def readable(self) -> bool:
+    @staticmethod
+    def readable() -> bool:
         return True
 
-    @property
-    def writable(self) -> bool:
+    @staticmethod
+    def writable() -> bool:
         return False
 
     @property
@@ -822,12 +822,12 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
     def mode(self) -> str:
         return getattr(self._compressed_stream, 'mode', 'rb')
 
-    @property
-    def readable(self) -> bool:
+    @staticmethod
+    def readable() -> bool:
         return True
 
-    @property
-    def writable(self) -> bool:
+    @staticmethod
+    def writable() -> bool:
         return False
 
     @property
