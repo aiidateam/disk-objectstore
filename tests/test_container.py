@@ -3629,3 +3629,35 @@ def test_lazy_loose_loosen_and_delete(temp_container, num_iterations_delete, mon
         with pytest.raises(RuntimeError) as excinfo:
             lazy_loose.open_stream()
         assert 'Unable to open the loose object' in str(excinfo.value)
+
+
+def test_lazy_loose_decompress_closed(temp_container):
+    """Test the closed property of decompresser with underlying lazy_loose_stream."""
+    # I add the tests for the closed property of ZlibLikeBaseStreamDecompresser
+    # here because this is the only context where it occurs together with
+    # a lazy_loose_stream
+    content = b'b123456789'
+
+    temp_container.init_container(clear=True, compression_algorithm='zlib+9')
+    hashkey = temp_container.add_object(content)
+
+    temp_container.pack_all_loose(compress=True)
+    temp_container.clean_storage()
+
+    # LazyLooseStream will never be opened
+    with temp_container.get_objects_stream_and_meta([hashkey]) as triplets:
+        for _, stream, _ in triplets:
+            assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
+            assert not stream.closed
+    assert stream.closed
+
+    # LazyLooseStream will be opened
+    with temp_container.get_objects_stream_and_meta([hashkey]) as triplets:
+        for _, stream, _ in triplets:
+            assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
+            # LazyLooseStream is still closed at this point
+            assert not stream.closed
+            stream.seek(-1, whence=2)
+            # LazyLooseStream should now be opened
+            assert not stream.closed
+    assert stream.closed
