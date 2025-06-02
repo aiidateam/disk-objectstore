@@ -44,9 +44,9 @@ def test_lazy_opener_read():
             # This is not open yet
             lazy.tell()
 
-        assert (
-            len(current_process.open_files()) == start_open_files
-        ), 'The LazyOpener is not lazy, but axtually opened the file instead!'
+        assert len(current_process.open_files()) == start_open_files, (
+            'The LazyOpener is not lazy, but axtually opened the file instead!'
+        )
         with lazy as fhandle:
             # Shoul be opened at position zero at the beginnign
             assert lazy.tell() == 0

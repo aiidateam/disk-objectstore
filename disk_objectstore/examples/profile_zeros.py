@@ -32,7 +32,7 @@ def main_run(container, size_gb, compress_packs):
     size_bytes = size_gb * 1024 * 1024 * 1024
 
     start_counts = container.count_objects()
-    print(f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose")
+    print(f'Currently known objects: {start_counts["packed"]} packed, {start_counts["loose"]} loose')
     print('Pack objects on disk:', start_counts['pack_files'])
 
     zero_stream = ZeroStream(length=size_bytes)
@@ -44,12 +44,12 @@ def main_run(container, size_gb, compress_packs):
 
     # Check that no loose files were created
     counts = container.count_objects()
-    assert (
-        counts['loose'] == start_counts['loose']
-    ), f"Mismatch (loose in packed case): {start_counts['loose']} != {counts['loose']}"
-    assert (
-        counts['packed'] == start_counts['packed'] + 1
-    ), f"Mismatch (packed in packed case): {start_counts['packed']} + 1 != {counts['packed']}"
+    assert counts['loose'] == start_counts['loose'], (
+        f'Mismatch (loose in packed case): {start_counts["loose"]} != {counts["loose"]}'
+    )
+    assert counts['packed'] == start_counts['packed'] + 1, (
+        f'Mismatch (packed in packed case): {start_counts["packed"]} + 1 != {counts["packed"]}'
+    )
 
     # print container size info
     size_info = container.get_total_size()
@@ -167,9 +167,9 @@ def main(size_gb, path, clear, check_memory_measurement, with_line_profiler, com
             interval=memory_check_interval,
         )
         # Check that it's not an empty list
-        assert (
-            memory_report
-        ), f'>> Process too fast for checking memory usage with interval {memory_check_interval} s!!!'
+        assert memory_report, (
+            f'>> Process too fast for checking memory usage with interval {memory_check_interval} s!!!'
+        )
         print(
             f'>> Max memory usage (check interval {memory_check_interval} s, '
             f'{len(memory_report)} checks performed): {max(memory_report):.3f} MB'
