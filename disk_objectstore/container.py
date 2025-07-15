@@ -1253,6 +1253,7 @@ class Container:  # pylint: disable=too-many-public-methods
         validate_objects: bool = True,
         do_fsync: bool = True,
         callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
+        clean_loose_per_pack: bool = False
     ) -> None:
         """Pack all loose objects.
 
@@ -1328,9 +1329,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # Here, I could do some clean up of loose objects that are already in the packs,
         # by removing all loose objects with hash key `existing_packed_hashkeys`, that are
         # already packed.
-        # HOWEVER, while this would work fine on Linux, there are concurrency issues both
-        # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
-        # and deletion is deferred to a manual clean-up operation.
 
         if callback:
             callback(
@@ -1349,6 +1347,9 @@ class Container:  # pylint: disable=too-many-public-methods
         while loose_objects:
             # Store the last pack integer ID, needed to know later if I need to open a new pack
             last_pack_int_id = pack_int_id
+            # Track which objects were added to this pack for cleanup
+            packed_in_current_pack = []
+
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
                 # Inner loop: continue until when there is a file, or
@@ -1418,6 +1419,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
+                    # Track this object for potential cleanup
+                    packed_in_current_pack.append(loose_hashkey)
 
                     if callback:
                         callback(
@@ -1453,15 +1456,37 @@ class Container:  # pylint: disable=too-many-public-methods
             # Note: because of the logic above, in theory this should not raise an IntegrityError!
             session.commit()
 
+            # Clean up loose objects for this pack if requested
+            if clean_loose_per_pack and packed_in_current_pack:
+                self._clean_loose_objects(packed_in_current_pack)
+
             # If we are here, things should be guaranteed by SQLite to be written to disk.
             # Then, it would be safe to already do some clean up of loose objects that are now packed,
             # and by doing it here we would do it after each pack.
             # This would mean keeping track of the loose objects added to packs, and removing them.
             # HOWEVER, while this would work fine on Linux, there are concurrency issues both
-            # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
-            # and deletion is deferred to a manual clean-up operation.
         if callback:
             callback(action='close', value=None)
+
+    def _clean_loose_objects(self, hashkeys: list[str]) -> None:
+        """Clean up specific loose objects that have been successfully packed.
+
+        :param hashkeys: List of hashkeys to clean up from loose objects.
+                        These should be objects that were just packed.
+        """
+        if not hashkeys:
+            return
+
+        # Simply remove the loose files for the given hashkeys
+        # We trust that the caller has already ensured these are packed
+        for obj_hashkey in hashkeys:
+            try:
+                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            except (FileNotFoundError, PermissionError):
+                # FileNotFoundError: file might already be removed by another process
+                # PermissionError: file might be locked (especially on Windows)
+                # In both cases, we just continue - the file will be cleaned up later
+                pass
 
     def add_streamed_object_to_pack(  # pylint: disable=too-many-arguments
         self,
