@@ -1,0 +1,313 @@
+❯ pytest ~/aiida_projects/do-dev/git-repos/disk-objectstore/tests/test_clean_loose_benchmark.py
+======================================= test session starts ========================================
+platform linux -- Python 3.10.12, pytest-8.4.1, pluggy-1.6.0
+benchmark: 5.1.0 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/geiger_j/aiida_projects/do-dev/git-repos/disk-objectstore
+configfile: pyproject.toml
+plugins: cov-6.2.1, benchmark-5.1.0
+collected 6 items
+
+tests/test_clean_loose_benchmark.py ......                                                                                        [100%]
+
+
+--------------------------------------------------------------------------------- benchmark 'clean_loose_comparison': 4 tests ----------------------------------------------------------------------------------
+Name (time in s)                                      Min                Max               Mean            StdDev             Median               IQR            Outliers     OPS            Rounds  Iterations
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+test_pack_old_approach_100_packs[100KB_packs]     19.9057 (1.0)      22.7726 (1.0)      20.9513 (1.0)      1.1211 (1.0)      20.6314 (1.0)      1.3967 (1.0)           1;0  0.0477 (1.0)           5           1
+test_pack_new_approach_100_packs[100KB_packs]     21.1679 (1.06)     24.5133 (1.08)     22.1913 (1.06)     1.3531 (1.21)     21.7618 (1.05)     1.4382 (1.03)          1;0  0.0451 (0.94)          5           1
+test_pack_new_approach_100_packs[1MB_packs]       21.2627 (1.07)     25.6104 (1.12)     22.4695 (1.07)     1.7872 (1.59)     21.8081 (1.06)     1.5696 (1.12)          1;1  0.0445 (0.93)          5           1
+test_pack_old_approach_100_packs[1MB_packs]       21.4686 (1.08)     32.9912 (1.45)     26.0756 (1.24)     4.9171 (4.39)     24.7961 (1.20)     8.2361 (5.90)          1;0  0.0384 (0.80)          5           1
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------ benchmark 'deletion_performance': 1 tests ------------------------------------------
+Name (time in s)                           Min      Max     Mean  StdDev   Median     IQR  Outliers     OPS  Rounds  Iterations
+-------------------------------------------------------------------------------------------------------------------------------
+test_deletion_frequency_comparison     46.3210  65.1081  52.9205  7.5071  50.1908  9.6491       1;0  0.0189       5           1
+-------------------------------------------------------------------------------------------------------------------------------
+
+Legend:
+  Outliers: 1 Standard Deviation from Mean; 1.5 IQR (InterQuartile Range) from 1st Quartile and 3rd Quartile.
+  OPS: Operations Per Second, computed as 1 / Mean
+==================================================== 6 passed in 1058.02s (0:17:38) =====================================================
+
+
+
+Manual
+
+# Setup Gio -> 1mb pack files
+
+❯ python ~/aiida_projects/do-dev/snippets/manual_benchmark.py --file-size 10000 --num-files 10000 --pack-size 1000000
+======================================================================
+Benchmark: clean_loose_per_pack performance comparison
+======================================================================
+Configuration:
+  Number of files: 10,000
+  File size: 10,000 bytes
+  Pack size target: 1,000,000 bytes (1000KB)
+
+Generating test data...
+Generated 10,000 unique files
+Total data size: 99,940,000 bytes (97597.0 KB)
+Expected number of packs: ~99
+
+
+Old approach container: /tmp/tmp63v26p6w/old_approach
+Testing OLD approach: pack_all_loose() + clean_storage() at end
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects...
+  After packing: 10000 loose, 10000 packed, 500 pack files
+  Cleaning storage at the end...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 16.531s, Pack time: 1.897s, Clean time: 0.410s, Total: 2.307s
+
+New approach container: /tmp/tmp63v26p6w/new_approach
+
+Testing NEW approach: pack_all_loose(clean_loose_per_pack=True)
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects with frequent cleaning...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 20.929s, Total time: 2.532s
+
+======================================================================
+RESULTS COMPARISON
+======================================================================
+Old approach (pack + clean at end):
+  Pack time:  1.897s
+  Clean time: 0.410s
+  Total time: 2.307s
+
+New approach (clean per pack):
+  Total time: 2.532s
+
+⚠️  New approach is SLOWER by 9.8% (+0.225s)
+
+Analysis:
+- The new approach cleans loose objects after each pack is created
+- This should reduce memory pressure and disk space usage during packing
+- Performance difference may depend on filesystem and I/O characteristics
+- The new approach provides more predictable disk space usage
+
+# Setup Gio -> 100kb pack files
+
+❯ python ~/aiida_projects/do-dev/snippets/manual_benchmark.py --file-size 1000 --num-files 10000 --pack-size 100000
+======================================================================
+Benchmark: clean_loose_per_pack performance comparison
+======================================================================
+Configuration:
+  Number of files: 10,000
+  File size: 1,000 bytes
+  Pack size target: 100,000 bytes (100KB)
+
+Generating test data...
+Generated 10,000 unique files
+Total data size: 9,940,000 bytes (9707.0 KB)
+Expected number of packs: ~99
+
+
+Old approach container: /tmp/tmpwojdtytr/old_approach
+Testing OLD approach: pack_all_loose() + clean_storage() at end
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects...
+  After packing: 10000 loose, 10000 packed, 96 pack files
+  Cleaning storage at the end...
+  Final state: 0 loose, 10000 packed, 96 pack files
+  Add time: 15.093s, Pack time: 0.793s, Clean time: 0.353s, Total: 1.145s
+
+New approach container: /tmp/tmpwojdtytr/new_approach
+
+Testing NEW approach: pack_all_loose(clean_loose_per_pack=True)
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects with frequent cleaning...
+  Final state: 0 loose, 10000 packed, 96 pack files
+  Add time: 20.818s, Total time: 1.608s
+
+======================================================================
+RESULTS COMPARISON
+======================================================================
+Old approach (pack + clean at end):
+  Pack time:  0.793s
+  Clean time: 0.353s
+  Total time: 1.145s
+
+New approach (clean per pack):
+  Total time: 1.608s
+
+⚠️  New approach is SLOWER by 40.4% (+0.463s)
+
+Analysis:
+- The new approach cleans loose objects after each pack is created
+- This should reduce memory pressure and disk space usage during packing
+- Performance difference may depend on filesystem and I/O characteristics
+- The new approach provides more predictable disk space usage
+
+
+❯ python ~/aiida_projects/do-dev/snippets/manual_benchmark.py --file-size 100000
+======================================================================
+Benchmark: clean_loose_per_pack performance comparison
+======================================================================
+Configuration:
+  Number of files: 10,000
+  File size: 100,000 bytes
+  Pack size target: 100,000 bytes (100KB)
+
+Generating test data...
+Generated 10,000 unique files
+Total data size: 999,940,000 bytes (976503.0 KB)
+Expected number of packs: ~9999
+
+
+Old approach container: /tmp/tmpvrhsjijl/old_approach
+Testing OLD approach: pack_all_loose() + clean_storage() at end
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects...
+  After packing: 10000 loose, 10000 packed, 500 pack files
+  Cleaning storage at the end...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 32.102s, Pack time: 7.889s, Clean time: 1.138s, Total: 9.028s
+
+New approach container: /tmp/tmpvrhsjijl/new_approach
+
+Testing NEW approach: pack_all_loose(clean_loose_per_pack=True)
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects with frequent cleaning...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 33.857s, Total time: 6.571s
+
+======================================================================
+RESULTS COMPARISON
+======================================================================
+Old approach (pack + clean at end):
+  Pack time:  7.889s
+  Clean time: 1.138s
+  Total time: 9.028s
+
+New approach (clean per pack):
+  Total time: 6.571s
+
+✅ New approach is FASTER by 27.2% (2.457s)
+
+Analysis:
+- The new approach cleans loose objects after each pack is created
+- This should reduce memory pressure and disk space usage during packing
+- Performance difference may depend on filesystem and I/O characteristics
+- The new approach provides more predictable disk space usage
+
+
+❯ python ~/aiida_projects/do-dev/snippets/manual_benchmark.py --file-size 100000 --num-files 10000 --pack-size 10000000
+======================================================================
+Benchmark: clean_loose_per_pack performance comparison
+======================================================================
+Configuration:
+  Number of files: 10,000
+  File size: 100,000 bytes
+  Pack size target: 10,000,000 bytes (10000KB)
+
+Generating test data...
+Generated 10,000 unique files
+Total data size: 999,940,000 bytes (976503.0 KB)
+Expected number of packs: ~99
+
+
+Old approach container: /tmp/tmplxop9el9/old_approach
+Testing OLD approach: pack_all_loose() + clean_storage() at end
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects...
+  After packing: 10000 loose, 10000 packed, 500 pack files
+  Cleaning storage at the end...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 25.981s, Pack time: 6.164s, Clean time: 0.820s, Total: 6.984s
+
+New approach container: /tmp/tmplxop9el9/new_approach
+
+Testing NEW approach: pack_all_loose(clean_loose_per_pack=True)
+  Adding 10000 loose objects...
+  Initial state: 10000 loose, 0 packed, 0 pack files
+  Packing all loose objects with frequent cleaning...
+  Final state: 0 loose, 10000 packed, 500 pack files
+  Add time: 28.384s, Total time: 10.848s
+
+======================================================================
+RESULTS COMPARISON
+======================================================================
+Old approach (pack + clean at end):
+  Pack time:  6.164s
+  Clean time: 0.820s
+  Total time: 6.984s
+
+New approach (clean per pack):
+  Total time: 10.848s
+
+
+Analysis:
+- The new approach cleans loose objects after each pack is created
+- This should reduce memory pressure and disk space usage during packing
+- Performance difference may depend on filesystem and I/O characteristics
+- The new approach provides more predictable disk space usage
+
+~/aiida_/do-dev/git-repos/disk-objectstore/tests feature/delete-loose-af… ⇣1 !1 ?4    1m 7s 󰌠 3.10.12 (do-dev)
+
+
+❯ python ~/aiida_projects/do-dev/snippets/manual_benchmark.py --file-size 10000 --num-files 100000 --pack-size 100000000
+======================================================================
+Benchmark: clean_loose_per_pack performance comparison
+======================================================================
+Configuration:
+  Number of files: 100,000
+  File size: 10,000 bytes
+  Pack size target: 100,000,000 bytes (100000KB)
+
+Generating test data...
+Generated 100,000 unique files
+Total data size: 999,400,000 bytes (975976.0 KB)
+Expected number of packs: ~9
+
+
+Old approach container: /tmp/tmp5ui_pymk/old_approach
+Testing OLD approach: pack_all_loose() + clean_storage() at end
+  Adding 100000 loose objects...
+  Initial state: 100000 loose, 0 packed, 0 pack files
+  Packing all loose objects...
+  After packing: 100000 loose, 100000 packed, 5000 pack files
+  Cleaning storage at the end...
+  Final state: 0 loose, 100000 packed, 5000 pack files
+  Add time: 208.756s, Pack time: 24.897s, Clean time: 5.261s, Total: 30.158s
+
+New approach container: /tmp/tmp5ui_pymk/new_approach
+
+Testing NEW approach: pack_all_loose(clean_loose_per_pack=True)
+  Adding 100000 loose objects...
+  Initial state: 100000 loose, 0 packed, 0 pack files
+  Packing all loose objects with frequent cleaning...
+  Final state: 0 loose, 100000 packed, 5000 pack files
+  Add time: 238.616s, Total time: 29.257s
+
+======================================================================
+RESULTS COMPARISON
+======================================================================
+Old approach (pack + clean at end):
+  Pack time:  24.897s
+  Clean time: 5.261s
+  Total time: 30.158s
+
+New approach (clean per pack):
+  Total time: 29.257s
+
+✅ New approach is FASTER by 3.0% (0.901s)
+
+Analysis:
+- The new approach cleans loose objects after each pack is created
+- This should reduce memory pressure and disk space usage during packing
+- Performance difference may depend on filesystem and I/O characteristics
+- The new approach provides more predictable disk space usage
+
+~/aiida_projects/do-dev/git-repos/disk-objectstore/tests feature/delete-loose-af… ⇣1 !1 ?5                                         7m 45s 󰌠 3.10.12 (do-dev)
+❯
+
+
