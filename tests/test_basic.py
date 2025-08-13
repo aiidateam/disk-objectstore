@@ -6,6 +6,7 @@ This is also a way to verify the behavior of the underlying OS/filesystem.
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -351,3 +352,39 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
         # If I close, I shouldn't need to unlock
         # win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
         os.close(fd)
+
+def test_observe_loose_object_disappearance(temp_container, generate_random_data):
+    """Simple test to observe how loose objects disappear during packing.
+
+    Behavior as files disappear can be observed when running without output capturing via `pytest -s`.
+    """
+
+    num_files = 200
+    pack_size = 20_000
+    file_size = 500
+
+    # Generate test data
+    data_dict = generate_random_data(num_files=num_files, min_size=file_size, max_size=file_size, seed=42)
+    data = list(data_dict.values())
+
+    def count_callback(action, value):
+        """Simple callback that just prints loose object counts."""
+        if action == 'update':
+            counts = temp_container.count_objects()
+            print(f"  Loose: {counts['loose']:3d}, Packed: {counts['packed']:3d}, Pack files: {counts['pack_files']:2d}")
+            # time.sleep(0.1)  # Short time delay to observe changes
+
+    # Test clean loose after each pack
+    temp_container.init_container(clear=True, pack_size_target=pack_size)
+
+    # Add objects
+    for content in data:
+        temp_container.add_object(content)
+
+    print(f"Loose path: {temp_container._get_loose_folder()}")
+
+    # Pack with cleaning per pack
+    temp_container.pack_all_loose(clean_loose_per_pack=True, callback=count_callback)
+    final = temp_container.count_objects()
+    print(f"Final: Loose: {final['loose']}, Packed: {final['packed']}")
+
