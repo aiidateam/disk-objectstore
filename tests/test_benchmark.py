@@ -138,3 +138,135 @@ def test_list_all_loose(temp_container, benchmark):
     results = benchmark(temp_container.list_all_objects)
 
     assert set(results) == set(hashkeys)
+
+
+def add_objects_in_batches(temp_container, data, batch_size=1000):
+    """Add objects to temp_container in batches of 1000."""
+    for i in range(0, len(data), batch_size):
+        batch = data[i:i + batch_size]
+        for content in batch:
+            temp_container.add_object(content)
+
+
+def calculate_target_config(target_packs: int = 100, num_files: int = 10000):
+    """Calculate file size and pack size to achieve target number of packs."""
+    files_per_pack = num_files // target_packs
+
+    scenarios = [
+        {
+            'name': '100KB_packs',
+            'pack_size': 100_000,  # 100KB
+            'file_size': 100_000 // files_per_pack,  # ~1KB per file
+            'description': '100KB packs with ~1KB files',
+        },
+        {
+            'name': '1MB_packs',
+            'pack_size': 1_000_000,  # 1MB
+            'file_size': 1_000_000 // files_per_pack,  # ~10KB per file
+            'description': '1MB packs with ~10KB files',
+        },
+    ]
+    return scenarios
+
+
+@pytest.mark.benchmark(group='clean_loose_comparison')
+@pytest.mark.parametrize('num_files', [10, 100, 1000])
+@pytest.mark.parametrize('config', calculate_target_config(), ids=lambda c: c['name'])
+def test_pack_clean_final_approach_100_packs(benchmark, temp_container, generate_random_data, config, num_files):
+    """Benchmark CLEAN_FINAL approach: pack_all_loose() + clean_storage() at end."""
+
+    pack_size = config['pack_size']
+    file_size = config['file_size']
+
+    # Use existing fixture - much cleaner!
+    data_dict = generate_random_data(
+        num_files=num_files,
+        min_size=file_size,
+        max_size=file_size,
+        seed=42,
+    )
+    data = list(data_dict.values())
+
+    def pack_clean_final_way():
+        # Use standard temp_container fixture
+        temp_container.init_container(clear=True, pack_size_target=pack_size)
+
+        # Add objects in batches
+        add_objects_in_batches(temp_container, data)
+
+        # Verify setup
+        counts = temp_container.count_objects()
+        assert counts['loose'] == num_files, f'Expected {num_files} loose objects, got {counts["loose"]}'
+
+        # CLEAN_FINAL APPROACH: Pack without cleaning during packing
+        temp_container.pack_all_loose(clean_loose_per_pack=False)
+
+        # Then clean storage at the end
+        temp_container.clean_storage()
+
+    result = benchmark(pack_clean_final_way)
+
+    # Verify and add metadata
+    final_counts = temp_container.count_objects()
+    actual_packs = final_counts['pack_files']
+
+    benchmark.extra_info.update({
+        'approach': 'clean_final',
+        'config': config['name'],
+        'description': f"{config['description']} - {num_files} files",
+        'num_files': num_files,
+        'file_size': file_size,
+        'pack_size': pack_size,
+        'actual_packs': actual_packs,
+        'total_data_size': len(data) * file_size,
+    })
+
+
+@pytest.mark.benchmark(group='clean_loose_comparison')
+@pytest.mark.parametrize('num_files', [10, 100, 1000])
+@pytest.mark.parametrize('config', calculate_target_config(), ids=lambda c: c['name'])
+def test_pack_clean_each_approach_100_packs(benchmark, temp_container, generate_random_data, config, num_files):
+    """Benchmark CLEAN_EACH approach: pack_all_loose(clean_loose_per_pack=True)."""
+
+    pack_size = config['pack_size']
+    file_size = config['file_size']
+
+    # Use existing fixture
+    data_dict = generate_random_data(
+        num_files=num_files,
+        min_size=file_size,
+        max_size=file_size,
+        seed=42,  # Same seed for fair comparison
+    )
+    data = list(data_dict.values())
+
+    def pack_clean_each_way():
+        temp_container.init_container(clear=True, pack_size_target=pack_size)
+
+        # Add objects in batches
+        add_objects_in_batches(temp_container, data)
+
+        # Verify setup
+        counts = temp_container.count_objects()
+        assert counts['loose'] == num_files, f'Expected {num_files} loose objects, got {counts["loose"]}'
+
+        # CLEAN_EACH APPROACH: Pack with cleaning after each pack
+        temp_container.pack_all_loose(clean_loose_per_pack=True)
+
+    result = benchmark(pack_clean_each_way)
+
+    # Verify and add metadata
+    final_counts = temp_container.count_objects()
+    actual_packs = final_counts['pack_files']
+
+    benchmark.extra_info.update({
+        'approach': 'clean_each',
+        'config': config['name'],
+        'description': f"{config['description']} - {num_files} files",
+        'num_files': num_files,
+        'file_size': file_size,
+        'pack_size': pack_size,
+        'actual_packs': actual_packs,
+        'total_data_size': len(data) * file_size,
+    })
+
