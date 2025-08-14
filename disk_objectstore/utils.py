@@ -627,14 +627,14 @@ class PackedObjectReader:
         self._update_pos()
         return stream
 
-    def readline(self, limit: int = -1) -> bytes:
+    def readline(self, size: int = -1) -> bytes:
         """Read one line without crossing this object's boundary."""
         remaining = self._length - self._pos
         if remaining <= 0:
             return b''
 
-        size = remaining if (limit is None or limit < 0) else min(limit, remaining)
-        line = self._fhandle.readline(size)
+        readline_size = remaining if (size is None or size < 0) else min(size, remaining)
+        line = self._fhandle.readline(readline_size)
         self._update_pos()
         return line
 
