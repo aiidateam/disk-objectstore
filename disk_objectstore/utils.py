@@ -631,7 +631,7 @@ class PackedObjectReader:
         """Read one line without crossing this object's boundary."""
         remaining = self._length - self._pos
         if remaining <= 0:
-            return b""
+            return b''
 
         size = remaining if (limit is None or limit < 0) else min(limit, remaining)
         line = self._fhandle.readline(size)
