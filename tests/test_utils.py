@@ -922,20 +922,21 @@ def test_packed_object_reader():
         packed_reader = utils.PackedObjectReader(fhandle, offset=offset, length=1000000)
         assert packed_reader.read() == bytestream[offset:]
 
+
 def test_packed_object_reader_readline():
     """Test the readline() behavior of PackedObjectReader."""
-    bytestream = b"000HEADER\nline1\nline2\nlastline_no_nlXXTAIL"
+    bytestream = b'000HEADER\nline1\nline2\nlastline_no_nlXXTAIL'
 
     offset = 3
-    length = len(b"HEADER\nline1\nline2\nlastline_no_nlXX")
+    length = len(b'HEADER\nline1\nline2\nlastline_no_nlXX')
     expected_slice = bytestream[offset : offset + length]
     expected_lines = expected_slice.splitlines(keepends=True)
 
-    with tempfile.NamedTemporaryFile(mode="wb", delete=False) as tempfhandle:
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tempfhandle:
         tempfhandle.write(bytestream)
         fname = tempfhandle.name
 
-    with open(fname, "rb") as fhandle:
+    with open(fname, 'rb') as fhandle:
         pr = utils.PackedObjectReader(fhandle, offset=offset, length=length)
         lines = []
         while True:
@@ -946,10 +947,10 @@ def test_packed_object_reader_readline():
         assert lines == expected_lines
 
         # After EOF, another readline() must return b""
-        assert pr.readline() == b""
+        assert pr.readline() == b''
 
     limit = 4
-    with open(fname, "rb") as fhandle:
+    with open(fname, 'rb') as fhandle:
         pr = utils.PackedObjectReader(fhandle, offset=offset, length=length)
         chunks = []
         while True:
@@ -960,14 +961,13 @@ def test_packed_object_reader_readline():
             assert len(chunk) <= limit
             chunks.append(chunk)
         # Concatenation of limited chunks must equal the original slice
-        assert b"".join(chunks) == expected_slice
+        assert b''.join(chunks) == expected_slice
 
-
-    if not expected_slice.endswith(b"\n") and expected_lines:
+    if not expected_slice.endswith(b'\n') and expected_lines:
         last_from_split = expected_lines[-1]
-        with open(fname, "rb") as fhandle:
+        with open(fname, 'rb') as fhandle:
             pr = utils.PackedObjectReader(fhandle, offset=offset, length=length)
-            last_read = b""
+            last_read = b''
             while True:
                 line = pr.readline()
                 if not line:
