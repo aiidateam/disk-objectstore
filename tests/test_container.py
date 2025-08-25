@@ -42,13 +42,13 @@ def _assert_empty_repo(container):
     counts = container.count_objects()
     assert (
         counts['packed'] == 0
-    ), f"The container should be empty at the beginning (but there are {counts['packed']} packed objects)"
+    ), f'The container should be empty at the beginning (but there are {counts["packed"]} packed objects)'
     assert (
         counts['loose'] == 0
-    ), f"The container should be empty at the beginning (but there are {counts['loose']} loose objects)"
+    ), f'The container should be empty at the beginning (but there are {counts["loose"]} loose objects)'
     assert (
         counts['pack_files'] == 0
-    ), f"The container should be empty at the beginning (but there are {counts['pack_files']} pack files)"
+    ), f'The container should be empty at the beginning (but there are {counts["pack_files"]} pack files)'
 
 
 def _add_objects_loose_loop(container, data):
@@ -127,11 +127,11 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
     counts = temp_container.count_objects()
     assert (
         counts['packed'] == 0
-    ), f"The container should have no packed objects (but there are {counts['packed']} instead)"
+    ), f'The container should have no packed objects (but there are {counts["packed"]} instead)'
     # I check with the length of the set because I could have picked to random identical objects
     assert counts['loose'] == len(
         set(obj_md5s)
-    ), f"The container should have {len(set(obj_md5s))} loose objects (but there are {counts['loose']} instead)"
+    ), f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -191,18 +191,18 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     counts = temp_container.count_objects()
     assert counts['packed'] == len(
         set(obj_md5s)
-    ), f"The container should have {len(set(obj_md5s))} packed objects (but there are {counts['packed']} instead)"
+    ), f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
-        f"The container should still have all {len(set(obj_md5s))} loose objects "
-        f"(but there are {counts['loose']} instead)"
+        f'The container should still have all {len(set(obj_md5s))} loose objects '
+        f'(but there are {counts["loose"]} instead)'
     )
 
     # Clean up and remove loose objects that are already packed
     temp_container.clean_storage()
     counts = temp_container.count_objects()
     # Now there shouldn't be any more loose objects
-    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -238,8 +238,8 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
     counts = temp_container.count_objects()
     assert counts['packed'] == len(
         set(data)
-    ), f"The container should have {len(set(data))} packed objects (but there are {counts['packed']} instead)"
-    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    ), f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
+    assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -496,8 +496,8 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     counts = temp_container.count_objects()
     assert counts['packed'] == len(
         set(data)
-    ), f"The container should have {len(set(data))} packed objects (but there are {counts['packed']} instead)"
-    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    ), f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
+    assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -552,10 +552,10 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
     counts = container.count_objects()
     assert (
         counts['packed'] == 0
-    ), f"The container should have 0 packed objects (but there are {counts['packed']} instead)"
+    ), f'The container should have 0 packed objects (but there are {counts["packed"]} instead)'
     assert counts['loose'] == len(
         set(obj_md5s)
-    ), f"The container should have {len(set(obj_md5s))} loose objects (but there are {counts['loose']} instead)"
+    ), f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
@@ -579,18 +579,18 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
     counts = container.count_objects()
     assert counts['packed'] == len(
         set(obj_md5s)
-    ), f"The container should have {len(set(obj_md5s))} packed objects (but there are {counts['packed']} instead)"
+    ), f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
-        f"The container should still have all {len(set(obj_md5s))} loose objects "
-        f"(but there are {counts['loose']} instead)"
+        f'The container should still have all {len(set(obj_md5s))} loose objects '
+        f'(but there are {counts["loose"]} instead)'
     )
 
     # Clean up and remove loose objects that are already packed
     container.clean_storage()
     counts = container.count_objects()
     # Now there shouldn't be any more loose objects
-    assert counts['loose'] == 0, f"The container should have 0 loose objects (but there are {counts['loose']} instead)"
+    assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
@@ -3093,18 +3093,18 @@ def test_packs_read_in_order(temp_dir):
                 last_offset = 0
             elif meta['pack_id'] != last_pack:
                 assert meta['pack_id'] not in seen_packs, (
-                    f"Objects were already retrieved from pack {meta['pack_id']}, "
-                    f"the last pack was {last_pack} "
-                    f"and we are trying to retrieve again from pack {meta['pack_id']}"
+                    f'Objects were already retrieved from pack {meta["pack_id"]}, '
+                    f'the last pack was {last_pack} '
+                    f'and we are trying to retrieve again from pack {meta["pack_id"]}'
                 )
                 last_pack = meta['pack_id']
                 seen_packs.add(meta['pack_id'])
                 last_offset = 0
             # We are still in the same pack
             assert last_offset <= meta['pack_offset'], (
-                f"in pack {meta['pack_id']} we are reading offset "
-                f"{meta['pack_offset']}, but before we were reading "
-                f"a later offset {last_offset}"
+                f'in pack {meta["pack_id"]} we are reading offset '
+                f'{meta["pack_offset"]}, but before we were reading '
+                f'a later offset {last_offset}'
             )
             last_offset = meta['pack_offset']
 
@@ -3808,7 +3808,7 @@ def test_clean_loose_per_pack_object_disappearance(temp_container, generate_rand
         if action == 'update':
             counts = temp_container.count_objects()
             print(
-                f"  Loose: {counts['loose']:3d}, Packed: {counts['packed']:3d}, Pack files: {counts['pack_files']:2d}"
+                f'  Loose: {counts["loose"]:3d}, Packed: {counts["packed"]:3d}, Pack files: {counts["pack_files"]:2d}'
             )
             # time.sleep(0.1)  # Short time delay to observe changes
 
@@ -3824,4 +3824,4 @@ def test_clean_loose_per_pack_object_disappearance(temp_container, generate_rand
     # Pack with cleaning per pack
     temp_container.pack_all_loose(clean_loose_per_pack=True, callback=count_callback)
     final = temp_container.count_objects()
-    print(f"Final: Loose: {final['loose']}, Packed: {final['packed']}")
+    print(f'Final: Loose: {final["loose"]}, Packed: {final["packed"]}')
