@@ -1253,7 +1253,7 @@ class Container:  # pylint: disable=too-many-public-methods
         validate_objects: bool = True,
         do_fsync: bool = True,
         callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
-        clean_loose_per_pack: bool = False
+        clean_loose_per_pack: bool = False,
     ) -> None:
         """Pack all loose objects.
 
