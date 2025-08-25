@@ -3642,3 +3642,186 @@ def test_lazy_loose_loosen_and_delete(temp_container, num_iterations_delete, mon
         with pytest.raises(RuntimeError) as excinfo:
             lazy_loose.open_stream()
         assert 'Unable to open the loose object' in str(excinfo.value)
+
+
+def test_clean_loose_per_pack(temp_container, generate_random_data):
+    """Unit test: Pack with small pack size to create a few dozen packs, verify that files are deleted progressively.
+
+    Tests that clean_loose_per_pack deletes loose objects in groups during packing,
+    not all at the end. Uses callback to monitor loose object counts.
+    """
+
+    # Configuration to create approximately 32 packs
+    num_objects = 256  # 256 objects
+    object_size = 1024  # 1 KB per object
+    num_objects_per_pack = 8  # Ideal behavior 8 objects per pack -> Will be more as pack_size_target not hard limit
+    pack_size_target = num_objects_per_pack * object_size  # 8 KB pack size to force many packs
+    max_num_packs = (num_objects * object_size) // pack_size_target
+    min_num_packs = int(0.9 * max_num_packs)
+
+    # Generate unique test data
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Add all objects
+    hashkeys = []
+    for content in data_dict.values():
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+
+    # Verify we have the expected number of objects
+    initial_counts = temp_container.count_objects()
+    assert initial_counts['loose'] == num_objects
+    assert initial_counts['packed'] == 0
+    assert initial_counts['pack_files'] == 0
+
+    print(f'Starting: {num_objects} objects ({object_size} bytes each), pack_size_target={pack_size_target} bytes')
+
+    # Track both loose and packed object counts during packing
+    packing_states = []
+
+    def combined_callback(action, value):
+        """Callback to track loose and packed objects during packing."""
+        if action == 'update':
+            counts = temp_container.count_objects()
+            packing_states.append(
+                {'loose': counts['loose'], 'packed': counts['packed'], 'pack_files': counts['pack_files']}
+            )
+
+    # Run packing with clean_loose_per_pack
+    temp_container.pack_all_loose(clean_loose_per_pack=True, callback=combined_callback)
+
+    # Check how many packs we got
+    final_counts = temp_container.count_objects()
+    actual_packs = final_counts['pack_files']
+
+    print(f'Result: Created {actual_packs} packs')
+
+    # Extract loose counts for easier analysis
+    loose_counts_during_packing = [state['loose'] for state in packing_states]
+    print(f'Loose object count progression: {loose_counts_during_packing}')
+
+    # Verify we got a reasonable number of packs
+    # (max. 32, but will be less as pack_size_target is not a strict upper bound)
+    assert (
+        min_num_packs <= actual_packs <= max_num_packs
+    ), f'Expected between {min_num_packs} and {max_num_packs} packs, got {actual_packs}'
+
+    # Verify final state
+    assert final_counts['loose'] == 0, 'All loose objects should be deleted'
+    assert final_counts['packed'] == num_objects, 'All objects should be packed'
+
+    # Verify progressive deletion pattern
+    max_loose = max(loose_counts_during_packing)
+    min_loose = min(loose_counts_during_packing)
+
+    assert max_loose == num_objects, 'Should start with all objects loose'
+    # min_loose might not be 0 due to callback timing, but should be much less than max
+    assert min_loose <= num_objects * 0.05, f'Should see significant reduction during packing: min={min_loose}'
+
+    # Verify we see step-wise decreases (files deleted in groups)
+    unique_loose_counts = sorted(set(loose_counts_during_packing), reverse=True)
+    print(f'Unique loose counts observed: {unique_loose_counts}')
+
+    # Should see at least 3 different loose counts (indicating group deletions)
+    assert len(unique_loose_counts) >= min_num_packs, f'Should see group deletions, got counts: {unique_loose_counts}'
+
+    # Verify the decreases represent meaningful groups (not just 1-by-1)
+    if len(unique_loose_counts) >= 2:
+        decreases = [unique_loose_counts[i] - unique_loose_counts[i + 1] for i in range(len(unique_loose_counts) - 1)]
+        avg_decrease = sum(decreases) / len(decreases)
+        min_decrease = pack_size_target // object_size
+        assert (
+            avg_decrease >= min_decrease
+        ), f'Should see group deletion avg. of at least {min_decrease} objects, got {avg_decrease:.1f}'
+
+    # Most importantly: verify cleanup happens DURING packing, not after
+    # Find when objects start getting packed
+    first_packing_index = None
+    for i, state in enumerate(packing_states):
+        if state['packed'] > 0:
+            first_packing_index = i
+            break
+
+    assert first_packing_index is not None
+
+    # At that point, loose objects should have already decreased
+    loose_when_packing_starts = packing_states[first_packing_index]['loose']
+    assert (
+        loose_when_packing_starts < num_objects
+    ), f'When packing starts, loose objects should have decreased: {loose_when_packing_starts} < {num_objects}'
+
+    objects_cleaned_during_packing = num_objects - loose_when_packing_starts
+    assert (
+        objects_cleaned_during_packing >= num_objects_per_pack
+    ), f'Should clean objects during packing, cleaned: {objects_cleaned_during_packing}'
+
+    # Verify all objects are still accessible and correct
+    for i, hashkey in enumerate(hashkeys):
+        retrieved = temp_container.get_object_content(hashkey)
+        expected = list(data_dict.values())[i]
+        assert retrieved == expected, f'Object {i} content verification failed'
+
+    # Contrast test: Verify default behavior (without clean_loose_per_pack)
+    # Re-create the same scenario to test the default behavior
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Add the same objects again
+    for content in data_dict.values():
+        temp_container.add_object(content)
+
+    # Track loose counts during default packing (clean_loose_per_pack=False)
+    packing_states = []
+
+    # Run packing WITHOUT clean_loose_per_pack (default behavior)
+    temp_container.pack_all_loose(clean_loose_per_pack=False, callback=combined_callback)
+
+    # With default behavior, loose objects should remain constant during packing
+    loose_counts_during_packing = [state['loose'] for state in packing_states]
+    unique_default_loose_counts = sorted(set(loose_counts_during_packing), reverse=True)
+    print(f'`clean_loose_per_pack=False` loose counts: {unique_default_loose_counts}')
+
+    # Should see exactly 1 unique count (all objects remain loose throughout)
+    assert len(unique_default_loose_counts) == 1, (
+        'Default behavior should show only one constant loose count, '
+        f'got {len(unique_default_loose_counts)} unique values: {unique_default_loose_counts}'
+    )
+
+
+def test_clean_loose_per_pack_object_disappearance(temp_container, generate_random_data):
+    """Simple test to observe how loose objects disappear during packing.
+
+    Behavior as files disappear can be observed when running without output capturing via `pytest -s`.
+    """
+
+    num_files = 200
+    pack_size = 20_000
+    file_size = 500
+
+    # Generate test data
+    data_dict = generate_random_data(num_files=num_files, min_size=file_size, max_size=file_size, seed=42)
+    data = list(data_dict.values())
+
+    def count_callback(action, value):
+        """Simple callback that just prints loose object counts."""
+        if action == 'update':
+            counts = temp_container.count_objects()
+            print(
+                f"  Loose: {counts['loose']:3d}, Packed: {counts['packed']:3d}, Pack files: {counts['pack_files']:2d}"
+            )
+            # time.sleep(0.1)  # Short time delay to observe changes
+
+    # Test clean loose after each pack
+    temp_container.init_container(clear=True, pack_size_target=pack_size)
+
+    # Add objects
+    for content in data:
+        temp_container.add_object(content)
+
+    print(f'Loose path: {temp_container._get_loose_folder()}')
+
+    # Pack with cleaning per pack
+    temp_container.pack_all_loose(clean_loose_per_pack=True, callback=count_callback)
+    final = temp_container.count_objects()
+    print(f"Final: Loose: {final['loose']}, Packed: {final['packed']}")
