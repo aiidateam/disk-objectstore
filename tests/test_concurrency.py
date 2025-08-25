@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from itertools import islice
 from pathlib import Path
 
 import pytest
@@ -20,8 +21,11 @@ NUM_WORKERS = 4
 # (VALUE=1 by default) and passed as `concurrency_repetition_index`.
 @pytest.mark.parametrize('with_packing', [True, False])  # If it works with packing, no need to test also without
 @pytest.mark.parametrize('max_size', [1, 1000])
+@pytest.mark.usefixture('concurrency_repetition_index')
 def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, unused-argument
-    temp_dir, with_packing, max_size, concurrency_repetition_index
+    temp_dir,
+    with_packing,
+    max_size,
 ):
     """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
@@ -136,3 +140,96 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
 
     error_string = 'At least one of the concurrent processes failed!\nMessages:\n' + '\n'.join(error_messages)
     assert len(error_messages) == 0, error_string
+
+
+@pytest.mark.parametrize('clean_loose_per_pack', [False, True])
+@pytest.mark.parametrize('max_size', [1, 1000])
+@pytest.mark.usefixture('concurrency_repetition_index')
+def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_per_pack):
+    """Concurrent writers, readers, and a packer, optionally cleaning loose objects per pack."""
+
+    packer_script = CONCURRENT_DIR / 'periodic_packer.py'
+    worker_script = CONCURRENT_DIR / 'periodic_worker.py'
+    reader_script = CONCURRENT_DIR / 'periodic_reader.py'
+
+    container_dir = temp_dir / 'container'
+    container = Container(container_dir)
+    container.init_container()
+
+    shared_dir = temp_dir / 'shared'
+    os.mkdir(shared_dir)
+
+    # Pack command with optional clean_loose_per_pack
+    packer_args = [
+        sys.executable,
+        packer_script,
+        '-p',
+        container_dir,
+        '-r',
+        '5',
+        '-w',
+        '0.5',
+    ]
+    if clean_loose_per_pack:
+        packer_args.append('--clean-per-pack')
+
+    packer_proc = subprocess.Popen(packer_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # Start workers
+    worker_procs = []
+    for worker_id in range(2):  # minimal writers
+        options = [
+            '-r',
+            '5',
+            '-w',
+            '0.5',
+            '-p',
+            container_dir,
+            '-s',
+            shared_dir,
+            '-M',
+            str(max_size),
+        ]
+        worker_procs.append(
+            subprocess.Popen([sys.executable, worker_script] + options, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        )
+
+    # Start a reader
+    reader_proc = subprocess.Popen(
+        [sys.executable, reader_script, '-p', container_dir, '-s', shared_dir, '-r', '5', '-w', '0.5'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # Wait for all processes
+    all_procs = [packer_proc] + worker_procs + [reader_proc]
+    outs_errs = [proc.communicate() for proc in all_procs]
+
+    # Collect errors in the same style
+    error_messages = []
+    for idx, proc in enumerate(all_procs):
+        out, err = outs_errs[idx]
+        if proc.returncode:
+            error_messages.append(f'Process #{idx} failed with return code {proc.returncode}')
+            error_messages.append('STDOUT:\n' + out.decode())
+            error_messages.append('STDERR:\n' + err.decode())
+        elif err:
+            # capture non-fatal stderr output
+            error_messages.append(f'Process #{idx} reported warnings on stderr:\n' + err.decode())
+
+    assert not error_messages, 'Concurrent processes had errors/warnings:\n' + '\n'.join(error_messages)
+
+    # --- Explicit integrity checks ---
+    counts = container.count_objects()
+    total_objects = counts['loose'] + counts['pack_files']
+    # TODO: Maybe compare with total loose objects from beginning
+    assert total_objects > 0, 'No objects written at all'
+
+    # At least one pack file should exist
+    assert counts['pack_files'] > 0, 'Expected at least one pack file after concurrent run'
+
+    # Sample some contents
+    first_objs = list(islice(container.list_all_objects(), 5))
+    for obj_id in first_objs:
+        obj = container.get_object_content(hashkey=obj_id)
+        assert obj, f'Object {obj_id} should exist and be readable'
