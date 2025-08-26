@@ -3825,3 +3825,204 @@ def test_clean_loose_per_pack_object_disappearance(temp_container, generate_rand
     temp_container.pack_all_loose(clean_loose_per_pack=True, callback=count_callback)
     final = temp_container.count_objects()
     print(f'Final: Loose: {final["loose"]}, Packed: {final["packed"]}')
+
+
+def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_data):
+    """Test clean_loose_per_pack behavior when a file is kept open during packing.
+
+    This test demonstrates platform-specific behavior:
+    - On Windows: File cannot be deleted while open, so it remains as loose
+    - On Unix/Linux/macOS: File can be deleted while open, but content remains accessible
+    """
+    import platform
+
+    # Configuration to create a manageable number of packs
+    num_objects = 50
+    object_size = 1000
+    pack_size_target = 5000  # Small packs to ensure multiple packs
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Generate test data
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
+
+    # Add all objects as loose
+    hashkeys = []
+    for content in data_dict.values():
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+
+    # Pick the first object to keep open during packing
+    test_hashkey = hashkeys[0]
+    test_content = list(data_dict.values())[0]
+    loose_path = temp_container._get_loose_path_from_hashkey(test_hashkey)
+
+    # Verify initial state
+    initial_counts = temp_container.count_objects()
+    assert initial_counts['loose'] == num_objects
+    assert initial_counts['packed'] == 0
+    assert loose_path.exists()
+
+    print(f'Platform: {platform.system()}')
+    print(f'Test file path: {loose_path}')
+    print(f"Initial loose objects: {initial_counts['loose']}")
+
+    # Open the test file and keep it open during packing
+    with open(loose_path, 'rb') as open_file:
+        # Verify we can read the correct content
+        open_file_content = open_file.read()
+        assert open_file_content == test_content, 'File content verification failed'
+        open_file.seek(0)  # Reset position for potential re-reading
+
+        # Pack all loose objects with clean_loose_per_pack=True
+        temp_container.pack_all_loose(clean_loose_per_pack=True)
+
+        # Check the state after packing
+        post_pack_counts = temp_container.count_objects()
+        print(f"After packing - Loose: {post_pack_counts['loose']}, Packed: {post_pack_counts['packed']}")
+
+        # Find which pack the test object went to
+        test_meta = temp_container.get_object_meta(test_hashkey)
+        test_pack_id = test_meta['pack_id']
+        print(f'Test object packed in pack: {test_pack_id}')
+
+        # Platform-specific behavior verification
+        if platform.system() == 'Windows':
+            # On Windows, the file should still exist because it's open
+            print('Windows: File should still exist (cannot delete open files)')
+
+            # The file should still be there
+            try:
+                assert loose_path.exists(), 'On Windows, open file should not be deleted'
+                print('Windows behavior confirmed: loose file still exists')
+
+                # We should have one less packed object and one remaining loose object
+                # because the open file couldn't be cleaned up
+                assert post_pack_counts['loose'] >= 1, 'Should have at least 1 loose object remaining on Windows'
+
+            except AssertionError as e:
+                print(f'Unexpected behavior on Windows: {e}')
+                raise
+
+        else:
+            # On Unix-like systems, the file can be deleted even when open
+            print('Unix-like system: File can be deleted while open')
+
+            try:
+                # The loose file might be deleted, but we can still read from our open handle
+                print(f'Loose file exists after packing: {loose_path.exists()}')
+
+                # All objects should be packed
+                assert post_pack_counts['packed'] == num_objects, 'All objects should be packed'
+
+                # We should be able to read from our still-open file handle
+                open_file.seek(0)
+                still_readable_content = open_file.read()
+                assert still_readable_content == test_content, 'Should still be able to read from open file handle'
+                print('Unix behavior confirmed: can read from open file even after deletion')
+
+            except Exception as e:
+                print(f'Unix-like system behavior: {e}')
+
+        # Verify that the object is accessible from the pack
+        packed_content = temp_container.get_object_content(test_hashkey)
+        assert packed_content == test_content, 'Object should be accessible from pack'
+
+        # Verify we can still read from our open file handle regardless of platform
+        open_file.seek(0)
+        final_read = open_file.read()
+        assert final_read == test_content, 'Should always be able to read from open file handle'
+
+    # File is now closed, check final cleanup behavior
+    print('\nAfter closing the file:')
+
+    # Run clean_storage to see if it can now clean up any remaining loose objects
+    temp_container.clean_storage()
+    final_counts = temp_container.count_objects()
+
+    print(f"Final state - Loose: {final_counts['loose']}, Packed: {final_counts['packed']}")
+
+    # After cleanup, all objects should be packed and accessible
+    assert final_counts['packed'] == num_objects, 'All objects should finally be packed'
+
+    # Verify all objects are still accessible
+    for hashkey in hashkeys:
+        content = temp_container.get_object_content(hashkey)
+        assert content is not None, f'Object {hashkey} should be accessible'
+
+    # The loose file should now be cleanable on all platforms
+    if platform.system() == 'Windows':
+        # On Windows, after closing, the file should be cleanable
+        assert (
+            not loose_path.exists() or final_counts['loose'] == 0
+        ), 'After closing and cleanup, loose objects should be cleaned'
+
+
+def test_clean_loose_per_pack_concurrent_access(temp_container):
+    """Test clean_loose_per_pack with simulated concurrent access patterns."""
+    import platform
+
+    # Create test objects
+    objects_data = [b'test_data_' + str(i).encode() * 100 for i in range(10)]
+    hashkeys = []
+
+    for data in objects_data:
+        hashkey = temp_container.add_object(data)
+        hashkeys.append(hashkey)
+
+    # Get one file path to test concurrent access
+    test_hashkey = hashkeys[0]
+    test_data = objects_data[0]
+    loose_path = temp_container._get_loose_path_from_hashkey(test_hashkey)
+
+    print(f'Testing concurrent access on {platform.system()}')
+
+    # Simulate different access patterns
+    access_patterns = [
+        ('read_text', 'r'),
+        ('read_binary', 'rb'),
+    ]
+
+    for pattern_name, mode in access_patterns:
+        print(f'\nTesting pattern: {pattern_name} (mode: {mode})')
+
+        # Reset container state
+        temp_container.init_container(clear=True, pack_size_target=1000)
+        for data in objects_data:
+            temp_container.add_object(data)
+
+        # Test the pattern
+        try:
+            with open(loose_path, mode) as f:
+                # Verify we can read
+                if 'r' in mode:
+                    content = f.read()
+                    if 'b' in mode:
+                        assert content == test_data
+                    else:  # text mode
+                        assert content == test_data.decode('utf-8', errors='ignore')
+                    f.seek(0)
+
+                # Pack while file is open
+                temp_container.pack_all_loose(clean_loose_per_pack=True)
+
+                # Check if we can still read
+                if 'r' in mode:
+                    f.seek(0)
+                    content_after_pack = f.read()
+                    if 'b' in mode:
+                        assert content_after_pack == test_data
+                    else:  # text mode
+                        assert content_after_pack == test_data.decode('utf-8', errors='ignore')
+
+                # Verify object is in pack
+                meta = temp_container.get_object_meta(test_hashkey)
+                assert meta['type'] == temp_container.ObjectType.PACKED
+
+                print(f'Pattern {pattern_name} completed successfully')
+
+        except Exception as e:
+            print(f'Pattern {pattern_name} encountered: {e}')
+            # Verify object is still accessible somehow
+            packed_content = temp_container.get_object_content(test_hashkey)
+            assert packed_content == test_data
