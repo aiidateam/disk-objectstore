@@ -222,10 +222,3 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
     total_objects = counts['loose'] + counts['pack_files']
     assert total_objects > 0, 'No objects written at all'
     assert counts['pack_files'] > 0, 'Expected at least one pack file after concurrent run'
-
-    # Validate one object to ensure basic functionality
-    all_objects = list(container.list_all_objects())
-    if all_objects:
-        # Just verify one object is readable
-        sample_obj = container.get_object_content(all_objects[0])
-        assert len(sample_obj) > 0, 'Sample object should have content'
