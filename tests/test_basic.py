@@ -353,6 +353,11 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
         os.close(fd)
 
 
+def test_clean_loose_objects_empty(temp_container):
+    result = temp_container._clean_loose_objects([])
+    assert result is None
+
+
 def test_clean_loose_objects_file_not_found(temp_container):
     """Test _clean_loose_objects when loose file doesn't exist."""
     # Create a fake hashkey that won't have a corresponding loose file
