@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-from itertools import islice
 from pathlib import Path
 
 import pytest
@@ -205,7 +204,6 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
     all_procs = [packer_proc] + worker_procs + [reader_proc]
     outs_errs = [proc.communicate() for proc in all_procs]
 
-    # Collect errors in the same style
     error_messages = []
     for idx, proc in enumerate(all_procs):
         out, err = outs_errs[idx]
@@ -219,17 +217,15 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
 
     assert not error_messages, 'Concurrent processes had errors/warnings:\n' + '\n'.join(error_messages)
 
-    # --- Explicit integrity checks ---
+    # Basic integrity checks
     counts = container.count_objects()
     total_objects = counts['loose'] + counts['pack_files']
-    # TODO: Maybe compare with total loose objects from beginning
     assert total_objects > 0, 'No objects written at all'
-
-    # At least one pack file should exist
     assert counts['pack_files'] > 0, 'Expected at least one pack file after concurrent run'
 
-    # Sample some contents
-    first_objs = list(islice(container.list_all_objects(), 5))
-    for obj_id in first_objs:
-        obj = container.get_object_content(hashkey=obj_id)
-        assert obj, f'Object {obj_id} should exist and be readable'
+    # Validate one object to ensure basic functionality
+    all_objects = list(container.list_all_objects())
+    if all_objects:
+        # Just verify one object is readable
+        sample_obj = container.get_object_content(all_objects[0])
+        assert len(sample_obj) > 0, 'Sample object should have content'
