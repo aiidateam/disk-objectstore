@@ -351,3 +351,83 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
         # If I close, I shouldn't need to unlock
         # win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
         os.close(fd)
+
+
+def test_clean_loose_objects_file_not_found(temp_container):
+    """Test _clean_loose_objects when loose file doesn't exist."""
+    # Create a fake hashkey that won't have a corresponding loose file
+    fake_hashkey = 'a' * 64  # Valid hex string of typical hash length
+
+    # This should hit the FileNotFoundError exception
+    temp_container._clean_loose_objects([fake_hashkey])
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='PermissionError test only relevant on Windows')
+def test_clean_loose_objects_permission_error_windows(temp_container, lock_file_on_windows):
+    """Test _clean_loose_objects when file is locked (Windows only)."""
+    # Create a loose object
+    content = b'test content'
+    hashkey = temp_container.add_object(content)
+
+    # Verify the loose file exists
+    loose_path = temp_container._get_loose_path_from_hashkey(hashkey)
+    assert loose_path.exists()
+
+    # Lock the file on Windows
+    fd = os.open(loose_path, os.O_RDONLY)
+    try:
+        lock_file_on_windows(fd)
+
+        # This should hit the PermissionError exception path on line 1485
+        temp_container._clean_loose_objects([hashkey])
+
+        # File should still exist since it was locked
+        assert loose_path.exists()
+    finally:
+        os.close(fd)
+
+
+def test_clean_loose_objects_successful_cleanup(temp_container):
+    """Test _clean_loose_objects successfully removes loose files."""
+    # Create some loose objects
+    contents = [b'content1', b'content2', b'content3']
+    hashkeys = []
+    loose_paths = []
+
+    for content in contents:
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+        loose_paths.append(temp_container._get_loose_path_from_hashkey(hashkey))
+
+    # Verify all loose files exist
+    for path in loose_paths:
+        assert path.exists()
+
+    # Clean up the loose objects
+    temp_container._clean_loose_objects(hashkeys)
+
+    # Verify all loose files are removed
+    for path in loose_paths:
+        assert not path.exists()
+
+
+def test_clean_loose_objects_mixed_scenarios(temp_container):
+    """Test _clean_loose_objects with mix of existing and non-existing files."""
+    # Create one real loose object
+    content = b'real content'
+    real_hashkey = temp_container.add_object(content)
+    real_path = temp_container._get_loose_path_from_hashkey(real_hashkey)
+    assert real_path.exists()
+
+    # Create fake hashkeys
+    fake_hashkey1 = 'b' * 64
+    fake_hashkey2 = 'c' * 64
+
+    # Mix real and fake hashkeys
+    mixed_hashkeys = [fake_hashkey1, real_hashkey, fake_hashkey2]
+
+    # This should handle both successful deletion and FileNotFoundError
+    temp_container._clean_loose_objects(mixed_hashkeys)
+
+    # Real file should be deleted, fake ones just ignored
+    assert not real_path.exists()
