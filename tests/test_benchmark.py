@@ -200,27 +200,6 @@ def run_clean_each_approach(temp_container):
     temp_container.pack_all_loose(clean_loose_per_pack=True)
 
 
-def add_benchmark_metadata(
-    benchmark, approach, config_name, description, num_files, file_size, pack_size, temp_container
-):
-    """Helper function to add metadata to benchmark results."""
-    final_counts = temp_container.count_objects()
-    actual_packs = final_counts['pack_files']
-
-    benchmark.extra_info.update(
-        {
-            'approach': approach,
-            'config': config_name,
-            'description': f'{description} - {num_files} files - {approach}',
-            'num_files': num_files,
-            'file_size': file_size,
-            'pack_size': pack_size,
-            'actual_packs': actual_packs,
-            'total_data_size': num_files * file_size,
-        }
-    )
-
-
 def create_benchmark_test(config_name, pack_size, file_size, description, num_files, approach):
     """Generic helper to create a benchmark test."""
 
@@ -232,9 +211,6 @@ def create_benchmark_test(config_name, pack_size, file_size, description, num_fi
         else:  # clean_each
             result = benchmark(run_clean_each_approach, temp_container)
 
-        add_benchmark_metadata(
-            benchmark, approach, config_name, description, num_files, file_size, pack_size, temp_container
-        )
         return result
 
     return test_function
@@ -256,10 +232,6 @@ def test_clean_loose_10_files_100KB_packs(benchmark, temp_container, generate_ra
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
 
-    add_benchmark_metadata(
-        benchmark, approach, '100KB_packs', '100KB packs with ~10KB files', 10, 10000, 100000, temp_container
-    )
-
 
 @pytest.mark.benchmark(group='10_files_1MB_packs')
 @pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
@@ -271,10 +243,6 @@ def test_clean_loose_10_files_1MB_packs(benchmark, temp_container, generate_rand
         _ = benchmark(run_clean_final_approach, temp_container)
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
-
-    add_benchmark_metadata(
-        benchmark, approach, '1MB_packs', '1MB packs with ~100KB files', 10, 100000, 1000000, temp_container
-    )
 
 
 # =============================================================================
@@ -299,10 +267,6 @@ def test_clean_loose_100_files_100KB_packs(benchmark, temp_container, generate_r
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
 
-    add_benchmark_metadata(
-        benchmark, approach, '100KB_packs', '100KB packs with ~1KB files', 100, 1000, 100000, temp_container
-    )
-
 
 @pytest.mark.benchmark(group='100_files_1MB_packs')
 @pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
@@ -320,10 +284,6 @@ def test_clean_loose_100_files_1MB_packs(benchmark, temp_container, generate_ran
         _ = benchmark(run_clean_final_approach, temp_container)
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
-
-    add_benchmark_metadata(
-        benchmark, approach, '1MB_packs', '1MB packs with ~10KB files', 100, 10000, 1000000, temp_container
-    )
 
 
 # =============================================================================
@@ -348,10 +308,6 @@ def test_clean_loose_1000_files_100KB_packs(benchmark, temp_container, generate_
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
 
-    add_benchmark_metadata(
-        benchmark, approach, '100KB_packs', '100KB packs with ~1KB files', 1000, 1000, 100000, temp_container
-    )
-
 
 @pytest.mark.benchmark(group='1000_files_1MB_packs')
 @pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
@@ -369,7 +325,3 @@ def test_clean_loose_1000_files_1MB_packs(benchmark, temp_container, generate_ra
         _ = benchmark(run_clean_final_approach, temp_container)
     else:  # clean_each
         _ = benchmark(run_clean_each_approach, temp_container)
-
-    add_benchmark_metadata(
-        benchmark, approach, '1MB_packs', '1MB packs with ~10KB files', 1000, 10000, 1000000, temp_container
-    )

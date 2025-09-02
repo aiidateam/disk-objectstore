@@ -1464,7 +1464,6 @@ class Container:  # pylint: disable=too-many-public-methods
             # Then, it would be safe to already do some clean up of loose objects that are now packed,
             # and by doing it here we would do it after each pack.
             # This would mean keeping track of the loose objects added to packs, and removing them.
-            # HOWEVER, while this would work fine on Linux, there are concurrency issues both
         if callback:
             callback(action='close', value=None)
 
