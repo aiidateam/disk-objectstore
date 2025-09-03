@@ -427,7 +427,7 @@ def test_clean_loose_objects_permission_error_windows(temp_container, lock_file_
     try:
         lock_file_on_windows(fd)
 
-        # This should hit the PermissionError exception path on line 1485
+        # This should hit the PermissionError exception path
         temp_container._clean_loose_objects([hashkey])
 
         # File should still exist since it was locked

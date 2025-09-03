@@ -3652,8 +3652,8 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     """
 
     # Configuration to create approximately 32 packs
-    num_objects = 256  # 256 objects
-    object_size = 1024  # 1 KB per object
+    num_objects = 256
+    object_size = 1024  # 1 KiB per object
     num_objects_per_pack = 8  # Ideal behavior 8 objects per pack -> Will be more as pack_size_target not hard limit
     pack_size_target = num_objects_per_pack * object_size  # 8 KB pack size to force many packs
     max_num_packs = (num_objects * object_size) // pack_size_target
@@ -3736,7 +3736,7 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
             avg_decrease >= min_decrease
         ), f'Should see group deletion avg. of at least {min_decrease} objects, got {avg_decrease:.1f}'
 
-    # Most importantly: verify cleanup happens DURING packing, not after
+    # Verify cleanup happens DURING packing, not after
     # Find when objects start getting packed
     first_packing_index = None
     for i, state in enumerate(packing_states):
@@ -3838,8 +3838,8 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
 
     # Configuration to create a manageable number of packs
     num_objects = 50
-    object_size = 1000
-    pack_size_target = 5000  # Small packs to ensure multiple packs
+    object_size = 1_000
+    pack_size_target = 5_000  # Small packs to ensure multiple packs
 
     temp_container.init_container(clear=True, pack_size_target=pack_size_target)
 
@@ -3954,7 +3954,7 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
     if platform.system() == 'Windows':
         # On Windows, after closing, the file should be cleanable
         assert (
-            not loose_path.exists() or final_counts['loose'] == 0
+            not loose_path.exists() and final_counts['loose'] == 0
         ), 'After closing and cleanup, loose objects should be cleaned'
 
 
@@ -3987,7 +3987,7 @@ def test_clean_loose_per_pack_concurrent_access(temp_container):
         print(f'\nTesting pattern: {pattern_name} (mode: {mode})')
 
         # Reset container state
-        temp_container.init_container(clear=True, pack_size_target=1000)
+        temp_container.init_container(clear=True, pack_size_target=1_000)
         for data in objects_data:
             temp_container.add_object(data)
 
