@@ -3645,19 +3645,17 @@ def test_lazy_loose_decompress_closed(temp_container):
     temp_container.clean_storage()
 
     # LazyLooseStream will never be opened
-    with temp_container.get_objects_stream_and_meta([hashkey]) as triplets:
-        for _, stream, _ in triplets:
-            assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
-            assert not stream.closed
+    with temp_container.get_object_stream(hashkey) as stream:
+        assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
+        assert not stream.closed
     assert stream.closed
 
     # LazyLooseStream will be opened
-    with temp_container.get_objects_stream_and_meta([hashkey]) as triplets:
-        for _, stream, _ in triplets:
-            assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
-            # LazyLooseStream is still closed at this point
-            assert not stream.closed
-            stream.seek(-1, whence=2)
-            # LazyLooseStream should now be opened
-            assert not stream.closed
+    with temp_container.get_object_stream(hashkey) as stream:
+        assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
+        # LazyLooseStream is still closed at this point
+        assert not stream.closed
+        stream.seek(-1, whence=2)
+        # LazyLooseStream should now be opened
+        assert not stream.closed
     assert stream.closed

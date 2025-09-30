@@ -1003,29 +1003,8 @@ def test_packed_object_reader_mode():
 
         assert hasattr(reader, 'mode')
         assert reader.mode == handle.mode
-
-
-def test_packed_object_reader_readable():
-    """Test the ``PackedObjectReader.readable`` function."""
-    with tempfile.TemporaryFile() as handle:
-        reader = utils.PackedObjectReader(handle, 0, 0)
-
         assert reader.readable()
-
-
-def test_packed_object_reader_writable():
-    """Test the ``PackedObjectReader.writable`` function."""
-    with tempfile.TemporaryFile() as handle:
-        reader = utils.PackedObjectReader(handle, 0, 0)
-
         assert not reader.writable()
-
-
-def test_packed_object_reader_closed():
-    """Test the ``PackedObjectReader.closed`` property."""
-    with tempfile.TemporaryFile() as handle:
-        reader = utils.PackedObjectReader(handle, 0, 0)
-
         assert not reader.closed
     assert reader.closed
 
