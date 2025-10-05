@@ -1003,6 +1003,10 @@ def test_packed_object_reader_mode():
 
         assert hasattr(reader, 'mode')
         assert reader.mode == handle.mode
+        assert reader.readable()
+        assert not reader.writable()
+        assert not reader.closed
+    assert reader.closed
 
 
 def test_packed_object_reader_context_man(tmp_path):
@@ -1057,10 +1061,15 @@ def test_stream_decompresser(compression_algorithm):
     for original, compressed_stream in zip(original_data, compressed_streams):
         decompresser = StreamDecompresser(compressed_stream)
         assert decompresser.mode == 'rb'
+        assert decompresser.readable()
+        assert not decompresser.writable()
+        assert not decompresser.closed
         # Read in one chunk
         with decompresser as handle:
             chunk = handle.read()
         assert original == chunk
+        compressed_stream.close()
+        assert decompresser.closed
 
     # Redo the same, but do a read of zero bytes first, checking that
     # it returns a zero-length bytes, and that it does not move the offset
@@ -1483,6 +1492,9 @@ def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
         wrapped = utils.CallbackStreamWrapper(fhandle, callback=None)
 
         assert wrapped.mode == 'rb+'
+        assert wrapped.readable()
+        assert not wrapped.writable()
+        assert not wrapped.closed
         assert wrapped.seekable()
         # Seek forward; read from byte 1
         wrapped.seek(1)
@@ -1494,6 +1506,7 @@ def test_callback_stream_wrapper_none():  # pylint: disable=invalid-name
         assert wrapped.read() == b'abc'
 
         wrapped.close_callback()
+    assert wrapped.closed
 
 
 @pytest.mark.parametrize('with_total_length', [True, False])
@@ -1518,6 +1531,9 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
             wrapped = utils.CallbackStreamWrapper(fhandle, callback=callback_instance.callback, description=description)
 
         assert wrapped.mode == 'rb+'
+        assert wrapped.readable()
+        assert not wrapped.writable()
+        assert not wrapped.closed
         assert wrapped.seekable()
         # Seek forward; read from byte 10
         wrapped.seek(10)
@@ -1559,6 +1575,7 @@ def test_callback_stream_wrapper(callback_instance, with_total_length):
             'value': 2,
         },
     ]
+    assert wrapped.closed
 
 
 @pytest.mark.parametrize('open_streams', [True, False])

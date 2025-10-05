@@ -539,6 +539,18 @@ class PackedObjectReader:
         return self._fhandle.mode
 
     @staticmethod
+    def readable() -> bool:
+        return True
+
+    @staticmethod
+    def writable() -> bool:
+        return False
+
+    @property
+    def closed(self) -> bool:
+        return self._fhandle.closed
+
+    @staticmethod
     def seekable() -> bool:
         """Return whether object supports random access."""
         return True
@@ -660,6 +672,18 @@ class CallbackStreamWrapper:
     @property
     def mode(self) -> str:
         return self._stream.mode
+
+    @staticmethod
+    def readable() -> bool:
+        return True
+
+    @staticmethod
+    def writable() -> bool:
+        return False
+
+    @property
+    def closed(self) -> bool:
+        return self._stream.closed
 
     def seekable(self) -> bool:
         """Return whether object supports random access."""
@@ -797,6 +821,20 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
     @property
     def mode(self) -> str:
         return getattr(self._compressed_stream, 'mode', 'rb')
+
+    @staticmethod
+    def readable() -> bool:
+        return True
+
+    @staticmethod
+    def writable() -> bool:
+        return False
+
+    @property
+    def closed(self) -> bool:
+        return self._compressed_stream.closed and (
+            self._lazy_uncompressed_stream is None or self._lazy_uncompressed_stream.closed
+        )
 
     def read(self, size: int = -1) -> bytes:
         """
