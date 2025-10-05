@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744894117568,
+  "lastUpdate": 1759647538281,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -12945,6 +12945,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.715369770375508e-9",
             "extra": "mean: 131.48692016531433 nsec\nrounds: 74767"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "github.3es4l@slmail.me",
+            "name": "Arnold Kole",
+            "username": "ahkole"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1c73d64137e1b093918337609cb6c8a6dece4a7b",
+          "message": "Add `readable`, `writable`, and `closed` properties to stream classes for TextIOWrapper compatibility  (#192)\n\nThis commit adds the minimal set of properties required for wrapping stream \nobjects in `TextIOWrapper` to enable text-mode streaming access to files in \nthe disk-objectstore.\n\nThe following properties have been added to three stream classes:\n- `PackedObjectReader`\n- `CallbackStreamWrapper`\n- `ZlibLikeBaseStreamDecompresser`\n\nThese properties are:\n- `readable`: Returns if stream is readable\n- `writable`: Returns if stream is writable (always False here for read-only stream classes)\n- `closed`: Returns whether the stream is closed\n\nWhile only `PackedObjectReader` is actively used in practice for text-mode \nstreaming in AiiDA, the properties were added to all three classes due to \ntype union requirements enforced by pre-commit hooks.",
+          "timestamp": "2025-10-05T08:58:19+02:00",
+          "tree_id": "0c6438ad09d8bd76f0ceb3ab4454970c0b64ac65",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/1c73d64137e1b093918337609cb6c8a6dece4a7b"
+        },
+        "date": 1759647536596,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 4.825622610304181,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013013252942791128",
+            "extra": "mean: 207.22714575 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 4.133234346228432,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016762186264520595",
+            "extra": "mean: 241.94127799999964 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 14.322370602976283,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0053636504625158695",
+            "extra": "mean: 69.82084374999997 msec\nrounds: 16"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 35.57443194996085,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0015948564090594614",
+            "extra": "mean: 28.110076399999993 msec\nrounds: 30"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 6.368784953080266,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008804757652207808",
+            "extra": "mean: 157.0158212857147 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 6654669.011415775,
+            "unit": "iter/sec",
+            "range": "stddev: 4.4658042765734125e-8",
+            "extra": "mean: 150.27043392907916 nsec\nrounds: 68767"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 6937671.25713524,
+            "unit": "iter/sec",
+            "range": "stddev: 3.78195303685102e-8",
+            "extra": "mean: 144.14058593093398 nsec\nrounds: 71220"
           }
         ]
       }
