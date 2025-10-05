@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1759647552220,
+  "lastUpdate": 1759647911999,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -19528,6 +19528,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 7.451746186917137e-8",
             "extra": "mean: 180.6826282337798 nsec\nrounds: 181819"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "github.3es4l@slmail.me",
+            "name": "Arnold Kole",
+            "username": "ahkole"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1c73d64137e1b093918337609cb6c8a6dece4a7b",
+          "message": "Add `readable`, `writable`, and `closed` properties to stream classes for TextIOWrapper compatibility  (#192)\n\nThis commit adds the minimal set of properties required for wrapping stream \nobjects in `TextIOWrapper` to enable text-mode streaming access to files in \nthe disk-objectstore.\n\nThe following properties have been added to three stream classes:\n- `PackedObjectReader`\n- `CallbackStreamWrapper`\n- `ZlibLikeBaseStreamDecompresser`\n\nThese properties are:\n- `readable`: Returns if stream is readable\n- `writable`: Returns if stream is writable (always False here for read-only stream classes)\n- `closed`: Returns whether the stream is closed\n\nWhile only `PackedObjectReader` is actively used in practice for text-mode \nstreaming in AiiDA, the properties were added to all three classes due to \ntype union requirements enforced by pre-commit hooks.",
+          "timestamp": "2025-10-05T08:58:19+02:00",
+          "tree_id": "0c6438ad09d8bd76f0ceb3ab4454970c0b64ac65",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/1c73d64137e1b093918337609cb6c8a6dece4a7b"
+        },
+        "date": 1759647900376,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.1202690199087488,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005506818604541923",
+            "extra": "mean: 892.6427333333335 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.06962989254178834,
+            "unit": "iter/sec",
+            "range": "stddev: 0.29970089172304926",
+            "extra": "mean: 14.3616479 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.657736387866407,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009983619503801788",
+            "extra": "mean: 93.82855454545465 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 10.75082931897355,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0030472568267943217",
+            "extra": "mean: 93.01608000000101 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 1.9949365849558225,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006217486889681768",
+            "extra": "mean: 501.2690666666705 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5464902.941547905,
+            "unit": "iter/sec",
+            "range": "stddev: 4.471880073886461e-8",
+            "extra": "mean: 182.98586648199728 nsec\nrounds: 196079"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5409682.450534412,
+            "unit": "iter/sec",
+            "range": "stddev: 4.987817049106124e-8",
+            "extra": "mean: 184.85373386411175 nsec\nrounds: 192308"
           }
         ]
       }
