@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1759647538281,
+  "lastUpdate": 1759647552220,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -6508,6 +6508,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 2.3067237361509364e-8",
             "extra": "mean: 190.6762359276877 nsec\nrounds: 194175"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "github.3es4l@slmail.me",
+            "name": "Arnold Kole",
+            "username": "ahkole"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1c73d64137e1b093918337609cb6c8a6dece4a7b",
+          "message": "Add `readable`, `writable`, and `closed` properties to stream classes for TextIOWrapper compatibility  (#192)\n\nThis commit adds the minimal set of properties required for wrapping stream \nobjects in `TextIOWrapper` to enable text-mode streaming access to files in \nthe disk-objectstore.\n\nThe following properties have been added to three stream classes:\n- `PackedObjectReader`\n- `CallbackStreamWrapper`\n- `ZlibLikeBaseStreamDecompresser`\n\nThese properties are:\n- `readable`: Returns if stream is readable\n- `writable`: Returns if stream is writable (always False here for read-only stream classes)\n- `closed`: Returns whether the stream is closed\n\nWhile only `PackedObjectReader` is actively used in practice for text-mode \nstreaming in AiiDA, the properties were added to all three classes due to \ntype union requirements enforced by pre-commit hooks.",
+          "timestamp": "2025-10-05T08:58:19+02:00",
+          "tree_id": "0c6438ad09d8bd76f0ceb3ab4454970c0b64ac65",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/1c73d64137e1b093918337609cb6c8a6dece4a7b"
+        },
+        "date": 1759647551008,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.8908658432281307,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013345071896082783",
+            "extra": "mean: 257.012202499979 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 1.600500108055418,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04064225577305702",
+            "extra": "mean: 624.8047063333123 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.893257371346659,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008857304287646094",
+            "extra": "mean: 91.79990574998935 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 35.844373862406506,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006854858550737049",
+            "extra": "mean: 27.89838103571388 msec\nrounds: 28"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 5.080817154326022,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010030496932520096",
+            "extra": "mean: 196.81873400001373 msec\nrounds: 6"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5571698.546190766,
+            "unit": "iter/sec",
+            "range": "stddev: 2.319666213483108e-8",
+            "extra": "mean: 179.47848249680843 nsec\nrounds: 197668"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5397317.841585651,
+            "unit": "iter/sec",
+            "range": "stddev: 2.680484835002297e-8",
+            "extra": "mean: 185.27721163558527 nsec\nrounds: 199243"
           }
         ]
       }
