@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.0 (6 October 2025)
+
+- Add `readable`, `writable`, and `closed` properties to stream classes for TextIOWrapper compatibility  [\[1c73d64\]](https://github.com/aiidateam/disk-objectstore/commit/1c73d64137e1b093918337609cb6c8a6dece4a7b)
+
 ## v1.3.0 (17 April 2025)
 
 - Change API of `database.get_session` to always raise an error [\[6686ad0\]](https://github.com/aiidateam/disk-objectstore/commit/6686ad0c3280bf90e1954b3b8052ec999e8532be)
