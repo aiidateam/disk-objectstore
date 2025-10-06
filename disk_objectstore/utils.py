@@ -627,6 +627,17 @@ class PackedObjectReader:
         self._update_pos()
         return stream
 
+    def readline(self, size: int = -1) -> bytes:
+        """Read one line without crossing this object's boundary."""
+        remaining = self._length - self._pos
+        if remaining <= 0:
+            return b''
+
+        readline_size = remaining if (size is None or size < 0) else min(size, remaining)
+        line = self._fhandle.readline(readline_size)
+        self._update_pos()
+        return line
+
     def __enter__(self) -> PackedObjectReader:
         """Use as context manager."""
         return self
