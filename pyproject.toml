@@ -43,6 +43,10 @@ dev = [
     'pytest~=8.4',
     'pytest-benchmark~=5.2',
     'pytest-cov~=7.0',
+    'mypy~=1.19.0',
+    "sqlalchemy[mypy]>=1.4.22",
+    'types-psutil',
+    'types-tqdm',
 ]
 docs = [
     'jinja2<3.1',
