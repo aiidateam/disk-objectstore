@@ -27,7 +27,7 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
         # Set up 'ssh localhost' that is used in testing the backup command
         # skipped for windows, as it doesn't support this setup or the backup command
       - name: set up 'ssh localhost'
@@ -37,29 +37,24 @@ jobs:
           ssh -v localhost
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5.2.1
+        uses: astral-sh/setup-uv@v7
         with:
-          version: 0.5.22
+          version: 0.9.5
           python-version: ${{ matrix.python-version }}
-      - name: Check if uv.lock file up to date with pyproject.toml
-        run: uv sync --locked --extra dev --extra progressbar --extra optionaltests --extra examples
-        shell: bash
       - name: Install dependencies from uv lock
-        # I'm using pip install -e to make sure that the coverage properly traces the runs
-        # also of the concurrent tests (maybe we can achieve this differently)
-        run: uv pip install -e .[dev,examples,progressbar,optionaltests]
-
+        # We assert that uv.lock is up-to-date
+        run: uv sync --locked
 
       - name: Test with pytest
         # No need to run the benchmarks, they will run in a different workflow
         # Also, run in very verbose mode so if there is an error we get a complete diff
-        run: pytest -vv --cov=disk_objectstore --benchmark-skip
+        run: uv run pytest -vv --cov=disk_objectstore --benchmark-skip
         env:
           SQLALCHEMY_WARN_20: 1
       - name: Create xml coverage
         run: coverage xml
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           name: disk-objectstore
           files: ./coverage.xml
