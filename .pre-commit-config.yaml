@@ -52,10 +52,14 @@ repos:
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix, --show-fixes]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1
+  - repo: local
     hooks:
-    - id: mypy
-      additional_dependencies:
-      - "sqlalchemy[mypy]==1.4.29"
-      files: ^(disk_objectstore/.*py)$
+      - id: mypy
+        name: mypy
+        entry: mypy
+        args: [--config-file=pyproject.toml, --pretty, disk_objectstore/]
+        language: python
+        types: [python]
+        require_serial: true
+        pass_filenames: false
+        files: ^(disk_objectstore/.*py)$
