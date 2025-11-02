@@ -4,7 +4,7 @@ a number of methods.
 """
 
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
     from .container import ObjectType
@@ -113,10 +113,10 @@ class ValidationIssues:
         have some overlap
     """
 
-    invalid_hashes_loose: List[str]
-    invalid_hashes_packed: List[str]
-    invalid_sizes_packed: List[str]
-    overlapping_packed: List[str]
+    invalid_hashes_loose: list[str]
+    invalid_hashes_packed: list[str]
+    invalid_sizes_packed: list[str]
+    overlapping_packed: list[str]
 
     def __getitem__(self, item: str) -> Union[str, int, bool, None]:
         """Return members using dictionary access.
