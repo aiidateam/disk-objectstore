@@ -923,6 +923,7 @@ def test_packed_object_reader():
         assert packed_reader.read() == bytestream[offset:]
 
 
+# TODO: add test for `\r`, as well
 def test_packed_object_reader_readline():
     """Test the readline() behavior of PackedObjectReader."""
     bytestream = b'000HEADER\nline1\nline2\nlastline_no_nlXXTAIL'
