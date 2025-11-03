@@ -1282,6 +1282,8 @@ class Container:  # pylint: disable=too-many-public-methods
             In case of "update", the value is amount of the operation that has been completed.
             In case of "close", the value is None.
             return value of the callback function is ignored.
+        :param clean_loose_per_pack: if True, the loose files that went into a `pack` are deleted immediately after this
+            `pack` is created.
         """
         hash_type = self.hash_type if validate_objects else None
 
@@ -1471,7 +1473,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Clean up specific loose objects that have been successfully packed.
 
         :param hashkeys: List of hashkeys to clean up from loose objects.
-                        These should be objects that were just packed.
+            These should be objects that were just packed.
         """
         if not hashkeys:
             return

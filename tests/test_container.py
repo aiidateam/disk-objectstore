@@ -3865,7 +3865,7 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
 
     print(f'Platform: {platform.system()}')
     print(f'Test file path: {loose_path}')
-    print(f"Initial loose objects: {initial_counts['loose']}")
+    print(f'Initial loose objects: {initial_counts["loose"]}')
 
     # Open the test file and keep it open during packing
     with open(loose_path, 'rb') as open_file:
@@ -3879,7 +3879,7 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
 
         # Check the state after packing
         post_pack_counts = temp_container.count_objects()
-        print(f"After packing - Loose: {post_pack_counts['loose']}, Packed: {post_pack_counts['packed']}")
+        print(f'After packing - Loose: {post_pack_counts["loose"]}, Packed: {post_pack_counts["packed"]}')
 
         # Find which pack the test object went to
         test_meta = temp_container.get_object_meta(test_hashkey)
@@ -3940,7 +3940,7 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
     temp_container.clean_storage()
     final_counts = temp_container.count_objects()
 
-    print(f"Final state - Loose: {final_counts['loose']}, Packed: {final_counts['packed']}")
+    print(f'Final state - Loose: {final_counts["loose"]}, Packed: {final_counts["packed"]}')
 
     # After cleanup, all objects should be packed and accessible
     assert final_counts['packed'] == num_objects, 'All objects should finally be packed'
