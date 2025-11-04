@@ -2568,9 +2568,9 @@ class Container:  # pylint: disable=too-many-public-methods
         # At least one object. Let's repack. We have checked before that the
         # REPACK_PACK_ID did not exist.
         if callback:
-            callback(  # type: ignore[call-arg]
-                action='init',
-                value={
+            callback(
+                'init',
+                {
                     'total': self.get_total_size()['total_size_packed'],
                     'description': f'Repack {pack_id}',
                 },
@@ -2671,14 +2671,14 @@ class Container:  # pylint: disable=too-many-public-methods
                     # I will assume that all objects of a single pack fit in memory
                     obj_dicts.append(obj_dict)
                     if callback:
-                        callback(action='update', value=obj_dict['size'])  # type: ignore[call-arg]
+                        callback('update', obj_dict['size'])
             # safe flush to disk seems to be a time consuming operation, but no easy way to include in the progress bar
             safe_flush_to_disk(
                 write_pack_handle,
                 self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True),
             )
         if callback:
-            callback(action='close', value=None)  # type: ignore[call-arg]
+            callback('close', None)
         # We are done with data transfer.
         # At this stage we just have a new pack -1 (_REPACK_PACK_ID) but it is never referenced.
         # Let us store the information in the DB.
