@@ -54,8 +54,6 @@ jobs:
         run: uv run pytest -vv --cov=disk_objectstore --benchmark-skip
         env:
           SQLALCHEMY_WARN_20: 1
-      - name: Create xml coverage
-        run: coverage xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

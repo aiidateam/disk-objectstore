@@ -431,8 +431,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "coverage", version = "7.10.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "coverage", version = "7.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
@@ -471,18 +469,17 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = "~=8.1.0" },
-    { name = "coverage", marker = "extra == 'dev'" },
     { name = "h5py", marker = "extra == 'optionaltests'" },
     { name = "jinja2", marker = "extra == 'docs'", specifier = "<3.1" },
     { name = "memory-profiler", marker = "extra == 'examples'" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = "~=1.0" },
     { name = "numpy", marker = "extra == 'optionaltests'" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">3.0" },
     { name = "profilehooks", marker = "extra == 'examples'" },
     { name = "psutil", marker = "extra == 'examples'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "~=8.4" },
-    { name = "pytest-benchmark", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = "~=5.2" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = "~=7.0" },
     { name = "pywin32", marker = "sys_platform == 'win32' and extra == 'examples'" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = "~=5.0.2" },
     { name = "sphinx-book-theme", marker = "extra == 'docs'", specifier = "~=1.1.3" },

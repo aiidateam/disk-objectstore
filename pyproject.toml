@@ -39,11 +39,10 @@ Source = 'https://github.com/aiidateam/disk-objectstore'
 
 [project.optional-dependencies]
 dev = [
-    'coverage',
-    'pre-commit',
+    'pre-commit>3.0',
     'pytest~=8.4',
-    'pytest-benchmark',
-    'pytest-cov',
+    'pytest-benchmark~=5.2',
+    'pytest-cov~=7.0',
 ]
 docs = [
     'jinja2<3.1',
@@ -75,6 +74,13 @@ dostore = 'disk_objectstore.cli:main'
 [dependency-groups]
 dev = [
   "disk_objectstore[dev,docs,examples,progressbar,optionaltests]"
+]
+
+[tool.pytest.ini_options]
+addopts = '--strict-config --strict-markers -ra --cov-report xml --cov-append'
+minversion = '7.0'
+testpaths = [
+    'test',
 ]
 
 [tool.flit.module]
