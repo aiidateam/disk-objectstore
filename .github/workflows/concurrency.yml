@@ -10,6 +10,9 @@ on:
   # run every day at 05:00 UTC
   - cron: "0 5 * * *"
 
+env:
+  FORCE_COLOR: 1
+
 jobs:
   tests:
     runs-on: ${{ matrix.os }}

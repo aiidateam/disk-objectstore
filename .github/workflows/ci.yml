@@ -5,6 +5,9 @@ name: Continuous integration
 
 on: [push, pull_request]
 
+env:
+  FORCE_COLOR: 1
+
 jobs:
   pre-commit:
     runs-on: ubuntu-latest
