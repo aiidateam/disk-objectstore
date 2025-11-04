@@ -80,7 +80,7 @@ dev = [
 addopts = '--strict-config --strict-markers -ra --cov-report xml --cov-append'
 minversion = '7.0'
 testpaths = [
-    'test',
+    'tests',
 ]
 
 [tool.flit.module]
