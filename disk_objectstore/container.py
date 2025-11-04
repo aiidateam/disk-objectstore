@@ -53,12 +53,11 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
     from typing import (
         Any,
         Callable,
-        Iterator,
         Literal,
-        Sequence,
     )
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
@@ -509,7 +508,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
     ) -> Iterator[tuple[str, ObjectMeta]]: ...
@@ -517,14 +516,14 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
     ) -> Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]: ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: bool,
     ) -> Iterator[(tuple[str, ObjectMeta] | tuple[str, StreamSeekBytesType | None, ObjectMeta])]:
@@ -539,7 +538,7 @@ class Container:  # pylint: disable=too-many-public-methods
         :note: do not use directly! Call always the proper public methods. This is only
             for internal use
 
-        :param hashkeys: a list of hash keys for which we want to get a stream reader
+        :param hashkeys: an iterable of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
             (i.e., neither packed nor loose). If False, return ``None`` instead of the
             stream.
@@ -804,7 +803,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     @contextmanager
     def get_objects_stream_and_meta(
-        self, hashkeys: Sequence[str], skip_if_missing: bool = True
+        self, hashkeys: Iterable[str], skip_if_missing: bool = True
     ) -> Iterator[Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]]:
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
@@ -846,7 +845,7 @@ class Container:  # pylint: disable=too-many-public-methods
         return LazyLooseStream(container=self, hashkey=hashkey)
 
     def get_objects_meta(
-        self, hashkeys: Sequence[str], skip_if_missing: bool = True
+        self, hashkeys: Iterable[str], skip_if_missing: bool = True
     ) -> Iterator[tuple[str, ObjectMeta]]:
         """A generator yielding pairs of (hashkey, metadata).
 
@@ -2013,7 +2012,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-arguments
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         source_container: Container,
         compress: bool = False,
         target_memory_bytes: int = 104857600,
