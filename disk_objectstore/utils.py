@@ -184,9 +184,9 @@ class LazyLooseStream:
         """
         if self.closed:
             raise ValueError('I/O operation on closed file.')
-        assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
-        )
+        assert (
+            self._stream is not None
+        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
 
         return self._stream.seek(target, whence)
 
@@ -194,9 +194,9 @@ class LazyLooseStream:
         """Return current stream position, relative to the internal offset."""
         if self.closed:
             raise ValueError('I/O operation on closed file.')
-        assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
-        )
+        assert (
+            self._stream is not None
+        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
         return self._stream.tell()
 
     def read(self, size: int = -1) -> bytes:
@@ -211,10 +211,30 @@ class LazyLooseStream:
         """
         if self.closed:
             raise ValueError('I/O operation on closed file.')
-        assert self._stream is not None, (
-            'LazyLooseStream has an open stream, but the stream is None! ' 'This should not happen'
-        )
+        assert (
+            self._stream is not None
+        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
         return self._stream.read(size)
+
+    def readline(self, size: int = -1) -> bytes:
+        """Read and return one line from the stream."""
+        if self.closed:
+            msg = 'I/O operation on closed file.'
+            raise ValueError(msg)
+        assert (
+            self._stream is not None
+        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
+        return self._stream.readline(size)
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        """Read and return a list of lines from the stream."""
+        if self.closed:
+            msg = 'I/O operation on closed file.'
+            raise ValueError(msg)
+        assert (
+            self._stream is not None
+        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
+        return self._stream.readlines(hint)
 
     def __enter__(self) -> LazyLooseStream:
         """Use as context manager. Opens the underlying stream, possibly uncompressing to a loose object."""
@@ -514,6 +534,8 @@ class PackedObjectReader:
     length of the given object.
     """
 
+    # TODO: Remove StreamSeekBytesType
+    # def __init__(self, fhandle: BufferedReader | BinaryIO, offset: int, length: int) -> None:
     def __init__(self, fhandle: StreamSeekBytesType, offset: int, length: int) -> None:
         """
         Initialises the reader to a pack file.
@@ -633,10 +655,41 @@ class PackedObjectReader:
         if remaining <= 0:
             return b''
 
-        readline_size = remaining if (size is None or size < 0) else min(size, remaining)
+        readline_size = remaining if size < 0 else min(size, remaining)
         line = self._fhandle.readline(readline_size)
         self._update_pos()
         return line
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        """Read and return a list of lines from the stream.
+
+        If hint is specified and positive, return lines until approximately
+        hint bytes have been read.
+
+        :param hint: Optional hint for the number of bytes to read.
+            If hint is -1 (default), read all remaining lines.
+        :return: A list of lines (bytes objects).
+        """
+        if hint is None or hint <= 0:
+            # Read all remaining lines
+            lines = []
+            while True:
+                line = self.readline()
+                if not line:
+                    break
+                lines.append(line)
+            return lines
+
+        # Read lines until hint bytes consumed
+        lines = []
+        bytes_read = 0
+        while bytes_read < hint:
+            line = self.readline()
+            if not line:
+                break
+            lines.append(line)
+            bytes_read += len(line)
+        return lines
 
     def __enter__(self) -> PackedObjectReader:
         """Use as context manager."""
@@ -750,6 +803,54 @@ class CallbackStreamWrapper:
 
         return data
 
+    def readline(self, size: int = -1) -> bytes:
+        """Read and return one line from the stream.
+
+        Updates the callback with the number of bytes read.
+
+        :param size: If specified and positive, at most size bytes will be read.
+        :return: A line from the stream (including the trailing newline if present).
+        """
+        line = self._stream.readline(size)
+
+        if self._callback:
+            self._since_last_update += len(line)
+            if self._since_last_update >= self._update_every:
+                self._callback(action='update', value=self._since_last_update)
+                self._since_last_update = 0
+
+        return line
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        """Read and return a list of lines from the stream.
+
+        Updates the callback with the total number of bytes read.
+
+        :param hint: Optional hint for the number of bytes to read.
+            If hint is -1 (default), read all remaining lines.
+        :return: A list of lines (bytes objects).
+        """
+        if hint is None or hint <= 0:
+            # Read all remaining lines
+            lines = []
+            while True:
+                line = self.readline()
+                if not line:
+                    break
+                lines.append(line)
+            return lines
+
+        # Read lines until hint bytes consumed
+        lines = []
+        bytes_read = 0
+        while bytes_read < hint:
+            line = self.readline()
+            if not line:
+                break
+            lines.append(line)
+            bytes_read += len(line)
+        return lines
+
     def __enter__(self) -> CallbackStreamWrapper:
         """Use as context manager."""
         return self
@@ -854,9 +955,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # Once an uncompressed_stream is set, this is used and we
         # don't use anymore the compressed one.
         if self._use_uncompressed_stream:
-            assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
-            )
+            assert (
+                self._lazy_uncompressed_stream is not None
+            ), 'Using internally an uncompressed stream, but it is None! This should not happen'
             return self._lazy_uncompressed_stream.read(size)
         return self._read_compressed(size)
 
@@ -930,6 +1031,84 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
         return to_return
 
+    def readline(self, size: int = -1) -> bytes:
+        """Read and return a line of bytes from the stream.
+
+        Uses internal buffer optimization for efficient reading.
+        The line terminator is always b'\\n' for binary streams.
+
+        :param size: If specified and positive, at most size bytes will be read.
+        :return: A line from the stream (including the trailing newline if present).
+        """
+        # If using uncompressed stream, delegate to it
+        if self._use_uncompressed_stream:
+            assert (
+                self._lazy_uncompressed_stream is not None
+            ), 'Using internally an uncompressed stream, but it is None! This should not happen'
+            return self._lazy_uncompressed_stream.readline(size)
+
+        res = bytearray()
+        while size < 0 or len(res) < size:
+            # Read chunks sized to internal buffer for efficiency
+            # This leverages the already-decompressed data
+            bytes_to_read = max(1, len(self._internal_buffer))
+            if size >= 0:
+                # Don't read more than needed
+                bytes_to_read = min(bytes_to_read, size - len(res))
+
+            b = self.read(bytes_to_read)
+            if not b:
+                # EOF reached
+                break
+
+            # Search for newline in what we just read
+            newline_pos = b.find(b'\n')
+            if newline_pos != -1:
+                # Found newline! Only take up to and including it
+                res += b[: newline_pos + 1]
+                # Put excess data back into internal buffer
+                excess = b[newline_pos + 1 :]
+                if excess:
+                    self._internal_buffer = excess + self._internal_buffer
+                    self._pos -= len(excess)
+                break
+
+            # No newline found, accumulate all data
+            res += b
+
+        return bytes(res)
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        """Read and return a list of lines from the stream.
+
+        If hint is specified and positive, return lines until approximately
+        hint bytes have been read.
+
+        :param hint: Optional hint for the number of bytes to read.
+            If hint is -1 (default), read all remaining lines.
+        :return: A list of lines (bytes objects).
+        """
+        if hint is None or hint <= 0:
+            # Read all remaining lines
+            lines = []
+            while True:
+                line = self.readline()
+                if not line:
+                    break
+                lines.append(line)
+            return lines
+
+        # Read lines until hint bytes consumed
+        lines = []
+        bytes_read = 0
+        while bytes_read < hint:
+            line = self.readline()
+            if not line:
+                break
+            lines.append(line)
+            bytes_read += len(line)
+        return lines
+
     def __enter__(self) -> ZlibLikeBaseStreamDecompresser:
         """Use as context manager."""
         return self
@@ -961,9 +1140,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
     def tell(self) -> int:
         """Return current position in file."""
         if self._use_uncompressed_stream:
-            assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
-            )
+            assert (
+                self._lazy_uncompressed_stream is not None
+            ), 'Using internally an uncompressed stream, but it is None! This should not happen'
             return self._lazy_uncompressed_stream.tell()
         return self._pos
 
@@ -1027,9 +1206,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # Seek to the desired location as requested
         # If we are using the uncompressed stream, I just proxy the request
         if self._use_uncompressed_stream:
-            assert self._lazy_uncompressed_stream is not None, (
-                'Using internally an uncompressed stream, but it is None! ' 'This should not happen'
-            )
+            assert (
+                self._lazy_uncompressed_stream is not None
+            ), 'Using internally an uncompressed stream, but it is None! This should not happen'
             return self._lazy_uncompressed_stream.seek(target, whence)
 
         # Here I implement the slow version without uncompressed stream
