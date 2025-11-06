@@ -1,14 +1,14 @@
 #!/usr/bin/env python
-# coding: utf-8
 
 # In[1]:
 
 
 import time
-import numpy
-import disk_objectstore as dos
 import zlib
 
+import numpy
+
+import disk_objectstore as dos
 
 # In[2]:
 

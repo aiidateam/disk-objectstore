@@ -3,14 +3,13 @@
 Run with: pytest tests/test_benchmark_readline.py --benchmark-only
 Or with grouping: pytest tests/test_benchmark_readline.py --benchmark-only --benchmark-group-by=func
 """
+
 import io
 import os
-import zlib
 
 import pytest
 
-import disk_objectstore.utils as utils
-
+from disk_objectstore import utils
 
 # Test data sizes
 SMALL_SIZE_KB = 100  # 100 KB

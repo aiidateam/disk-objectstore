@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-# coding: utf-8
 
 # In[1]:
 
 
 import disk_objectstore as dos
-
 
 # In[12]:
 
@@ -17,7 +15,7 @@ cont.init_container(clear=True)
 # In[14]:
 
 
-b = b"gkdflfdjk\nabecsa\n"
+b = b'gkdflfdjk\nabecsa\n'
 added = cont.add_object(b)
 added
 
@@ -54,7 +52,7 @@ cont.pack_all_loose(compress=True)
 
 with cont.get_object_stream(added) as fhandle:
     while True:
-        line = fhandle.readline() 
+        line = fhandle.readline()
         if not line:
             break
         print(line)
@@ -64,4 +62,3 @@ with cont.get_object_stream(added) as fhandle:
 
 
 type(fhandle)
-
