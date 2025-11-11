@@ -1458,14 +1458,14 @@ class Container:  # pylint: disable=too-many-public-methods
             # Note: because of the logic above, in theory this should not raise an IntegrityError!
             session.commit()
 
-            # Clean up loose objects for this pack if requested
-            if clean_loose_per_pack and packed_in_current_pack:
-                self._clean_loose_objects(packed_in_current_pack)
-
             # If we are here, things should be guaranteed by SQLite to be written to disk.
             # Then, it would be safe to already do some clean up of loose objects that are now packed,
             # and by doing it here we would do it after each pack.
             # This would mean keeping track of the loose objects added to packs, and removing them.
+
+            # Clean up loose objects for this pack if requested
+            if clean_loose_per_pack and packed_in_current_pack:
+                self._clean_loose_objects(packed_in_current_pack)
         if callback:
             callback(action='close', value=None)
 
