@@ -1253,7 +1253,7 @@ class Container:  # pylint: disable=too-many-public-methods
         validate_objects: bool = True,
         do_fsync: bool = True,
         callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
-        clean_loose_per_pack: bool = False,
+        clean_loose_per_pack: bool = False,  # TODO: Make this the default with next major version
     ) -> None:
         """Pack all loose objects.
 
@@ -1475,8 +1475,6 @@ class Container:  # pylint: disable=too-many-public-methods
         :param hashkeys: List of hashkeys to clean up from loose objects.
             These should be objects that were just packed.
         """
-        if not hashkeys:
-            return
 
         # Simply remove the loose files for the given hashkeys
         # We trust that the caller has already ensured these are packed
@@ -1577,9 +1575,9 @@ class Container:  # pylint: disable=too-many-public-methods
             operations! (See e.g. the `import_files()` method).
         :return: a list of object hash keys
         """
-        assert isinstance(
-            compress, bool
-        ), 'Only True of False are valid `compress` modes when adding direclty to a pack'
+        assert isinstance(compress, bool), (
+            'Only True of False are valid `compress` modes when adding direclty to a pack'
+        )
         yield_per_size = 1000
         hashkeys: list[str] = []
 
@@ -1904,9 +1902,9 @@ class Container:  # pylint: disable=too-many-public-methods
             # This always rewrites it as loose
             written_hashkey = self.add_streamed_object(stream)
 
-        assert (
-            written_hashkey == hashkey
-        ), 'Mismatch in the hashkey when rewriting an existing object as loose! {written_hashkey} vs {hashkey}'
+        assert written_hashkey == hashkey, (
+            'Mismatch in the hashkey when rewriting an existing object as loose! {written_hashkey} vs {hashkey}'
+        )
         return self._get_loose_path_from_hashkey(hashkey)
 
     def _vacuum(self) -> None:
@@ -2575,14 +2573,14 @@ class Container:  # pylint: disable=too-many-public-methods
             In case of "close", the value is None.
             return value of the callback function is ignored.
         """
-        assert (
-            pack_id != self._REPACK_PACK_ID
-        ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
+        assert pack_id != self._REPACK_PACK_ID, (
+            f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
+        )
 
         # Check that it does not exist
-        assert not self._get_pack_path_from_pack_id(
-            self._REPACK_PACK_ID, allow_repack_pack=True
-        ).exists(), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
+        assert not self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True).exists(), (
+            f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
+        )
 
         session = self._get_operation_session()
 

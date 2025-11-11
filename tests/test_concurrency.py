@@ -145,11 +145,14 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
 @pytest.mark.parametrize('max_size', [1, 1000])
 @pytest.mark.usefixture('concurrency_repetition_index')
 def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_per_pack):
-    """Concurrent writers, readers, and a packer, optionally cleaning loose objects per pack."""
+    """Concurrent workers (which write AND read) and a packer, optionally cleaning loose objects per pack.
+
+    Note: periodic_worker.py already performs extensive reading of all objects written by all workers,
+    so no separate reader process is needed.
+    """
 
     packer_script = CONCURRENT_DIR / 'periodic_packer.py'
     worker_script = CONCURRENT_DIR / 'periodic_worker.py'
-    reader_script = CONCURRENT_DIR / 'periodic_reader.py'
 
     container_dir = temp_dir / 'container'
     container = Container(container_dir)
@@ -174,9 +177,9 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
 
     packer_proc = subprocess.Popen(packer_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    # Start workers
+    # Start workers (they write AND read)
     worker_procs = []
-    for worker_id in range(2):  # minimal writers
+    for worker_id in range(2):
         options = [
             '-r',
             '5',
@@ -193,15 +196,8 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
             subprocess.Popen([sys.executable, worker_script] + options, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         )
 
-    # Start a reader
-    reader_proc = subprocess.Popen(
-        [sys.executable, reader_script, '-p', container_dir, '-s', shared_dir, '-r', '5', '-w', '0.5'],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
     # Wait for all processes
-    all_procs = [packer_proc] + worker_procs + [reader_proc]
+    all_procs = [packer_proc] + worker_procs
     outs_errs = [proc.communicate() for proc in all_procs]
 
     error_messages = []
