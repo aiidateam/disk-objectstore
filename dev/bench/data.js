@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1759737425899,
+  "lastUpdate": 1762944453637,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -13237,6 +13237,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 1.741584492533209e-8",
             "extra": "mean: 139.816924777748 nsec\nrounds: 71003"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "danekhollas@gmail.com",
+            "name": "Daniel Hollas",
+            "username": "danielhollas"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b0a120e69a67914b30a0f26846c69008827c8b69",
+          "message": "Typing fixes (#196)\n\n* Change `hashkeys` parameter type from `Sequence[str]` to\n  `Iterable[str]` in relevant methods, since the implementation converts\n  to a `set` internally and order doesn't matter. This allows callers\n  (in `aiida-core`) to pass sets directly without mypy complaints.\n\n* Remove deprecated `mypy_extensions.Arg` annotations from callback\n  signatures and change all callback invocations from keyword arguments\n  to positional arguments to match the `Callable[[str, Any], None]`\n  type.\n\n* Move `Iterator` and `Iterable` imports from `typing` to\n  `collections.abc`\n\n* Fix relative import in `dataclasses.py` TYPE_CHECKING block",
+          "timestamp": "2025-11-12T11:46:52+01:00",
+          "tree_id": "c4a8cd5eb777cec627536715df49e2715aa08b4b",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/b0a120e69a67914b30a0f26846c69008827c8b69"
+        },
+        "date": 1762944451993,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 5.1616866069072405,
+            "unit": "iter/sec",
+            "range": "stddev: 0.010458082374834698",
+            "extra": "mean: 193.73512499999998 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 4.462311205324656,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016565059910456887",
+            "extra": "mean: 224.09911680000025 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 13.679906599842187,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008252399292957667",
+            "extra": "mean: 73.09991429411778 msec\nrounds: 17"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 33.01689107828998,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003885857730455218",
+            "extra": "mean: 30.287527606060493 msec\nrounds: 33"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 6.528604050860017,
+            "unit": "iter/sec",
+            "range": "stddev: 0.020099503128449717",
+            "extra": "mean: 153.17210114285754 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 6490367.324729213,
+            "unit": "iter/sec",
+            "range": "stddev: 1.5434458685199185e-7",
+            "extra": "mean: 154.07448453490156 nsec\nrounds: 195122"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 7044471.231191958,
+            "unit": "iter/sec",
+            "range": "stddev: 2.723156714453101e-8",
+            "extra": "mean: 141.9552961720624 nsec\nrounds: 72728"
           }
         ]
       }
