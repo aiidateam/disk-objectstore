@@ -30,7 +30,7 @@ jobs:
     - name: Set up uv
       uses: astral-sh/setup-uv@v7
       with:
-        version: 0.9.4
+        version: 0.9.9
         python-version: 3.9
 
     - name: Install dependencies from uv lock
