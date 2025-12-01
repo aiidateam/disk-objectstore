@@ -1464,7 +1464,7 @@ class Container:  # pylint: disable=too-many-public-methods
             if clean_loose_per_pack and packed_in_current_pack:
                 self._clean_loose_objects(packed_in_current_pack)
         if callback:
-            callback(action='close', value=None)
+            callback('close', None)
 
     def _clean_loose_objects(self, hashkeys: list[str]) -> None:
         """Clean up specific loose objects that have been successfully packed.
