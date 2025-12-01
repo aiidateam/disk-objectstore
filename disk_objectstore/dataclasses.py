@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, List, Optional, Union
 
 if TYPE_CHECKING:
-    from container import ObjectType
+    from .container import ObjectType
 
 
 @dataclass(frozen=True)
