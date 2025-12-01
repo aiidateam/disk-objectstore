@@ -243,7 +243,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the SQLite file containing the index of packed objects."""
         return self._folder / f'packs{self._PACK_INDEX_SUFFIX}'
 
-    def _get_pack_id_to_write_to(self) -> int:
+    def _get_pack_id_to_write_to(self, known_size: int | None = None) -> int:
         """Return the pack ID to write the next object.
 
         This function checks that there is a pack file with the current pack ID.
@@ -260,9 +260,14 @@ class Container:  # pylint: disable=too-many-public-methods
             if not pack_path.exists():
                 # Use this ID - the pack file does not exist yet
                 break
-            if pack_path.stat().st_size < self.pack_size_target:
+            if not known_size:
+                if pack_path.stat().st_size < self.pack_size_target:
+                    # Use this ID - the pack file is not "full" yet
+                    break
+            elif known_size < self.pack_size_target:
                 # Use this ID - the pack file is not "full" yet
                 break
+
             # Try the next pack
             pack_id += 1
 
@@ -1267,8 +1272,8 @@ class Container:  # pylint: disable=too-many-public-methods
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
         :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
-            Set to False if you don't need such a guarantee (anyway the loose version will be kept,
-            so often this guarantee is not strictly needed).
+            Set to False if you don't need such a guarantee (major risk of data loss if this is set to False, and power
+            supply stops during packing operation).
         :param callback: a callback function that can be used to report progress.
             The callback function should accept two arguments: a string with the action being performed
             and the value of the action. The action can be "init" (initialization),
@@ -1358,7 +1363,14 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 while loose_objects:
                     # Check in which pack I need to write to the next object
-                    pack_int_id = self._get_pack_id_to_write_to()
+                    pack_int_id = self._get_pack_id_to_write_to(pack_handle.tell())
+                    # print(
+                    #     pack_int_id,
+                    #     last_pack_int_id,
+                    #     self._get_pack_path_from_pack_id(pack_int_id).stat().st_size,
+                    #     self.pack_size_target,
+                    #     pack_handle.tell()
+                    # )
                     if pack_int_id != last_pack_int_id:
                         # new pack file needed!
                         # Break from the inner while loop. This will:
@@ -1406,6 +1418,13 @@ class Container:  # pylint: disable=too-many-public-methods
                         # This might happen if the file is being written and is locked.
                         # In this case, don't pack this file. We will pack it in a future call.
                         continue
+
+                    # safe_flush_to_disk(
+                    #     pack_handle,
+                    #     Path(pack_handle.name).resolve(),
+                    #     use_fullsync=False,
+                    # )
+
                     if hash_type and new_hashkey != loose_hashkey:
                         raise InconsistentContent(
                             f"Error when packing object '{loose_hashkey}': "
@@ -1548,9 +1567,9 @@ class Container:  # pylint: disable=too-many-public-methods
             operations! (See e.g. the `import_files()` method).
         :return: a list of object hash keys
         """
-        assert isinstance(
-            compress, bool
-        ), 'Only True of False are valid `compress` modes when adding direclty to a pack'
+        assert isinstance(compress, bool), (
+            'Only True of False are valid `compress` modes when adding direclty to a pack'
+        )
         yield_per_size = 1000
         hashkeys: list[str] = []
 
@@ -1875,9 +1894,9 @@ class Container:  # pylint: disable=too-many-public-methods
             # This always rewrites it as loose
             written_hashkey = self.add_streamed_object(stream)
 
-        assert (
-            written_hashkey == hashkey
-        ), 'Mismatch in the hashkey when rewriting an existing object as loose! {written_hashkey} vs {hashkey}'
+        assert written_hashkey == hashkey, (
+            'Mismatch in the hashkey when rewriting an existing object as loose! {written_hashkey} vs {hashkey}'
+        )
         return self._get_loose_path_from_hashkey(hashkey)
 
     def _vacuum(self) -> None:
@@ -2546,14 +2565,14 @@ class Container:  # pylint: disable=too-many-public-methods
             In case of "close", the value is None.
             return value of the callback function is ignored.
         """
-        assert (
-            pack_id != self._REPACK_PACK_ID
-        ), f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
+        assert pack_id != self._REPACK_PACK_ID, (
+            f"The specified pack_id '{pack_id}' is invalid, it is the one used for repacking"
+        )
 
         # Check that it does not exist
-        assert not self._get_pack_path_from_pack_id(
-            self._REPACK_PACK_ID, allow_repack_pack=True
-        ).exists(), f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
+        assert not self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True).exists(), (
+            f"The repack pack '{self._REPACK_PACK_ID}' already exists, probably a previous repacking aborted?"
+        )
 
         session = self._get_operation_session()
 
