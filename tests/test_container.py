@@ -3657,7 +3657,7 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     num_objects = 256
     object_size = 1024  # 1 KiB per object
     num_objects_per_pack = 8  # Ideal behavior 8 objects per pack -> Will be more as pack_size_target not hard limit
-    pack_size_target = num_objects_per_pack * object_size  -1 # 8 KB pack size to force many packs
+    pack_size_target = num_objects_per_pack * object_size - 1  # 8 KB pack size to force many packs
     max_num_packs = (num_objects * object_size) // pack_size_target
     min_num_packs = int(0.9 * max_num_packs)  # Crude estimate, as assertion for num_packs cannot be made exact.
 
