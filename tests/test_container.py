@@ -3657,7 +3657,7 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     num_objects = 256
     object_size = 1024  # 1 KiB per object
     num_objects_per_pack = 8  # Ideal behavior 8 objects per pack -> Will be more as pack_size_target not hard limit
-    pack_size_target = num_objects_per_pack * object_size  # 8 KB pack size to force many packs
+    pack_size_target = num_objects_per_pack * object_size  -1 # 8 KB pack size to force many packs
     max_num_packs = (num_objects * object_size) // pack_size_target
     min_num_packs = int(0.9 * max_num_packs)  # Crude estimate, as assertion for num_packs cannot be made exact.
 
@@ -3665,6 +3665,7 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
 
     temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+    print(temp_container.get_folder())
 
     # Add all objects
     hashkeys = []
@@ -3706,6 +3707,7 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
 
     # Verify we got a reasonable number of packs
     # (max. 32, but will be less as pack_size_target is not a strict upper bound)
+    # breakpoint()
     assert (
         min_num_packs <= actual_packs <= max_num_packs
     ), f'Expected between {min_num_packs} and {max_num_packs} packs, got {actual_packs}'
