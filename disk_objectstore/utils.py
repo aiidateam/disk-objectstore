@@ -32,6 +32,8 @@ from zlib import error
 from .exceptions import ClosingNotAllowed, ModificationNotAllowed
 
 if TYPE_CHECKING:
+    from io import BufferedReader
+
     from .container import Container
 
 F_FULLFSYNC: int
@@ -48,20 +50,28 @@ except ImportError:
     F_FULLFSYNC = 0
 
 
-# requires read method only
-StreamReadBytesType = Union[
+# requires read method only - base types (without wrappers)
+StreamReadBytesTypeBase = Union[
     BinaryIO,
     'PackedObjectReader',
-    'CallbackStreamWrapper',
     'ZlibLikeBaseStreamDecompresser',
     'ZeroStream',
 ]
-# requires read and seek capability
-StreamSeekBytesType = Union[
+# requires read method only - including wrappers
+StreamReadBytesType = Union[
+    StreamReadBytesTypeBase,
+    'CallbackStreamWrapper',
+]
+# requires read and seek capability - base types (without wrappers)
+StreamSeekBytesTypeBase = Union[
     BinaryIO,
     'PackedObjectReader',
-    'CallbackStreamWrapper',
     'ZlibLikeBaseStreamDecompresser',
+]
+# requires read and seek capability - including wrappers
+StreamSeekBytesType = Union[
+    StreamSeekBytesTypeBase,
+    'CallbackStreamWrapper',
 ]
 StreamWriteBytesType = BinaryIO
 
@@ -534,9 +544,12 @@ class PackedObjectReader:
     length of the given object.
     """
 
-    # TODO: Remove StreamSeekBytesType
-    # def __init__(self, fhandle: BufferedReader | BinaryIO, offset: int, length: int) -> None:
-    def __init__(self, fhandle: StreamSeekBytesType, offset: int, length: int) -> None:
+    def __init__(
+        self,
+        fhandle: BinaryIO | BufferedReader,
+        offset: int,
+        length: int,
+    ) -> None:
         """
         Initialises the reader to a pack file.
 
@@ -707,7 +720,7 @@ class CallbackStreamWrapper:
 
     def __init__(
         self,
-        stream: StreamSeekBytesType,
+        stream: StreamSeekBytesTypeBase | BufferedReader,
         callback: Callable | None,
         total_length: int = 0,
         description: str = 'Streamed object',
@@ -906,7 +919,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     def __init__(
         self,
-        compressed_stream: StreamSeekBytesType,
+        compressed_stream: StreamSeekBytesTypeBase,
         lazy_uncompressed_stream: LazyLooseStream | None = None,
     ) -> None:
         """Create the class from a given compressed bytestream.

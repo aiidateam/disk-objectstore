@@ -35,6 +35,7 @@ from .utils import (
     PackedObjectReader,
     StreamReadBytesType,
     StreamSeekBytesType,
+    StreamSeekBytesTypeBase,
     StreamWriteBytesType,
     ZlibStreamDecompresser,
     chunk_iterator,
@@ -522,14 +523,14 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
-    ) -> Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]: ...
+    ) -> Iterator[tuple[str, StreamSeekBytesTypeBase | None, ObjectMeta]]: ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
         hashkeys: Sequence[str],
         skip_if_missing: bool,
         with_streams: bool,
-    ) -> Iterator[(tuple[str, ObjectMeta] | tuple[str, StreamSeekBytesType | None, ObjectMeta])]:
+    ) -> Iterator[(tuple[str, ObjectMeta] | tuple[str, StreamSeekBytesTypeBase | None, ObjectMeta])]:
         """Return a generator yielding triplets of (hashkey, open stream, size).
 
         :note: The stream is already open and at the right position, and can
@@ -807,7 +808,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @contextmanager
     def get_objects_stream_and_meta(
         self, hashkeys: Sequence[str], skip_if_missing: bool = True
-    ) -> Iterator[Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]]:
+    ) -> Iterator[Iterator[tuple[str, StreamSeekBytesTypeBase | None, ObjectMeta]]]:
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
         :note: the hash keys yielded are often in a *different* order than the original
@@ -1465,7 +1466,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def add_streamed_object_to_pack(  # pylint: disable=too-many-arguments
         self,
-        stream: StreamSeekBytesType,
+        stream: StreamSeekBytesTypeBase,
         compress: bool = False,
         open_streams: bool = False,
         no_holes: bool = False,
@@ -2333,7 +2334,9 @@ class Container:  # pylint: disable=too-many-public-methods
                 .order_by(Obj.offset)
             )
             for hashkey, size, offset, length, compressed in session.execute(stmt):
-                obj_reader: StreamSeekBytesType = PackedObjectReader(fhandle=pack_handle, offset=offset, length=length)
+                obj_reader: StreamSeekBytesTypeBase = PackedObjectReader(
+                    fhandle=pack_handle, offset=offset, length=length
+                )
                 if compressed:
                     # I don't pass a LazyLooseStream: in the validate
                     # I should only ever read linearly, so it should not be needed
