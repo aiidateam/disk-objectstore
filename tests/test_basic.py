@@ -370,7 +370,6 @@ def test_clean_loose_objects_file_not_found(temp_container):
 
 def test_clean_loose_objects_successful_cleanup(temp_container):
     """Test _clean_loose_objects successfully removes loose files."""
-    # Create some loose objects
     contents = [b'content1', b'content2', b'content3']
     hashkeys = []
     loose_paths = []
