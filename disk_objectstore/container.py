@@ -53,15 +53,12 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
     from typing import (
         Any,
         Callable,
-        Iterator,
         Literal,
-        Sequence,
     )
-
-    from mypy_extensions import Arg
 
 ObjQueryResults = namedtuple('ObjQueryResults', ['hashkey', 'offset', 'length', 'compressed', 'size'])
 
@@ -128,7 +125,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the folder that will host the object-store container."""
         return self._folder
 
-    def _close_operation_session(self):
+    def _close_operation_session(self) -> None:
         if self._operation_session is not None:
             binding = self._operation_session.bind
             self._operation_session.close()
@@ -511,7 +508,7 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: Literal[False],
     ) -> Iterator[tuple[str, ObjectMeta]]: ...
@@ -519,14 +516,14 @@ class Container:  # pylint: disable=too-many-public-methods
     @overload
     def _get_objects_stream_meta_generator(
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: Literal[True],
     ) -> Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]: ...
 
     def _get_objects_stream_meta_generator(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         skip_if_missing: bool,
         with_streams: bool,
     ) -> Iterator[(tuple[str, ObjectMeta] | tuple[str, StreamSeekBytesType | None, ObjectMeta])]:
@@ -541,7 +538,7 @@ class Container:  # pylint: disable=too-many-public-methods
         :note: do not use directly! Call always the proper public methods. This is only
             for internal use
 
-        :param hashkeys: a list of hash keys for which we want to get a stream reader
+        :param hashkeys: an iterable of hash keys for which we want to get a stream reader
         :param skip_if_missing: if True, just skip hash keys that are not in the container
             (i.e., neither packed nor loose). If False, return ``None`` instead of the
             stream.
@@ -806,7 +803,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     @contextmanager
     def get_objects_stream_and_meta(
-        self, hashkeys: Sequence[str], skip_if_missing: bool = True
+        self, hashkeys: Iterable[str], skip_if_missing: bool = True
     ) -> Iterator[Iterator[tuple[str, StreamSeekBytesType | None, ObjectMeta]]]:
         """A context manager returning a generator yielding triplets of (hashkey, open stream, metadata).
 
@@ -848,7 +845,7 @@ class Container:  # pylint: disable=too-many-public-methods
         return LazyLooseStream(container=self, hashkey=hashkey)
 
     def get_objects_meta(
-        self, hashkeys: Sequence[str], skip_if_missing: bool = True
+        self, hashkeys: Iterable[str], skip_if_missing: bool = True
     ) -> Iterator[tuple[str, ObjectMeta]]:
         """A generator yielding pairs of (hashkey, metadata).
 
@@ -1252,7 +1249,7 @@ class Container:  # pylint: disable=too-many-public-methods
         compress: bool | CompressMode = CompressMode.NO,
         validate_objects: bool = True,
         do_fsync: bool = True,
-        callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
+        callback: None | (Callable[[str, Any], None]) = None,
         clean_loose_per_pack: bool = False,  # TODO: Make this the default with next major version
     ) -> None:
         """Pack all loose objects.
@@ -1334,8 +1331,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if callback:
             callback(
-                action='init',
-                value={
+                'init',
+                {
                     'total': self.get_total_size()['total_size_loose'],
                     'description': 'Packing loose objects',
                 },
@@ -1426,8 +1423,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     if callback:
                         callback(
-                            action='update',
-                            value=obj_dict['size'],
+                            'update',
+                            obj_dict['size'],
                         )
                 # It's now time to write to the DB, in a single bulk operation (per pack)
                 if obj_dicts:
@@ -1593,8 +1590,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 if total:
                     # If we have a callback, compute the total count of objects in this pack
                     callback(
-                        action='init',
-                        value={'total': total, 'description': 'List existing'},
+                        'init',
+                        {'total': total, 'description': 'List existing'},
                     )
                     # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
                     update_every = max(int(total / 400), 1)
@@ -1621,20 +1618,20 @@ class Container:  # pylint: disable=too-many-public-methods
                 if callback:
                     since_last_update += len(results_chunk)
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback('update', value=since_last_update)
                         since_last_update = 0
 
             if callback and total:
                 # Final call to complete the bar
                 if since_last_update:
-                    callback(action='update', value=since_last_update)
+                    callback('update', since_last_update)
                 # Perform any wrap-up, if needed
-                callback(action='close', value=None)
+                callback('close', None)
 
         if callback:
             total = len(working_stream_list)
             # If we have a callback, compute the total count of objects in this pack
-            callback(action='init', value={'total': total, 'description': 'Bulk storing'})
+            callback('init', {'total': total, 'description': 'Bulk storing'})
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 400), 1)
             # Counter of how many objects have been since since the last update.
@@ -1679,7 +1676,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     if callback:
                         since_last_update += 1
                         if since_last_update >= update_every:
-                            callback(action='update', value=since_last_update)
+                            callback('update', since_last_update)
                             since_last_update = 0
 
                     # Get the position before writing the object - I need it if `no_holes` is True and the object
@@ -1813,9 +1810,9 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             # Final call to complete the bar
             if since_last_update:
-                callback(action='update', value=since_last_update)
+                callback('update', since_last_update)
             # Perform any wrap-up, if needed
-            callback(action='close', value=None)
+            callback('close', value=None)
 
         return hashkeys
 
@@ -2039,7 +2036,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
     def import_objects(  # pylint: disable=too-many-locals,too-many-statements,too-many-branches,too-many-arguments
         self,
-        hashkeys: Sequence[str],
+        hashkeys: Iterable[str],
         source_container: Container,
         compress: bool = False,
         target_memory_bytes: int = 104857600,
@@ -2113,7 +2110,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # the list of hash keys in this (destination) container. This is probably OK, though.
                     since_last_update += 1
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback('update', since_last_update)
                         since_last_update = 0
 
                 if where == Location.LEFTONLY:
@@ -2122,9 +2119,9 @@ class Container:  # pylint: disable=too-many-public-methods
             if callback:
                 # Final call to complete the bar
                 if since_last_update:
-                    callback(action='update', value=since_last_update)
+                    callback('update', since_last_update)
                 # Perform any wrap-up, if needed
-                callback(action='close', value=None)
+                callback('close', None)
 
             # I just insert the new objects without first checking that I am not leaving holes in the pack files,
             # as I already checked here.
@@ -2138,8 +2135,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
         if callback:
             # If we have a callback, compute the total count of objects in this pack
-            total = len(hashkeys)
-            callback(action='init', value={'total': total, 'description': 'Copy objects'})
+            total = len(set(hashkeys))
+            callback('init', {'total': total, 'description': 'Copy objects'})
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
             update_every = max(int(total / 1000), 1)
             # Counter of how many objects have been since since the last update.
@@ -2217,15 +2214,15 @@ class Container:  # pylint: disable=too-many-public-methods
                 if callback:
                     since_last_update += 1
                     if since_last_update >= update_every:
-                        callback(action='update', value=since_last_update)
+                        callback('update', since_last_update)
                         since_last_update = 0
 
         if callback:
             # Final call to complete the bar
             if since_last_update:
-                callback(action='update', value=since_last_update)
+                callback('update', since_last_update)
             # Perform any wrap-up, if needed
-            callback(action='close', value=None)
+            callback('close', None)
 
         # The for loop is finished. I can also go out of the `with` context manager because whatever is in the
         # cache is in memory. Most probably I still have content in the cache, just flush it,
@@ -2524,7 +2521,7 @@ class Container:  # pylint: disable=too-many-public-methods
     def repack(
         self,
         compress_mode: CompressMode = CompressMode.KEEP,
-        callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
+        callback: None | (Callable[[str, Any], None]) = None,
     ) -> None:
         """Perform a repack of all packed objects.
 
@@ -2552,7 +2549,7 @@ class Container:  # pylint: disable=too-many-public-methods
         self,
         pack_id: str,
         compress_mode: CompressMode = CompressMode.KEEP,
-        callback: None | (Callable[[Arg(str, 'action'), Arg(Any, 'value')], None]) = None,
+        callback: None | (Callable[[str, Any], None]) = None,
     ) -> None:
         """Perform a repack of a given pack object.
 
@@ -2596,8 +2593,8 @@ class Container:  # pylint: disable=too-many-public-methods
         # REPACK_PACK_ID did not exist.
         if callback:
             callback(
-                action='init',
-                value={
+                'init',
+                {
                     'total': self.get_total_size()['total_size_packed'],
                     'description': f'Repack {pack_id}',
                 },
@@ -2698,14 +2695,14 @@ class Container:  # pylint: disable=too-many-public-methods
                     # I will assume that all objects of a single pack fit in memory
                     obj_dicts.append(obj_dict)
                     if callback:
-                        callback(action='update', value=obj_dict['size'])
+                        callback('update', obj_dict['size'])
             # safe flush to disk seems to be a time consuming operation, but no easy way to include in the progress bar
             safe_flush_to_disk(
                 write_pack_handle,
                 self._get_pack_path_from_pack_id(self._REPACK_PACK_ID, allow_repack_pack=True),
             )
         if callback:
-            callback(action='close', value=None)
+            callback('close', None)
         # We are done with data transfer.
         # At this stage we just have a new pack -1 (_REPACK_PACK_ID) but it is never referenced.
         # Let us store the information in the DB.
