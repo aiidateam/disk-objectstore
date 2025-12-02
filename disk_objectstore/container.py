@@ -251,7 +251,7 @@ class Container:  # pylint: disable=too-many-public-methods
         If it exists, it returns the ID only if the size is smaller than the container's pack_size_target,
         otherwise it increases by one until it finds a valid "non-full" pack ID.
 
-        :param known_sizes: Optional dict mapping pack_id -> size (from tell()). If provided,
+        :param known_sizes: Optional dict mapping pack_id -> size (via `tell()`). If provided,
             uses the known size instead of calling `stat()` on the pack file. This avoids
             incorrect sizes due to buffering when the pack file hasn't been flushed yet.
         :return: an integer pack ID.
