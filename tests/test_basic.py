@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from disk_objectstore import Container
+
 # pylint: disable=invalid-name
 
 
@@ -351,3 +353,72 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
         # If I close, I shouldn't need to unlock
         # win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
         os.close(fd)
+
+
+def test_get_pack_id_to_write_to_with_known_sizes(temp_container):
+    """Unit test: Verify _get_pack_id_to_write_to correctly uses known_sizes parameter.
+
+    Tests that when known_sizes is provided, it uses those values instead of stat()
+    to determine which pack file to write to next.
+    """
+    pack_size_target = 1000
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Test 1: Without known_sizes, should return pack 0 (doesn't exist yet)
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=None)
+    assert pack_id == 0, 'Should start with pack 0 when no packs exist'
+
+    # Create a small pack file (under target)
+    pack_path = temp_container._get_pack_path_from_pack_id(0)
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(pack_path, 'wb') as f:
+        f.write(b'x' * 500)  # 500 bytes, under the target
+
+    # Test 2: Without known_sizes, should use stat() and return pack 0 (under target)
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=None)
+    assert pack_id == 0, 'Should return pack 0 when it exists and is under target'
+
+    # Test 3: With known_sizes showing pack 0 is not full, should return pack 0
+    known_sizes = {0: 500}  # Under the target
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 0, 'Should return pack 0 when known_sizes shows pack 0 is not full'
+
+    # Test 4: With known_sizes showing pack 0 is full, should return pack 1
+    known_sizes = {0: 1500}  # Over the target
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 1, 'Should return pack 1 when known_sizes shows pack 0 is full'
+
+    # Test 5: Multiple packs tracked in known_sizes
+    # Create pack 1 that's also under target
+    pack_path_1 = temp_container._get_pack_path_from_pack_id(1)
+    with open(pack_path_1, 'wb') as f:
+        f.write(b'y' * 600)
+
+    # Now _current_pack_id is 1 (cached from previous test)
+    # With known_sizes showing pack 1 is not full, should return pack 1
+    known_sizes = {1: 800}  # Pack 1 not full
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 1, 'Should return pack 1 when it is cached and not full'
+
+    # Test 6: Multiple packs, current one full, should increment
+    known_sizes = {1: 1200}  # Pack 1 full
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 2, 'Should return pack 2 when pack 1 is full'
+
+    # Test 7: Multiple packs in known_sizes with different states
+    # Create pack 2
+    pack_path_2 = temp_container._get_pack_path_from_pack_id(2)
+    with open(pack_path_2, 'wb') as f:
+        f.write(b'z' * 300)
+
+    # known_sizes shows pack 2 is not full
+    known_sizes = {0: 1500, 1: 1200, 2: 300}
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 2, 'Should return pack 2 when it is cached and not full'
+
+    # Test 8: instantiate a new Container instance: this should not reuse the cache.
+    # Even if packs 1 and 2 exist, since pack 0 is smaller, the function should return
+    # pack 0.
+    temp_container_new = Container(folder=temp_container.get_folder())
+    pack_id = temp_container_new._get_pack_id_to_write_to()
+    assert pack_id == 0, 'Should return pack 0 even if pack 1 and 2 exist, since pack 0 is smaller'
