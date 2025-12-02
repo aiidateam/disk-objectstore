@@ -246,38 +246,33 @@ class Container:  # pylint: disable=too-many-public-methods
     def _get_pack_id_to_write_to(self, known_sizes: dict[int, int] | None = None) -> int:
         """Return the pack ID to write the next object.
 
-        This function checks that there is a pack file with the current pack ID.
-        If it does not exist, that it returns that ID (the file is new and must be created).
-        If it exists, it returns the ID only if the size is smaller than the container's pack_size_target,
-        otherwise it increases by one until it finds a valid "non-full" pack ID.
+        This function finds the first pack file that either doesn't exist yet or
+        has size below pack_size_target. Starts from the current pack ID.
 
         :param known_sizes: Optional dict mapping pack_id -> size (via `tell()`). If provided,
             uses the known size instead of calling `stat()` on the pack file. This avoids
             incorrect sizes due to buffering when the pack file hasn't been flushed yet.
         :return: an integer pack ID.
         """
-        # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
+
             if not pack_path.exists():
-                # Use this ID - the pack file does not exist yet
                 break
 
-            # Check the appropriate size against the target
-            # If we have known_sizes for this pack_id, use it (from tell()),
-            # otherwise fall back to stat()
-            size_to_check = (
-                known_sizes.get(pack_id, pack_path.stat().st_size) if known_sizes else pack_path.stat().st_size
-            )
-            if size_to_check < self.pack_size_target:
-                # Use this ID - the pack file is not "full" yet
+            # Get size from known_sizes if available, otherwise from filesystem
+            if known_sizes and pack_id in known_sizes:
+                size = known_sizes[pack_id]
+            else:
+                size = pack_path.stat().st_size
+
+            if size < self.pack_size_target:
                 break
 
-            # Try the next pack
             pack_id += 1
 
-        # Cache the value
         self._current_pack_id = pack_id
         return pack_id
 
