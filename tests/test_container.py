@@ -3707,7 +3707,7 @@ def test_regression_stat_returns_zero_all_in_one_pack(temp_container, generate_r
     size of the pack file is being used.
 
     This test monkeypatches with the exact old code to demonstrate the actual bug.
-    
+
     NOTE: This tests is just to showcase the bug, and it relies on assumptions on the
     operating-system behavior with buffered writing to disk, and a buffer size larger than
     1024 bytes (which is almost always the case).
