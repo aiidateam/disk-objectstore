@@ -1644,8 +1644,6 @@ class Container:  # pylint: disable=too-many-public-methods
                 # we highly improve performance
                 obj_dicts = []
 
-                # Track known sizes for each pack_id to avoid incorrect sizes from stat()
-                # when the file hasn't been flushed yet
                 while working_stream_list:
                     # Check in which pack I need to write to the next object
                     # Update the known size for the current pack before checking which pack to use
