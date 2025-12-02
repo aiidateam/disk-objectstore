@@ -243,7 +243,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the SQLite file containing the index of packed objects."""
         return self._folder / f'packs{self._PACK_INDEX_SUFFIX}'
 
-    def _get_pack_id_to_write_to(self, known_size: int | None = None) -> int:
+    def _get_pack_id_to_write_to(self, known_sizes: dict[int, int] | None = None) -> int:
         """Return the pack ID to write the next object.
 
         This function checks that there is a pack file with the current pack ID.
@@ -251,6 +251,9 @@ class Container:  # pylint: disable=too-many-public-methods
         If it exists, it returns the ID only if the size is smaller than the container's pack_size_target,
         otherwise it increases by one until it finds a valid "non-full" pack ID.
 
+        :param known_sizes: Optional dict mapping pack_id -> size (from tell()). If provided,
+            uses the known size instead of calling `stat()` on the pack file. This avoids
+            incorrect sizes due to buffering when the pack file hasn't been flushed yet.
         :return: an integer pack ID.
         """
         # Default to zero if not set (e.g. if it's None)
@@ -260,11 +263,14 @@ class Container:  # pylint: disable=too-many-public-methods
             if not pack_path.exists():
                 # Use this ID - the pack file does not exist yet
                 break
-            if not known_size:
-                if pack_path.stat().st_size < self.pack_size_target:
-                    # Use this ID - the pack file is not "full" yet
-                    break
-            elif known_size < self.pack_size_target:
+
+            # Check the appropriate size against the target
+            # If we have known_sizes for this pack_id, use it (from tell()),
+            # otherwise fall back to stat()
+            size_to_check = (
+                known_sizes.get(pack_id, pack_path.stat().st_size) if known_sizes else pack_path.stat().st_size
+            )
+            if size_to_check < self.pack_size_target:
                 # Use this ID - the pack file is not "full" yet
                 break
 
@@ -1272,8 +1278,8 @@ class Container:  # pylint: disable=too-many-public-methods
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
         :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
-            Set to False if you don't need such a guarantee (major risk of data loss if this is set to False, and power
-            supply stops during packing operation).
+            Set this to False if you don't need such a guarantee (major risk of data loss and power
+            supply stops during packing operation, we don't recommend this).
         :param callback: a callback function that can be used to report progress.
             The callback function should accept two arguments: a string with the action being performed
             and the value of the action. The action can be "init" (initialization),
@@ -1361,16 +1367,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 # we highly improve performance
                 obj_dicts = []
 
+                # Track known sizes for each pack_id to avoid incorrect sizes from `stat()`
+                # when the file hasn't been flushed yet
+                known_sizes: dict[int, int] = {}
                 while loose_objects:
                     # Check in which pack I need to write to the next object
-                    pack_int_id = self._get_pack_id_to_write_to(pack_handle.tell())
-                    # print(
-                    #     pack_int_id,
-                    #     last_pack_int_id,
-                    #     self._get_pack_path_from_pack_id(pack_int_id).stat().st_size,
-                    #     self.pack_size_target,
-                    #     pack_handle.tell()
-                    # )
+                    # Update the known size for the current pack before checking which pack to use
+                    known_sizes[pack_int_id] = pack_handle.tell()
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes=known_sizes)
                     if pack_int_id != last_pack_int_id:
                         # new pack file needed!
                         # Break from the inner while loop. This will:
@@ -1569,7 +1573,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         assert isinstance(
             compress, bool
-        ), 'Only True of False are valid `compress` modes when adding direclty to a pack'
+        ), 'Only True or False are valid `compress` modes when adding directly to a pack'
         yield_per_size = 1000
         hashkeys: list[str] = []
 
@@ -1648,9 +1652,14 @@ class Container:  # pylint: disable=too-many-public-methods
                 # we highly improve performance
                 obj_dicts = []
 
+                # Track known sizes for each pack_id to avoid incorrect sizes from stat()
+                # when the file hasn't been flushed yet
+                known_sizes: dict[int, int] = {}
                 while working_stream_list:
                     # Check in which pack I need to write to the next object
-                    pack_int_id = self._get_pack_id_to_write_to()
+                    # Update the known size for the current pack before checking which pack to use
+                    known_sizes[pack_int_id] = pack_handle.tell()
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes=known_sizes)
                     if pack_int_id != last_pack_int_id:
                         # Break from the inner while loop. This will:
                         # 1. go down after the while loop, performing commits and
