@@ -40,15 +40,15 @@ def _assert_empty_repo(container):
     :param container: a Container.
     """
     counts = container.count_objects()
-    assert counts['packed'] == 0, (
-        f'The container should be empty at the beginning (but there are {counts["packed"]} packed objects)'
-    )
-    assert counts['loose'] == 0, (
-        f'The container should be empty at the beginning (but there are {counts["loose"]} loose objects)'
-    )
-    assert counts['pack_files'] == 0, (
-        f'The container should be empty at the beginning (but there are {counts["pack_files"]} pack files)'
-    )
+    assert (
+        counts['packed'] == 0
+    ), f'The container should be empty at the beginning (but there are {counts["packed"]} packed objects)'
+    assert (
+        counts['loose'] == 0
+    ), f'The container should be empty at the beginning (but there are {counts["loose"]} loose objects)'
+    assert (
+        counts['pack_files'] == 0
+    ), f'The container should be empty at the beginning (but there are {counts["pack_files"]} pack files)'
 
 
 def _add_objects_loose_loop(container, data):
@@ -125,13 +125,13 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
     obj_md5s = _add_objects_loose_loop(temp_container, data)
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == 0, (
-        f'The container should have no packed objects (but there are {counts["packed"]} instead)'
-    )
+    assert (
+        counts['packed'] == 0
+    ), f'The container should have no packed objects (but there are {counts["packed"]} instead)'
     # I check with the length of the set because I could have picked to random identical objects
-    assert counts['loose'] == len(set(obj_md5s)), (
-        f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
-    )
+    assert counts['loose'] == len(
+        set(obj_md5s)
+    ), f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
     random_keys = list(obj_md5s.keys())
@@ -147,9 +147,9 @@ def test_add_get_loose(temp_container, generate_random_data, retrieve_bulk):
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:  # pylint: disable=consider-using-dict-items
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
 
 def test_add_loose_from_stream(temp_container):
@@ -189,9 +189,9 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     temp_container.pack_all_loose(compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(set(obj_md5s)), (
-        f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
-    )
+    assert counts['packed'] == len(
+        set(obj_md5s)
+    ), f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
         f'The container should still have all {len(set(obj_md5s))} loose objects '
@@ -218,9 +218,9 @@ def test_add_get_with_packing(temp_container, generate_random_data, use_compress
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:  # pylint: disable=consider-using-dict-items
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
 
 @pytest.mark.parametrize('use_compression', [True, False])
@@ -236,9 +236,9 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
     obj_md5s = _add_objects_directly_to_pack(temp_container, data, compress=use_compression)
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(set(data)), (
-        f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
-    )
+    assert counts['packed'] == len(
+        set(data)
+    ), f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
     assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
@@ -252,9 +252,9 @@ def test_directly_to_pack_content(temp_container, generate_random_data, use_comp
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
 
 @pytest.mark.parametrize(
@@ -494,9 +494,9 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     obj_md5s = dict(zip(obj_hashkeys, keys))
 
     counts = temp_container.count_objects()
-    assert counts['packed'] == len(set(data)), (
-        f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
-    )
+    assert counts['packed'] == len(
+        set(data)
+    ), f'The container should have {len(set(data))} packed objects (but there are {counts["packed"]} instead)'
     assert counts['loose'] == 0, f'The container should have 0 loose objects (but there are {counts["loose"]} instead)'
 
     # Retrieve objects (loose), in random order
@@ -510,9 +510,9 @@ def test_directly_to_pack_streamed(temp_dir, generate_random_data, use_compressi
     assert set(obj_md5s) == set(retrieved_md5s)
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
     # I close the container, as this is needed on Windows
     temp_container.close()
@@ -550,19 +550,19 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
         assert all(len(inode) == loose_prefix_len for inode in loose_firstlevel)
 
     counts = container.count_objects()
-    assert counts['packed'] == 0, (
-        f'The container should have 0 packed objects (but there are {counts["packed"]} instead)'
-    )
-    assert counts['loose'] == len(set(obj_md5s)), (
-        f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
-    )
+    assert (
+        counts['packed'] == 0
+    ), f'The container should have 0 packed objects (but there are {counts["packed"]} instead)'
+    assert counts['loose'] == len(
+        set(obj_md5s)
+    ), f'The container should have {len(set(obj_md5s))} loose objects (but there are {counts["loose"]} instead)'
 
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:  # pylint: disable=consider-using-dict-items
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
     # Pack all loose objects
     container.pack_all_loose()
@@ -577,9 +577,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
     )
 
     counts = container.count_objects()
-    assert counts['packed'] == len(set(obj_md5s)), (
-        f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
-    )
+    assert counts['packed'] == len(
+        set(obj_md5s)
+    ), f'The container should have {len(set(obj_md5s))} packed objects (but there are {counts["packed"]} instead)'
     # Loose objects are not immediately deleted
     assert counts['loose'] == len(set(obj_md5s)), (
         f'The container should still have all {len(set(obj_md5s))} loose objects '
@@ -595,9 +595,9 @@ def test_prefix_lengths(temp_dir, generate_random_data, pack_size_target, loose_
     retrieved_md5s = _get_data_and_md5_bulk(container, obj_md5s.keys())
     # Check that the MD5 are correct
     for obj_hashkey in obj_md5s:  # pylint: disable=consider-using-dict-items
-        assert obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey], (
-            f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
-        )
+        assert (
+            obj_md5s[obj_hashkey] == retrieved_md5s[obj_hashkey]
+        ), f"Object '{obj_hashkey}' has wrong MD5s ({obj_md5s[obj_hashkey]} vs {retrieved_md5s[obj_hashkey]})"
 
     # Test also the validation functions
     valid_pack_ids = ['0', '1', '2', '10', '100']
@@ -2284,9 +2284,9 @@ def test_validate_callback(temp_container, callback_instance):
 
     temp_container.validate(callback=callback_instance.callback)
 
-    assert callback_instance.current_action is None, (
-        "The 'validate' call did not perform a final callback with a 'close' event"
-    )
+    assert (
+        callback_instance.current_action is None
+    ), "The 'validate' call did not perform a final callback with a 'close' event"
 
     # I convert to dict because I the order of the actions can change
     performed_actions_dict = {
@@ -2323,9 +2323,9 @@ def test_add_streamed_object_to_pack_callback(  # pylint: disable=invalid-name
 
     assert temp_container.get_object_content(hashkey) == content
 
-    assert callback_instance.current_action is None, (
-        "The 'validate' call did not perform a final callback with a 'close' event"
-    )
+    assert (
+        callback_instance.current_action is None
+    ), "The 'validate' call did not perform a final callback with a 'close' event"
 
     assert callback_instance.performed_actions == [
         {
@@ -2365,9 +2365,9 @@ def test_add_streamed_objects_to_pack_callback(  # pylint: disable=invalid-name
         callback=callback_instance.callback,
     )
 
-    assert callback_instance.current_action is None, (
-        "The 'add_streamed_objects_to_pack' call did not perform a final callback with a 'close' event"
-    )
+    assert (
+        callback_instance.current_action is None
+    ), "The 'add_streamed_objects_to_pack' call did not perform a final callback with a 'close' event"
 
     expected_actions = []
     # First call
