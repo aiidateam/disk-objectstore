@@ -1367,9 +1367,11 @@ class Container:  # pylint: disable=too-many-public-methods
                 known_sizes: dict[int, int] = {}
                 while loose_objects:
                     # Check in which pack I need to write to the next object
-                    # Update the known size for the current pack before checking which pack to use
-                    known_sizes[pack_int_id] = pack_handle.tell()
-                    pack_int_id = self._get_pack_id_to_write_to(known_sizes=known_sizes)
+                    # Pass the known size for the current pack as the pack file might not have been flushed yet
+                    # and stat() might give incorrect results
+                    # Note: just pass the size for the current pack, as it's currently locked for
+                    # writing and it is the only pack for which this portion of code has full "control"
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes={pack_int_id: pack_handle.tell()})
                     if pack_int_id != last_pack_int_id:
                         # new pack file needed!
                         # Break from the inner while loop. This will:
