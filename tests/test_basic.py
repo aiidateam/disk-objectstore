@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from disk_objectstore import Container
 
 # pylint: disable=invalid-name
 
@@ -417,6 +418,6 @@ def test_get_pack_id_to_write_to_with_known_sizes(temp_container):
     # Test 8: instantiate a new Container instance: this should not reuse the cache.
     # Even if packs 1 and 2 exist, since pack 0 is smaller, the function should return
     # pack 0.
-    temp_container_new = Container(folder temp_container.get_folder())
+    temp_container_new = Container(folder=temp_container.get_folder())
     pack_id = temp_container_new._get_pack_id_to_write_to()
     assert pack_id == 0, 'Should return pack 0 even if pack 1 and 2 exist, since pack 0 is smaller'
