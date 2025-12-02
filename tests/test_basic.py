@@ -413,8 +413,8 @@ def test_get_pack_id_to_write_to_with_known_sizes(temp_container):
     known_sizes = {0: 1500, 1: 1200, 2: 300}
     pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
     assert pack_id == 2, 'Should return pack 2 when it is cached and not full'
-    
-    # Test 8: instantiate a new Container instance: this should not reuse the cache. 
+
+    # Test 8: instantiate a new Container instance: this should not reuse the cache.
     # Even if packs 1 and 2 exist, since pack 0 is smaller, the function should return
     # pack 0.
     temp_container_new = Container(folder temp_container.get_folder())
