@@ -1273,8 +1273,8 @@ class Container:  # pylint: disable=too-many-public-methods
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
         :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
-            Set this to False if you don't need such a guarantee (major risk of data loss and power
-            supply stops during packing operation, we don't recommend this).
+            Set this to False if you don't need such a guarantee (major risk of data loss if power
+            supply stops during packing operation-we don't recommend this).
         :param callback: a callback function that can be used to report progress.
             The callback function should accept two arguments: a string with the action being performed
             and the value of the action. The action can be "init" (initialization),
@@ -1417,13 +1417,6 @@ class Container:  # pylint: disable=too-many-public-methods
                         # This might happen if the file is being written and is locked.
                         # In this case, don't pack this file. We will pack it in a future call.
                         continue
-
-                    # safe_flush_to_disk(
-                    #     pack_handle,
-                    #     Path(pack_handle.name).resolve(),
-                    #     use_fullsync=False,
-                    # )
-
                     if hash_type and new_hashkey != loose_hashkey:
                         raise InconsistentContent(
                             f"Error when packing object '{loose_hashkey}': "
