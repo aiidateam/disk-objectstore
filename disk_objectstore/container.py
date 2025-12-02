@@ -1367,9 +1367,6 @@ class Container:  # pylint: disable=too-many-public-methods
                 # we highly improve performance
                 obj_dicts = []
 
-                # Track known sizes for each pack_id to avoid incorrect sizes from `stat()`
-                # when the file hasn't been flushed yet
-                known_sizes: dict[int, int] = {}
                 while loose_objects:
                     # Check in which pack I need to write to the next object
                     # Pass the known size for the current pack as the pack file might not have been flushed yet
@@ -1649,12 +1646,10 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 # Track known sizes for each pack_id to avoid incorrect sizes from stat()
                 # when the file hasn't been flushed yet
-                known_sizes: dict[int, int] = {}
                 while working_stream_list:
                     # Check in which pack I need to write to the next object
                     # Update the known size for the current pack before checking which pack to use
-                    known_sizes[pack_int_id] = pack_handle.tell()
-                    pack_int_id = self._get_pack_id_to_write_to(known_sizes=known_sizes)
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes={pack_int_id: pack_handle.tell()})
                     if pack_int_id != last_pack_int_id:
                         # Break from the inner while loop. This will:
                         # 1. go down after the while loop, performing commits and

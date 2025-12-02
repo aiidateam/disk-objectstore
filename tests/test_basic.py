@@ -382,8 +382,6 @@ def test_get_pack_id_to_write_to_with_known_sizes(temp_container):
     assert pack_id == 0, 'Should return pack 0 when known_sizes shows pack 0 is not full'
 
     # Test 4: With known_sizes showing pack 0 is full, should return pack 1
-    # NOTE: _get_pack_id_to_write_to uses forward-only progression for efficiency.
-    # Once it advances to pack 1, it won't go back to pack 0 even if pack 0 has space.
     known_sizes = {0: 1500}  # Over the target
     pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
     assert pack_id == 1, 'Should return pack 1 when known_sizes shows pack 0 is full'
