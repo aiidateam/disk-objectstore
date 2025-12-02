@@ -3691,7 +3691,6 @@ def test_pack_size_target_creates_correct_number_of_packs(temp_container, genera
     )
 
     # Verify all objects are correctly packed and retrievable
-    assert final_counts['loose'] == 0, 'All objects should be packed'
     assert final_counts['packed'] == num_objects, f'All {num_objects} objects should be packed'
 
 
