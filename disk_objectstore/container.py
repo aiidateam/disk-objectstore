@@ -254,12 +254,14 @@ class Container:  # pylint: disable=too-many-public-methods
             incorrect sizes due to buffering when the pack file hasn't been flushed yet.
         :return: an integer pack ID.
         """
+        # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
 
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
 
             if not pack_path.exists():
+                # Use this ID - the pack file does not exist yet
                 break
 
             # Get size from known_sizes if available, otherwise from filesystem
@@ -269,10 +271,13 @@ class Container:  # pylint: disable=too-many-public-methods
                 size = pack_path.stat().st_size
 
             if size < self.pack_size_target:
+                # Use this ID - the pack file is not "full" yet
                 break
 
+            # Try the next pack
             pack_id += 1
 
+        # Cache the value
         self._current_pack_id = pack_id
         return pack_id
 
