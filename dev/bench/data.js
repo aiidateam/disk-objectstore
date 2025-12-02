@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1764696120231,
+  "lastUpdate": 1764696311387,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -20185,6 +20185,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 6.345198796604849e-8",
             "extra": "mean: 182.76645887876657 nsec\nrounds: 192308"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "julian.geiger@psi.ch",
+            "name": "Julian Geiger",
+            "username": "GeigerJ2"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b44f09c1bc6574c0d78f0fda079d6b5ca08d1d9",
+          "message": "Fix \"wrong\" pack sizes due to missing flush by passing known size via `tell` (#200)\n\nEarlier version was deciding if a pack file reached its target size by calling `stat()` on the file.\nHowever, if a file is open, this might see a slightly smaller size due to buffering.\nWhile this is not a major issue (typical buffer size is only a few kB), for correctness we instead pass the known file size to the function checking the pack size.\nThis, by the way, also improves efficiency.\n\nCo-authored-by: Giovanni Pizzi <gio.piz@gmail.com>",
+          "timestamp": "2025-12-02T17:21:10Z",
+          "tree_id": "6067a5738ef11f6fb5aad2dd6a83c772b4e5bf21",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/5b44f09c1bc6574c0d78f0fda079d6b5ca08d1d9"
+        },
+        "date": 1764696299556,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 1.5328923440509412,
+            "unit": "iter/sec",
+            "range": "stddev: 0.020301069191138086",
+            "extra": "mean: 652.3615333333336 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 0.1688154101684105,
+            "unit": "iter/sec",
+            "range": "stddev: 0.8381498844164251",
+            "extra": "mean: 5.923629833333334 sec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.731366007286056,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005831823906259526",
+            "extra": "mean: 93.18478181818145 msec\nrounds: 11"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 11.22147179253013,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008570144664283296",
+            "extra": "mean: 89.11487000000093 msec\nrounds: 10"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 2.0442750452142495,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008193827941357968",
+            "extra": "mean: 489.17096666666754 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 5459413.155554174,
+            "unit": "iter/sec",
+            "range": "stddev: 5.1065448281993836e-8",
+            "extra": "mean: 183.16987037039738 nsec\nrounds: 200000"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 5448290.256325021,
+            "unit": "iter/sec",
+            "range": "stddev: 6.566927959621405e-8",
+            "extra": "mean: 183.5438188774619 nsec\nrounds: 196079"
           }
         ]
       }
