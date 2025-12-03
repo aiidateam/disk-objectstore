@@ -1359,7 +1359,7 @@ class Container:  # pylint: disable=too-many-public-methods
             # Store the last pack integer ID, needed to know later if I need to open a new pack
             last_pack_int_id = pack_int_id
             # Track which objects were added to this pack for cleanup
-            packed_in_current_pack = []
+            packed_in_current_pack: list[str] = []
 
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
@@ -1425,13 +1425,6 @@ class Container:  # pylint: disable=too-many-public-methods
                         # This might happen if the file is being written and is locked.
                         # In this case, don't pack this file. We will pack it in a future call.
                         continue
-
-                    # safe_flush_to_disk(
-                    #     pack_handle,
-                    #     Path(pack_handle.name).resolve(),
-                    #     use_fullsync=False,
-                    # )
-
                     if hash_type and new_hashkey != loose_hashkey:
                         raise InconsistentContent(
                             f"Error when packing object '{loose_hashkey}': "
@@ -1441,12 +1434,10 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
+
                     # Track this object for potential cleanup
                     packed_in_current_pack.append(loose_hashkey)
 
-                    # TODO: Move this one level out?
-                    # check: `update_every`
-                    # Make issue on this
                     if callback:
                         callback(
                             'update',
@@ -1494,10 +1485,6 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             callback('close', None)
 
-    # TODO: for current test monkeypatch this function, store information as I do in the callback
-    # make sure this is only being called once per pack
-    # check decrease of loose objects. will be simpler logic
-    # actually compare the list
     def _clean_loose_objects(self, hashkeys: list[str]) -> None:
         """Clean up specific loose objects that have been successfully packed.
 
