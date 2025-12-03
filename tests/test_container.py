@@ -43,6 +43,7 @@ def _assert_empty_repo(container):
     assert (
         counts['packed'] == 0
     ), f'The container should be empty at the beginning (but there are {counts["packed"]} packed objects)'
+    ), f'The container should be empty at the beginning (but there are {counts["packed"]} packed objects)'
     assert (
         counts['loose'] == 0
     ), f'The container should be empty at the beginning (but there are {counts["loose"]} loose objects)'
@@ -4032,3 +4033,116 @@ def test_clean_loose_per_pack_concurrent_access(temp_container):
             # Verify object is still accessible somehow
             packed_content = temp_container.get_object_content(test_hashkey)
             assert packed_content == test_data
+
+
+def test_pack_size_target_creates_correct_number_of_packs(temp_container, generate_random_data):
+    """Integration test: Verify pack_size_target is correctly respected with known_sizes.
+
+    Tests that the known_sizes mechanism (using tell() instead of stat()) correctly
+    tracks pack sizes during packing, resulting in the expected number of packs.
+
+    This verifies the fix for the stat() buffering bug where incorrect pack sizes
+    would cause fewer/larger packs than expected.
+    """
+    num_objects = 256
+    object_size = 1024  # 1 KiB per object
+    num_objects_per_pack = 8
+    total_size = num_objects * object_size
+    pack_size_target = num_objects_per_pack * object_size  # 8 KiB pack size to force many packs
+    expected_num_packs = int(total_size / pack_size_target)
+
+    # Generate unique test data
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Add all objects
+    hashkeys = []
+    for content in data_dict.values():
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+
+    # Verify we have the expected number of objects
+    initial_counts = temp_container.count_objects()
+    assert initial_counts['loose'] == num_objects
+    assert initial_counts['packed'] == 0
+    assert initial_counts['pack_files'] == 0
+
+    # Actual packing operation (uses known_sizes internally)
+    temp_container.pack_all_loose(compress=False)
+
+    # Check how many packs we got
+    final_counts = temp_container.count_objects()
+    num_packs = final_counts['pack_files']
+
+    # With the known_sizes fix, we should get exactly the expected number of packs
+    assert num_packs == expected_num_packs, (
+        f'Expected {expected_num_packs} packs, got {num_packs}. '
+        f'This may indicate the known_sizes fix is not working correctly.'
+    )
+
+    # Verify all objects are correctly packed and retrievable
+    assert final_counts['packed'] == num_objects, f'All {num_objects} objects should be packed'
+
+
+def test_regression_stat_returns_zero_all_in_one_pack(temp_container, generate_random_data, monkeypatch):
+    """Regression test: Uses old code (commit b0a120e) that relied on stat().
+
+    The old implementation always used `pack_path.stat().st_size` which returns
+    0 or stale values due to buffering (if fsync is not done after each loose
+    file that is added to a pack, which would be very slow). When `stat()`
+    returns 0, more objects than intended go into each pack file, leading to
+    less than expected and oversized pack files being created. The fix to this
+    bug was to add the `known_sizes` attribute to which the `pack_id` and the
+    current size based on `.tell()` are being passed, thus ensuring the correct
+    size of the pack file is being used.
+
+    This test monkeypatches with the exact old code to demonstrate the actual bug.
+
+    NOTE: This tests is just to showcase the bug, and it relies on assumptions on the
+    operating-system behavior with buffered writing to disk, and a buffer size larger than
+    1024 bytes (which is almost always the case).
+    It's kept here for educational purposes.
+    However, if this test stops working, it can be just deleted from the test suite.
+    """
+    # Use the same setup as the main test to demonstrate the real-world bug
+    num_objects = 256
+    object_size = 1024  # 1 KiB per object
+    num_objects_per_pack = 8
+    total_size = num_objects * object_size
+    pack_size_target = num_objects_per_pack * object_size  # 8 KiB pack size to force many packs
+    expected_num_packs = int(total_size / pack_size_target)  # Should be 32 packs
+
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=100)
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    for content in data_dict.values():
+        temp_container.add_object(content)
+
+    # Monkeypatch with ACTUAL old code (before known_sizes fix, commit b0a120e)
+    def old_get_pack_id_to_write_to(known_sizes=None):
+        """Actual old implementation from commit b0a120e - always uses stat()."""
+        pack_id = temp_container._current_pack_id or 0
+        while True:
+            pack_path = temp_container._get_pack_path_from_pack_id(pack_id)
+            if not pack_path.exists():
+                break
+            # OLDBUG: stat() returns 0 or stale values due to buffering
+            if pack_path.stat().st_size < temp_container.pack_size_target:
+                break
+            pack_id += 1
+
+        temp_container._current_pack_id = pack_id
+        return pack_id
+
+    monkeypatch.setattr(temp_container, '_get_pack_id_to_write_to', old_get_pack_id_to_write_to)
+
+    temp_container.pack_all_loose(compress=False)
+    buggy_counts = temp_container.count_objects()
+    buggy_num_packs = buggy_counts['pack_files']
+
+    # Bug: creates fewer packs than expected (29 instead of 32)
+    assert buggy_num_packs < expected_num_packs, (
+        f'Old code should create fewer packs than expected. '
+        f'Expected {expected_num_packs}, got {buggy_num_packs} (user reported 29)'
+    )
