@@ -3645,21 +3645,20 @@ def test_lazy_loose_loosen_and_delete(temp_container, num_iterations_delete, mon
 
 
 def test_clean_loose_per_pack(temp_container, generate_random_data):
-    """Unit test: Pack with small pack size to create a few dozen packs, verify that files are deleted progressively.
+    """Unit test: Pack with small pack size to create exactly 32 packs, verify that files are deleted progressively.
 
     Tests that clean_loose_per_pack deletes loose objects in groups during packing,
     not all at the end. Uses callback to monitor loose object counts.
+
+    With the known_sizes bug fix and compress=False, we can now predict exact pack counts.
     """
 
-    # Configuration to create approximately 32 packs
-    # Exact testing is not possible here, as the pack_size_target is not a hard limit, compression is applied,
-    # and metadata requires additional space.
+    # Configuration to create exactly 32 packs
     num_objects = 256
     object_size = 1024  # 1 KiB per object
-    num_objects_per_pack = 8  # Ideal behavior 8 objects per pack -> Will be more as pack_size_target not hard limit
-    pack_size_target = num_objects_per_pack * object_size - 1  # 8 KB pack size to force many packs
-    max_num_packs = (num_objects * object_size) // pack_size_target
-    min_num_packs = int(0.9 * max_num_packs)  # Crude estimate, as assertion for num_packs cannot be made exact.
+    num_objects_per_pack = 8  # 8 objects per pack
+    pack_size_target = num_objects_per_pack * object_size  # 8 KiB pack size
+    expected_num_packs = num_objects // num_objects_per_pack  # Exactly 32 packs
 
     # Generate unique test data
     data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
@@ -3692,8 +3691,8 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
                 {'loose': counts['loose'], 'packed': counts['packed'], 'pack_files': counts['pack_files']}
             )
 
-    # Run packing with clean_loose_per_pack
-    temp_container.pack_all_loose(clean_loose_per_pack=True, callback=combined_callback)
+    # Run packing with clean_loose_per_pack (compress=False for deterministic pack sizes)
+    temp_container.pack_all_loose(clean_loose_per_pack=True, compress=False, callback=combined_callback)
 
     # Check how many packs we got
     final_counts = temp_container.count_objects()
@@ -3705,12 +3704,11 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     loose_counts_during_packing = [state['loose'] for state in packing_states]
     print(f'Loose object count progression: {loose_counts_during_packing}')
 
-    # Verify we got a reasonable number of packs
-    # (max. 32, but will be less as pack_size_target is not a strict upper bound)
-    # breakpoint()
-    assert (
-        min_num_packs <= actual_packs <= max_num_packs
-    ), f'Expected between {min_num_packs} and {max_num_packs} packs, got {actual_packs}'
+    # Verify we got exactly the expected number of packs
+    assert actual_packs == expected_num_packs, (
+        f'Expected exactly {expected_num_packs} packs, got {actual_packs}. '
+        'This may indicate the known_sizes fix is not working correctly.'
+    )
 
     # Verify final state
     assert final_counts['loose'] == 0, 'All loose objects should be deleted'
@@ -3721,17 +3719,20 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     min_loose = min(loose_counts_during_packing)
 
     assert max_loose == num_objects, 'Should start with all objects loose'
-    # min_loose might not be 0 due to callback timing and the non-deterministic behavior of packing due to compression,
-    # metadata, etc. but should be much less than max
-    # we are also checking final state above via `assert final_counts['loose'] == 0` so this should be OK
+    # min_loose might not be 0 due to callback timing, but should be very small
+    # We also check final state above via `assert final_counts['loose'] == 0`
     assert min_loose <= num_objects * 0.05, f'Should see significant reduction during packing: min={min_loose}'
 
     # Verify we see step-wise decreases (files deleted in groups)
     unique_loose_counts = sorted(set(loose_counts_during_packing), reverse=True)
     print(f'Unique loose counts observed: {unique_loose_counts}')
 
-    # Should see at least 3 different loose counts (indicating group deletions)
-    assert len(unique_loose_counts) >= min_num_packs, f'Should see group deletions, got counts: {unique_loose_counts}'
+    # Should see multiple different loose counts (indicating group deletions)
+    # With exact pack counts, we expect to see close to expected_num_packs different states
+    assert len(unique_loose_counts) >= expected_num_packs * 0.8, (
+        f'Should see group deletions (at least {int(expected_num_packs * 0.8)} unique counts), '
+        f'got {len(unique_loose_counts)}: {unique_loose_counts}'
+    )
 
     # Verify the decreases represent meaningful groups (not just 1-by-1)
     if len(unique_loose_counts) >= 2:
@@ -3780,8 +3781,8 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     # Track loose counts during default packing (clean_loose_per_pack=False)
     packing_states = []
 
-    # Run packing WITHOUT clean_loose_per_pack (default behavior)
-    temp_container.pack_all_loose(clean_loose_per_pack=False, callback=combined_callback)
+    # Run packing WITHOUT clean_loose_per_pack (default behavior, also compress=False for consistency)
+    temp_container.pack_all_loose(clean_loose_per_pack=False, compress=False, callback=combined_callback)
 
     # With default behavior, loose objects should remain constant during packing
     loose_counts_during_packing = [state['loose'] for state in packing_states]

@@ -263,9 +263,17 @@ class Container:  # pylint: disable=too-many-public-methods
             if not pack_path.exists():
                 # Use this ID - the pack file does not exist yet
                 break
-            if pack_path.stat().st_size < self.pack_size_target:
+
+            # Get size from known_sizes if available, otherwise from filesystem
+            if known_sizes and pack_id in known_sizes:
+                size = known_sizes[pack_id]
+            else:
+                size = pack_path.stat().st_size
+
+            if size < self.pack_size_target:
                 # Use this ID - the pack file is not "full" yet
                 break
+
             # Try the next pack
             pack_id += 1
 
