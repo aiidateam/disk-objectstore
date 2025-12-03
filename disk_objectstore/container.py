@@ -1261,7 +1261,7 @@ class Container:  # pylint: disable=too-many-public-methods
         validate_objects: bool = True,
         do_fsync: bool = True,
         callback: None | (Callable[[str, Any], None]) = None,
-        clean_loose_per_pack: bool = False,  # TODO: Make this the default with next major version
+        clean_loose_per_pack: bool = False,
     ) -> None:
         """Pack all loose objects.
 

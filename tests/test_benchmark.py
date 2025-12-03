@@ -189,10 +189,21 @@ def setup_container_with_data(temp_container, generate_random_data, num_files, f
     return data
 
 
+# TODO:
+# There are some differences in the following approaches: the call to
+# "pack_all_loose" with `clean_loose_per_pack=True` does delete the loose files
+# (after every pack), while with `clean_loose_per_pack=False` they don't get
+# deleted, meaning the overhead to `os.remove` is there in one scenario, but
+# not the other. I'd like to bring them on exactly the same footing instead,
+# however, so the `run_clean_final_approach` benchmark should also lead to the
+# files being deleted at the end. I could call `.clean_storage()` (as is
+# typically done by callers outside), but it does more, so that would not be
+# exactly the same.
+
+
 def run_clean_final_approach(temp_container):
     """Helper function to run the clean_final approach."""
     temp_container.pack_all_loose(clean_loose_per_pack=False)
-    # temp_container.clean_storage()
 
 
 def run_clean_each_approach(temp_container):
