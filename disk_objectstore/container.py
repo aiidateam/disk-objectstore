@@ -1271,10 +1271,11 @@ class Container:  # pylint: disable=too-many-public-methods
            Note that since loose objects are always uncompressed, `CompressMode.KEEP` is equivalent to
            `CompressMode.NO` in this function.
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
-        :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
+        :param do_fsync: if True, calls a flush to disk of each pack file just before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
             Set to False if you don't need such a guarantee (major risk of data loss if this is set to False, and power
-            supply stops during packing operation).
+            supply stops during packing operation). If you set `do_fsync=False` at least use
+            `clean_loose_per_pack=False`, and do a manual `fsync` before cleaning the loose objects via `clean_storage`.
         :param callback: a callback function that can be used to report progress.
             The callback function should accept two arguments: a string with the action being performed
             and the value of the action. The action can be "init" (initialization),
@@ -1440,6 +1441,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Track this object for potential cleanup
                     packed_in_current_pack.append(loose_hashkey)
 
+                    # TODO: Move this one level out?
+                    # check: `update_every`
+                    # Make issue on this
                     if callback:
                         callback(
                             'update',
@@ -1468,6 +1472,8 @@ class Container:  # pylint: disable=too-many-public-methods
                     )
 
             # OK, if we are here, file was flushed, synced to disk and closed.
+            # Note that this is only the case if do_fsync is True. This is the default,
+            # and we warn users that they should not set it to False.
             # Let's commit then the information to the DB, so it's officially a
             # packed object. Note: committing as soon as we are done with one pack,
             # so if there's a problem with one pack we don't start operating on the next one
@@ -1485,6 +1491,10 @@ class Container:  # pylint: disable=too-many-public-methods
         if callback:
             callback('close', None)
 
+    # TODO: for current test monkeypatch this function, store information as I do in the callback
+    # make sure this is only being called once per pack
+    # check decrease of loose objects. will be simpler logic
+    # actually compare the list
     def _clean_loose_objects(self, hashkeys: list[str]) -> None:
         """Clean up specific loose objects that have been successfully packed.
 
