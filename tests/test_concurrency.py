@@ -173,7 +173,7 @@ def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_p
         '0.5',
     ]
     if clean_loose_per_pack:
-        packer_args.append('--clean-per-pack')
+        packer_args.append('--clean-loose-per-pack')
 
     packer_proc = subprocess.Popen(packer_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 

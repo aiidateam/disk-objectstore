@@ -3651,9 +3651,9 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     """Unit test: Pack with small pack size to create exactly 32 packs, verify that files are deleted progressively.
 
     Tests that clean_loose_per_pack deletes loose objects in groups during packing,
-    not all at the end. Uses callback to monitor loose object counts.
+    not all at the end. Uses monkeypatched function to monitor loose object counts.
 
-    With the known_sizes bug fix and compress=False, we can now predict exact pack counts.
+    Run this test with `--log-cli-level=DEBUG` to display the debug log outputs.
     """
 
     # Configuration to create 32 packs
@@ -3801,47 +3801,6 @@ def test_clean_loose_per_pack(temp_container, generate_random_data):
     assert default_final_counts['packed'] == num_objects, 'All objects should still be packed'
 
 
-def test_clean_loose_per_pack_object_disappearance(temp_container, generate_random_data):
-    """Simple test to observe how loose objects disappear during packing.
-
-    Behavior as files disappear can be observed when running without output capturing via `pytest -s`.
-    """
-
-    num_files = 200
-    pack_size = 20_000
-    file_size = 500
-
-    # Generate test data
-    data_dict = generate_random_data(num_files=num_files, min_size=file_size, max_size=file_size, seed=42)
-    data = list(data_dict.values())
-
-    def count_callback(action, value):
-        """Simple callback that logs loose object counts."""
-        if action == 'update':
-            counts = temp_container.count_objects()
-            logger.debug(
-                '  Loose: %3d, Packed: %3d, Pack files: %2d',
-                counts['loose'],
-                counts['packed'],
-                counts['pack_files'],
-            )
-            # time.sleep(0.1)  # Short time delay to observe changes
-
-    # Test clean loose after each pack
-    temp_container.init_container(clear=True, pack_size_target=pack_size)
-
-    # Add objects
-    for content in data:
-        temp_container.add_object(content)
-
-    logger.debug('Loose path: %s', temp_container._get_loose_folder())
-
-    # Pack with cleaning per pack
-    temp_container.pack_all_loose(clean_loose_per_pack=True, callback=count_callback)
-    final = temp_container.count_objects()
-    logger.debug('Final: Loose: %d, Packed: %d', final['loose'], final['packed'])
-
-
 def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_data):
     """Test clean_loose_per_pack behavior when a file is kept open during packing.
 
@@ -3971,76 +3930,6 @@ def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_dat
         assert (
             not loose_path.exists() and final_counts['loose'] == 0
         ), 'After closing and cleanup, loose objects should be cleaned'
-
-
-def test_clean_loose_per_pack_concurrent_access(temp_container):
-    """Test clean_loose_per_pack with simulated concurrent access patterns."""
-    import platform
-
-    # Create test objects
-    objects_data = [b'test_data_' + str(i).encode() * 100 for i in range(10)]
-    hashkeys = []
-
-    for data in objects_data:
-        hashkey = temp_container.add_object(data)
-        hashkeys.append(hashkey)
-
-    # Get one file path to test concurrent access
-    test_hashkey = hashkeys[0]
-    test_data = objects_data[0]
-    loose_path = temp_container._get_loose_path_from_hashkey(test_hashkey)
-
-    logger.debug(f'Testing concurrent access on {platform.system()}')
-
-    # Simulate different access patterns
-    access_patterns = [
-        ('read_text', 'r'),
-        ('read_binary', 'rb'),
-    ]
-
-    for pattern_name, mode in access_patterns:
-        logger.debug(f'\nTesting pattern: {pattern_name} (mode: {mode})')
-
-        # Reset container state
-        temp_container.init_container(clear=True, pack_size_target=1_000)
-        for data in objects_data:
-            temp_container.add_object(data)
-
-        # Test the pattern
-        try:
-            with open(loose_path, mode) as f:
-                # Verify we can read
-                if 'r' in mode:
-                    content = f.read()
-                    if 'b' in mode:
-                        assert content == test_data
-                    else:  # text mode
-                        assert content == test_data.decode('utf-8', errors='ignore')
-                    f.seek(0)
-
-                # Pack while file is open
-                temp_container.pack_all_loose(clean_loose_per_pack=True)
-
-                # Check if we can still read
-                if 'r' in mode:
-                    f.seek(0)
-                    content_after_pack = f.read()
-                    if 'b' in mode:
-                        assert content_after_pack == test_data
-                    else:  # text mode
-                        assert content_after_pack == test_data.decode('utf-8', errors='ignore')
-
-                # Verify object is in pack
-                meta = temp_container.get_object_meta(test_hashkey)
-                assert meta['type'] == ObjectType.PACKED
-
-                logger.debug(f'Pattern {pattern_name} completed successfully')
-
-        except Exception as e:
-            logger.debug(f'Pattern {pattern_name} encountered: {e}')
-            # Verify object is still accessible somehow
-            packed_content = temp_container.get_object_content(test_hashkey)
-            assert packed_content == test_data
 
 
 def test_pack_size_target_creates_correct_number_of_packs(temp_container, generate_random_data):

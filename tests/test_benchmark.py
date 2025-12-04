@@ -141,7 +141,10 @@ def test_list_all_loose(temp_container, benchmark):
 
 
 def add_objects_in_batches(temp_container, data, batch_size=1000):
-    """Add objects to temp_container in batches."""
+    """Add objects to temp_container in batches.
+
+    This is to avoid exceptions due to too many file descriptors being open.
+    """
     for i in range(0, len(data), batch_size):
         batch = data[i : i + batch_size]
         for content in batch:

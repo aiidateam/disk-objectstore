@@ -27,12 +27,12 @@ def timestamp():
 @click.option('-r', '--repetitions', default=10, help='Number of repetitions before stopping.')
 @click.option('-w', '--wait-time', default=0.83, help='Time to wait between iterations.')
 @click.option(
-    '--clean-per-pack/--no-clean-per-pack',
+    '--clean-loose-per-pack/--no-clean-loose-per-pack',
     default=False,
     help='If set, clean loose objects after every pack operation.',
 )
 @click.help_option('-h', '--help')
-def main(path, repetitions, wait_time, clean_per_pack):
+def main(path, repetitions, wait_time, clean_loose_per_pack):
     """Periodically pack container."""
     container = Container(path)
     if not container.is_initialised:
@@ -46,7 +46,7 @@ def main(path, repetitions, wait_time, clean_per_pack):
         start_counts = container.count_objects()
         container.pack_all_loose(
             compress=compress_packs,
-            clean_loose_per_pack=clean_per_pack,
+            clean_loose_per_pack=clean_loose_per_pack,
         )
         print(f'[PACKER {timestamp()}] Done packing!')
         end_counts = container.count_objects()
