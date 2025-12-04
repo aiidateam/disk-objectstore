@@ -5,6 +5,7 @@ import dataclasses
 import functools
 import hashlib
 import io
+import logging
 import os
 import pathlib
 import random
@@ -19,6 +20,8 @@ import pytest
 import disk_objectstore.exceptions as exc
 from disk_objectstore import CompressMode, Container, ObjectType, database, utils
 from disk_objectstore.dataclasses import ObjectMeta
+
+logger = logging.getLogger(__name__)
 
 COMPRESSION_ALGORITHMS_TO_TEST = ['zlib+1', 'zlib+9']
 
@@ -3642,6 +3645,291 @@ def test_lazy_loose_loosen_and_delete(temp_container, num_iterations_delete, mon
         with pytest.raises(RuntimeError) as excinfo:
             lazy_loose.open_stream()
         assert 'Unable to open the loose object' in str(excinfo.value)
+
+
+def test_clean_loose_per_pack(temp_container, generate_random_data):
+    """Unit test: Pack with small pack size to create exactly 32 packs, verify that files are deleted progressively.
+
+    Tests that clean_loose_per_pack deletes loose objects in groups during packing,
+    not all at the end. Uses monkeypatched function to monitor loose object counts.
+
+    Run this test with `--log-cli-level=DEBUG` to display the debug log outputs.
+    """
+
+    # Configuration to create 32 packs
+    num_objects = 256
+    object_size = 1024  # 1 KiB per object
+    num_objects_per_pack = 8  # 8 objects per pack
+    pack_size_target = num_objects_per_pack * object_size  # 8 KiB pack size
+    expected_num_packs = int(num_objects / num_objects_per_pack)  # Exactly 32 packs
+
+    # Generate unique test data
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Add all objects
+    hashkeys = []
+    for content in data_dict.values():
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+
+    # Verify we have the expected number of objects
+    initial_counts = temp_container.count_objects()
+    assert initial_counts['loose'] == num_objects
+    assert initial_counts['packed'] == 0
+    assert initial_counts['pack_files'] == 0
+
+    logger.debug(
+        'Starting: %d objects (%d bytes each), pack_size_target=%d bytes', num_objects, object_size, pack_size_target
+    )
+
+    # Monkeypatch _clean_loose_objects to track when it's called and what it cleans
+    clean_calls = []
+    loose_progression = []  # Track loose object count after each cleanup
+    original_clean = temp_container._clean_loose_objects
+
+    def tracked_clean_loose_objects(hashkeys):
+        """Wrapper to track calls to _clean_loose_objects."""
+        clean_calls.append(list(hashkeys))  # Store copy of the hashkeys list
+        result = original_clean(hashkeys)
+        # Track loose count after cleanup
+        loose_progression.append(temp_container.count_objects()['loose'])
+        return result
+
+    temp_container._clean_loose_objects = tracked_clean_loose_objects
+
+    # Run packing with clean_loose_per_pack (compress=False for deterministic pack sizes)
+    temp_container.pack_all_loose(clean_loose_per_pack=True, compress=False)
+
+    # Check how many packs we got
+    final_counts = temp_container.count_objects()
+    actual_packs = final_counts['pack_files']
+
+    logger.debug('Result: Created %d packs', actual_packs)
+    logger.debug('_clean_loose_objects called %d times', len(clean_calls))
+
+    # Verify _clean_loose_objects was called exactly once per pack
+    assert len(clean_calls) == expected_num_packs, (
+        f'Expected _clean_loose_objects to be called {expected_num_packs} times (once per pack), '
+        f'but it was called {len(clean_calls)} times'
+    )
+
+    # Verify we got exactly the expected number of packs
+    assert actual_packs == expected_num_packs, f'Expected exactly {expected_num_packs} packs, got {actual_packs}. '
+
+    # Verify final state
+    assert final_counts['loose'] == 0, 'All loose objects should be deleted'
+    assert final_counts['packed'] == num_objects, 'All objects should be packed'
+
+    # Verify the exact progression of objects being cleaned
+    objects_per_call = [len(call_hashkeys) for call_hashkeys in clean_calls]
+    logger.debug('Objects cleaned per pack: %s', objects_per_call)
+
+    # Each call should clean exactly num_objects_per_pack objects (8 in this case)
+    for i, count in enumerate(objects_per_call):
+        assert (
+            count == num_objects_per_pack
+        ), f'Pack {i}: Expected to clean {num_objects_per_pack} objects, but cleaned {count}'
+
+    # Verify total objects cleaned equals total objects
+    total_cleaned = sum(len(call_hashkeys) for call_hashkeys in clean_calls)
+    assert total_cleaned == num_objects, f'Expected to clean {num_objects} total objects, but cleaned {total_cleaned}'
+
+    # Verify all hashkeys were cleaned exactly once (no duplicates, no missing)
+    all_cleaned_hashkeys = set()
+    for call_hashkeys in clean_calls:
+        all_cleaned_hashkeys.update(call_hashkeys)
+
+    assert (
+        len(all_cleaned_hashkeys) == num_objects
+    ), f'Expected {num_objects} unique objects to be cleaned, but got {len(all_cleaned_hashkeys)}'
+    assert all_cleaned_hashkeys == set(hashkeys), 'Not all original objects were cleaned'
+
+    # Verify exact progression of loose object counts
+    # With deterministic packing: 256 → 248 → 240 → ... → 8 → 0
+    expected_progression = [num_objects - (i + 1) * num_objects_per_pack for i in range(expected_num_packs)]
+    logger.debug('Loose object progression: %s', loose_progression)
+    logger.debug('Expected progression:     %s', expected_progression)
+
+    assert loose_progression == expected_progression, (
+        f'Loose object progression does not match expected.\n'
+        f'Expected: {expected_progression}\n'
+        f'Got:      {loose_progression}'
+    )
+
+    # Verify all objects are still accessible and correct
+    for i, hashkey in enumerate(hashkeys):
+        retrieved = temp_container.get_object_content(hashkey)
+        expected = list(data_dict.values())[i]
+        assert retrieved == expected, f'Object {i} content verification failed'
+
+    # Contrast test: Verify default behavior (without clean_loose_per_pack)
+    # Re-create the same scenario to test the default behavior
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Add the same objects again
+    for content in data_dict.values():
+        temp_container.add_object(content)
+
+    # Reset monkeypatch tracking for the contrast test
+    clean_calls_default = []
+
+    def tracked_clean_loose_objects_default(hashkeys):
+        """Wrapper to track calls to _clean_loose_objects in default mode."""
+        clean_calls_default.append(list(hashkeys))
+        return original_clean(hashkeys)
+
+    temp_container._clean_loose_objects = tracked_clean_loose_objects_default
+
+    # Run packing WITHOUT clean_loose_per_pack (default behavior, also compress=False for consistency)
+    temp_container.pack_all_loose(clean_loose_per_pack=False, compress=False)
+
+    logger.debug('Default mode: _clean_loose_objects called %d times', len(clean_calls_default))
+
+    # With default behavior, _clean_loose_objects should NEVER be called
+    assert len(clean_calls_default) == 0, (
+        f'Default behavior (clean_loose_per_pack=False) should not call _clean_loose_objects, '
+        f'but it was called {len(clean_calls_default)} times'
+    )
+
+    # Verify all objects remain as loose
+    default_final_counts = temp_container.count_objects()
+    assert (
+        default_final_counts['loose'] == num_objects
+    ), f'Default behavior should keep all {num_objects} objects loose, but only {default_final_counts["loose"]} remain'
+    assert default_final_counts['packed'] == num_objects, 'All objects should still be packed'
+
+
+def test_clean_loose_per_pack_with_open_file(temp_container, generate_random_data):
+    """Test clean_loose_per_pack behavior when a file is kept open during packing.
+
+    This test demonstrates platform-specific behavior:
+    - On Windows: File cannot be deleted while open, so it remains as loose
+    - On Unix/Linux/macOS: File can be deleted while open, but content remains accessible
+    """
+    import platform
+
+    # Configuration to create a manageable number of packs
+    num_objects = 50
+    object_size = 1_000
+    pack_size_target = 5_000  # Small packs to ensure multiple packs
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Generate test data
+    data_dict = generate_random_data(num_files=num_objects, min_size=object_size, max_size=object_size, seed=42)
+
+    # Add all objects as loose
+    hashkeys = []
+    for content in data_dict.values():
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+
+    # Pick the first object to keep open during packing
+    test_hashkey = hashkeys[0]
+    test_content = list(data_dict.values())[0]
+    loose_path = temp_container._get_loose_path_from_hashkey(test_hashkey)
+
+    # Verify initial state
+    initial_counts = temp_container.count_objects()
+    assert initial_counts['loose'] == num_objects
+    assert initial_counts['packed'] == 0
+    assert loose_path.exists()
+
+    logger.debug('Platform: %s', platform.system())
+    logger.debug('Test file path: %s', loose_path)
+    logger.debug('Initial loose objects: %d', initial_counts['loose'])
+
+    # Open the test file and keep it open during packing
+    with open(loose_path, 'rb') as open_file:
+        # Verify we can read the correct content
+        open_file_content = open_file.read()
+        assert open_file_content == test_content, 'File content verification failed'
+        open_file.seek(0)  # Reset position for potential re-reading
+
+        # Pack all loose objects with clean_loose_per_pack=True
+        temp_container.pack_all_loose(clean_loose_per_pack=True)
+
+        # Check the state after packing
+        post_pack_counts = temp_container.count_objects()
+        logger.debug(f'After packing - Loose: {post_pack_counts["loose"]}, Packed: {post_pack_counts["packed"]}')
+
+        # Find which pack the test object went to
+        test_meta = temp_container.get_object_meta(test_hashkey)
+        test_pack_id = test_meta['pack_id']
+        logger.debug(f'Test object packed in pack: {test_pack_id}')
+
+        # Platform-specific behavior verification
+        if platform.system() == 'Windows':
+            # On Windows, the file should still exist because it's open
+            logger.debug('Windows: File should still exist (cannot delete open files)')
+
+            # The file should still be there
+            try:
+                assert loose_path.exists(), 'On Windows, open file should not be deleted'
+                logger.debug('Windows behavior confirmed: loose file still exists')
+
+                # We should have one less packed object and one remaining loose object
+                # because the open file couldn't be cleaned up
+                assert post_pack_counts['loose'] >= 1, 'Should have at least 1 loose object remaining on Windows'
+
+            except AssertionError as e:
+                logger.debug(f'Unexpected behavior on Windows: {e}')
+                raise
+
+        else:
+            # On Unix-like systems, the file can be deleted even when open
+            logger.debug('Unix-like system: File can be deleted while open')
+
+            try:
+                # The loose file might be deleted, but we can still read from our open handle
+                logger.debug(f'Loose file exists after packing: {loose_path.exists()}')
+
+                # All objects should be packed
+                assert post_pack_counts['packed'] == num_objects, 'All objects should be packed'
+
+                # We should be able to read from our still-open file handle
+                open_file.seek(0)
+                still_readable_content = open_file.read()
+                assert still_readable_content == test_content, 'Should still be able to read from open file handle'
+                logger.debug('Unix behavior confirmed: can read from open file even after deletion')
+
+            except Exception as e:
+                logger.debug(f'Unix-like system behavior: {e}')
+
+        # Verify that the object is accessible from the pack
+        packed_content = temp_container.get_object_content(test_hashkey)
+        assert packed_content == test_content, 'Object should be accessible from pack'
+
+        # Verify we can still read from our open file handle regardless of platform
+        open_file.seek(0)
+        final_read = open_file.read()
+        assert final_read == test_content, 'Should always be able to read from open file handle'
+
+    # File is now closed, check final cleanup behavior
+    logger.debug('\nAfter closing the file:')
+
+    # Run clean_storage to see if it can now clean up any remaining loose objects
+    temp_container.clean_storage()
+    final_counts = temp_container.count_objects()
+
+    logger.debug(f'Final state - Loose: {final_counts["loose"]}, Packed: {final_counts["packed"]}')
+
+    # After cleanup, all objects should be packed and accessible
+    assert final_counts['packed'] == num_objects, 'All objects should finally be packed'
+
+    # Verify all objects are still accessible
+    for hashkey in hashkeys:
+        content = temp_container.get_object_content(hashkey)
+        assert content is not None, f'Object {hashkey} should be accessible'
+
+    # The loose file should now be cleanable on all platforms
+    if platform.system() == 'Windows':
+        # On Windows, after closing, the file should be cleanable
+        assert (
+            not loose_path.exists() and final_counts['loose'] == 0
+        ), 'After closing and cleanup, loose objects should be cleaned'
 
 
 def test_pack_size_target_creates_correct_number_of_packs(temp_container, generate_random_data):

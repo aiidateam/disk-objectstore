@@ -20,8 +20,11 @@ NUM_WORKERS = 4
 # (VALUE=1 by default) and passed as `concurrency_repetition_index`.
 @pytest.mark.parametrize('with_packing', [True, False])  # If it works with packing, no need to test also without
 @pytest.mark.parametrize('max_size', [1, 1000])
+@pytest.mark.usefixture('concurrency_repetition_index')
 def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, unused-argument
-    temp_dir, with_packing, max_size, concurrency_repetition_index
+    temp_dir,
+    with_packing,
+    max_size,
 ):
     """Test to run concurrently many workers creating (loose) objects and (possibly) a single concurrent packer.
 
@@ -136,3 +139,82 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
 
     error_string = 'At least one of the concurrent processes failed!\nMessages:\n' + '\n'.join(error_messages)
     assert len(error_messages) == 0, error_string
+
+
+@pytest.mark.parametrize('clean_loose_per_pack', [False, True])
+@pytest.mark.parametrize('max_size', [1, 1000])
+@pytest.mark.usefixture('concurrency_repetition_index')
+def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_per_pack):
+    """Concurrent workers (which write AND read) and a packer, optionally cleaning loose objects per pack.
+
+    Note: periodic_worker.py already performs extensive reading of all objects written by all workers,
+    so no separate reader process is needed.
+    """
+
+    packer_script = CONCURRENT_DIR / 'periodic_packer.py'
+    worker_script = CONCURRENT_DIR / 'periodic_worker.py'
+
+    container_dir = temp_dir / 'container'
+    container = Container(container_dir)
+    container.init_container()
+
+    shared_dir = temp_dir / 'shared'
+    os.mkdir(shared_dir)
+
+    # Pack command with optional clean_loose_per_pack
+    packer_args = [
+        sys.executable,
+        packer_script,
+        '-p',
+        container_dir,
+        '-r',
+        '5',
+        '-w',
+        '0.5',
+    ]
+    if clean_loose_per_pack:
+        packer_args.append('--clean-loose-per-pack')
+
+    packer_proc = subprocess.Popen(packer_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    # Start workers (they write AND read)
+    worker_procs = []
+    for worker_id in range(2):
+        options = [
+            '-r',
+            '5',
+            '-w',
+            '0.5',
+            '-p',
+            container_dir,
+            '-s',
+            shared_dir,
+            '-M',
+            str(max_size),
+        ]
+        worker_procs.append(
+            subprocess.Popen([sys.executable, worker_script] + options, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        )
+
+    # Wait for all processes
+    all_procs = [packer_proc] + worker_procs
+    outs_errs = [proc.communicate() for proc in all_procs]
+
+    error_messages = []
+    for idx, proc in enumerate(all_procs):
+        out, err = outs_errs[idx]
+        if proc.returncode:
+            error_messages.append(f'Process #{idx} failed with return code {proc.returncode}')
+            error_messages.append('STDOUT:\n' + out.decode())
+            error_messages.append('STDERR:\n' + err.decode())
+        elif err:
+            # capture non-fatal stderr output
+            error_messages.append(f'Process #{idx} reported warnings on stderr:\n' + err.decode())
+
+    assert not error_messages, 'Concurrent processes had errors/warnings:\n' + '\n'.join(error_messages)
+
+    # Basic integrity checks
+    counts = container.count_objects()
+    total_objects = counts['loose'] + counts['pack_files']
+    assert total_objects > 0, 'No objects written at all'
+    assert counts['pack_files'] > 0, 'Expected at least one pack file after concurrent run'
