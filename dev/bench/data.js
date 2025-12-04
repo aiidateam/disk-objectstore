@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1764848871437,
+  "lastUpdate": 1764849002242,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -13686,6 +13686,163 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 5.119975544072338e-7",
             "extra": "mean: 174.5890014813216 nsec\nrounds: 195122"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "julian.geiger@gmx.net",
+            "name": "Julian Geiger",
+            "username": "GeigerJ2"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f3ccfadebea447d7f73acb21b025c0c2c9aa7ec",
+          "message": "Delete loose files per pack creation incrementally (#193)\n\nThis allows to delete loose objects immediately after each pack is\nclosed and committed to the database, instead of deleting all in a\nmanual cleanup step later.\n\n---------\n\nCo-authored-by: Giovanni Pizzi <gio.piz@gmail.com>",
+          "timestamp": "2025-12-04T12:46:53+01:00",
+          "tree_id": "86969e340bb1f732e1ad6c3780f9008394564ed2",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/7f3ccfadebea447d7f73acb21b025c0c2c9aa7ec"
+        },
+        "date": 1764849000894,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.395892752613034,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04168480735915294",
+            "extra": "mean: 294.4733749999999 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 2.054933686005619,
+            "unit": "iter/sec",
+            "range": "stddev: 0.050447426481251036",
+            "extra": "mean: 486.63370833333335 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 10.333561728894201,
+            "unit": "iter/sec",
+            "range": "stddev: 0.015370414335631978",
+            "extra": "mean: 96.7720546153848 msec\nrounds: 13"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 22.303649114822672,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007726563657681901",
+            "extra": "mean: 44.835712526315476 msec\nrounds: 19"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.145415652772929,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03218952701333549",
+            "extra": "mean: 241.23033340000183 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 2776494.5531220385,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000018039891993614654",
+            "extra": "mean: 360.1663827777175 nsec\nrounds: 82190"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 4622179.387675158,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000002979880223183419",
+            "extra": "mean: 216.3481587640397 nsec\nrounds: 113212"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_final]",
+            "value": 2265.2001623538195,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001446520497668588",
+            "extra": "mean: 441.4620909089456 usec\nrounds: 176"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_each]",
+            "value": 3716.749117678555,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001737495458875895",
+            "extra": "mean: 269.0523272726544 usec\nrounds: 110"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_final]",
+            "value": 1751.8779135848902,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0003578249581481056",
+            "extra": "mean: 570.8160324675179 usec\nrounds: 154"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_each]",
+            "value": 3588.0167416863646,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00017135857813883198",
+            "extra": "mean: 278.70549999998076 usec\nrounds: 190"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_final]",
+            "value": 174.01246039061408,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004209291158353087",
+            "extra": "mean: 5.746714906250117 msec\nrounds: 32"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_each]",
+            "value": 477.88067838296894,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0007667862151532468",
+            "extra": "mean: 2.092572571428824 msec\nrounds: 35"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_final]",
+            "value": 231.85120342345232,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014499257287244422",
+            "extra": "mean: 4.313111104166249 msec\nrounds: 48"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_each]",
+            "value": 554.3031234210372,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0009345275353588933",
+            "extra": "mean: 1.8040670487804933 msec\nrounds: 41"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_final]",
+            "value": 69.63323659001921,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014860243849979678",
+            "extra": "mean: 14.36095820000034 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_each]",
+            "value": 131.42835122974273,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0017612366847908178",
+            "extra": "mean: 7.608708400000808 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_final]",
+            "value": 63.724506214732536,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0023248485674715012",
+            "extra": "mean: 15.692549999999983 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_each]",
+            "value": 199.43461085560287,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012420779192035236",
+            "extra": "mean: 5.0141748000001485 msec\nrounds: 5"
           }
         ]
       }
