@@ -20,7 +20,7 @@ NUM_WORKERS = 4
 # (VALUE=1 by default) and passed as `concurrency_repetition_index`.
 @pytest.mark.parametrize('with_packing', [True, False])  # If it works with packing, no need to test also without
 @pytest.mark.parametrize('max_size', [1, 1000])
-@pytest.mark.usefixture('concurrency_repetition_index')
+@pytest.mark.usefixtures('concurrency_repetition_index')
 def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, unused-argument
     temp_dir,
     with_packing,
@@ -143,7 +143,7 @@ def test_concurrency(  # pylint: disable=too-many-statements, too-many-locals, u
 
 @pytest.mark.parametrize('clean_loose_per_pack', [False, True])
 @pytest.mark.parametrize('max_size', [1, 1000])
-@pytest.mark.usefixture('concurrency_repetition_index')
+@pytest.mark.usefixtures('concurrency_repetition_index')
 def test_concurrency_with_clean_loose_per_pack(temp_dir, max_size, clean_loose_per_pack):
     """Concurrent workers (which write AND read) and a packer, optionally cleaning loose objects per pack.
 

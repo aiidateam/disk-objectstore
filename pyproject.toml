@@ -30,7 +30,7 @@ classifiers = [
 keywords = ['object store', 'repository', 'file store', 'key-value store']
 requires-python = '>=3.9'
 dependencies = [
-    'click',
+    'click~=8.1',
     'sqlalchemy>=1.4.22',
 ]
 
@@ -39,11 +39,10 @@ Source = 'https://github.com/aiidateam/disk-objectstore'
 
 [project.optional-dependencies]
 dev = [
-    'coverage',
-    'pre-commit',
-    'pytest',
-    'pytest-benchmark',
-    'pytest-cov',
+    'pre-commit>3.0',
+    'pytest~=8.4',
+    'pytest-benchmark~=5.2',
+    'pytest-cov~=7.0',
 ]
 docs = [
     'jinja2<3.1',
@@ -69,6 +68,20 @@ optionaltests = [
 
 [project.scripts]
 dostore = 'disk_objectstore.cli:main'
+
+# The "dev" dependency group is automatically synced by uv
+# and should thus contain all necessary deps for local development.
+[dependency-groups]
+dev = [
+  "disk_objectstore[dev,docs,examples,progressbar,optionaltests]"
+]
+
+[tool.pytest.ini_options]
+addopts = '--strict-config --strict-markers -ra --cov-report xml --cov-append'
+minversion = '7.0'
+testpaths = [
+    'tests',
+]
 
 [tool.flit.module]
 name = 'disk_objectstore'
@@ -158,4 +171,4 @@ commands = dostore {posargs}
 """
 
 [tool.uv]
-required-version = ">=0.5.21"
+required-version = ">=0.8.4"
