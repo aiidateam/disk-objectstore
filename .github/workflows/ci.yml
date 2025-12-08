@@ -15,10 +15,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.9"
+          version: 0.9.13
+          python-version: "3.10"
+      - name: Install dependencies from uv.lock
+        run: uv sync --locked
       - uses: pre-commit/action@v3.0.1
 
   tests:
