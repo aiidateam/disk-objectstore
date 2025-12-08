@@ -148,6 +148,13 @@ scripts_are_modules = true
 warn_redundant_casts = true
 plugins = ['sqlalchemy.ext.mypy.plugin']
 
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = [
+  'profilehooks.*',
+  'memory_profiler.*',
+]
+
 [tool.tox]
 legacy_tox_ini = """
 [tox]
