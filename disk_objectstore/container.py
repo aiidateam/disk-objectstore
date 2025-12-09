@@ -1021,9 +1021,10 @@ class Container:  # pylint: disable=too-many-public-methods
         In particular, it returns the number of loose objects,
         of packed objects, and the number of pack files."""
 
+        # TODO: Remove type: ignore! Do we need to handle number_packed==None?
         number_packed = self._get_operation_session().scalar(select(func.count()).select_from(Obj))
         return ObjectCount(
-            packed=number_packed,
+            packed=number_packed,  # type: ignore[arg-type]
             loose=sum(1 for _ in self._list_loose()),
             pack_files=sum(1 for _ in self._list_packs()),
         )
@@ -1095,7 +1096,8 @@ class Container:  # pylint: disable=too-many-public-methods
             total_size_loose += loose_path.stat().st_size
         retval['total_size_loose'] = total_size_loose
 
-        return TotalSize(**retval)
+        # TODO: Handle None?
+        return TotalSize(**retval)  # type: ignore[arg-type]
 
     @contextmanager
     def lock_pack(self, pack_id: str, allow_repack_pack: bool = False) -> Iterator[StreamWriteBytesType]:
@@ -2359,7 +2361,8 @@ class Container:  # pylint: disable=too-many-public-methods
                 value={'total': total, 'description': f'Pack {pack_id}'},
             )
             # Update at most 400 times, avoiding to increase CPU usage; if the list is small: every object.
-            update_every = max(int(total / 400), 1)
+            # TODO: Handle total==None?
+            update_every = max(int(total / 400), 1)  # type: ignore[operator]
             # Counter of how many objects have been since since the last update.
             # A new callback will be performed when this value is > update_every.
             since_last_update = 0
@@ -2727,7 +2730,9 @@ class Container:  # pylint: disable=too-many-public-methods
         # At this stage we just have a new pack -1 (_REPACK_PACK_ID) but it is never referenced.
         # Let us store the information in the DB.
         # We had already checked earlier that this at least one exists.
-        session.bulk_update_mappings(Obj, obj_dicts)
+        # TODO: error: Argument 1 to "bulk_update_mappings"
+        # of "Session" has incompatible type "type[Obj]"; expected "Mapper[Any]"
+        session.bulk_update_mappings(Obj, obj_dicts)  # type: ignore[arg-type]
         # I also commit.
         session.commit()
         # Clean up the cache
