@@ -24,8 +24,8 @@ from typing import (
     Iterable,
     Iterator,
     Literal,
+    Protocol,
     Sequence,
-    Union,
 )
 from zlib import error
 
@@ -50,29 +50,60 @@ except ImportError:
     F_FULLFSYNC = 0
 
 
-# requires read method only - base types (without wrappers)
-StreamReadBytesTypeBase = Union[
-    BinaryIO,
-    'PackedObjectReader',
-    'ZlibLikeBaseStreamDecompresser',
-    'ZeroStream',
-]
-# requires read method only - including wrappers
-StreamReadBytesType = Union[
-    StreamReadBytesTypeBase,
-    'CallbackStreamWrapper',
-]
-# requires read and seek capability - base types (without wrappers)
-StreamSeekBytesTypeBase = Union[
-    BinaryIO,
-    'PackedObjectReader',
-    'ZlibLikeBaseStreamDecompresser',
-]
-# requires read and seek capability - including wrappers
-StreamSeekBytesType = Union[
-    StreamSeekBytesTypeBase,
-    'CallbackStreamWrapper',
-]
+class StreamReadBytesType(Protocol):
+    """Protocol for readable byte streams (read-only access)."""
+
+    @property
+    def mode(self) -> str:
+        """Return the file mode."""
+        ...
+
+    @property
+    def closed(self) -> bool:
+        """Return whether the stream is closed."""
+        ...
+
+    def read(self, size: int = -1) -> bytes:
+        """Read and return up to size bytes."""
+        ...
+
+    def readline(self, size: int = -1) -> bytes:
+        """Read and return one line from the stream."""
+        ...
+
+    def readlines(self, hint: int = -1) -> list[bytes]:
+        """Read and return a list of lines from the stream."""
+        ...
+
+    def __enter__(self) -> StreamReadBytesType:
+        """Enter context manager."""
+        ...
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager."""
+        ...
+
+
+class StreamSeekBytesType(StreamReadBytesType, Protocol):
+    """Protocol for seekable byte streams (read + seek access)."""
+
+    def seek(self, target: int, whence: int = 0) -> int:
+        """Change stream position."""
+        ...
+
+    def tell(self) -> int:
+        """Return current stream position."""
+        ...
+
+    def seekable(self) -> bool:
+        """Return whether object supports random access."""
+        ...
+
+    def __enter__(self) -> StreamSeekBytesType:
+        """Enter context manager."""
+        ...
+
+
 StreamWriteBytesType = BinaryIO
 
 # For now I I don't always activate it as I need to think at the right balance between
@@ -720,7 +751,7 @@ class CallbackStreamWrapper:
 
     def __init__(
         self,
-        stream: StreamSeekBytesTypeBase | BufferedReader,
+        stream: StreamSeekBytesType,
         callback: Callable | None,
         total_length: int = 0,
         description: str = 'Streamed object',
@@ -919,7 +950,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
     def __init__(
         self,
-        compressed_stream: StreamSeekBytesTypeBase,
+        compressed_stream: StreamSeekBytesType,
         lazy_uncompressed_stream: LazyLooseStream | None = None,
     ) -> None:
         """Create the class from a given compressed bytestream.
