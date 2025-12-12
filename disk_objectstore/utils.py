@@ -1536,7 +1536,7 @@ def safe_flush_to_disk(
     real_path: Path,
     use_fullsync: bool = False,
 ) -> None:
-    """Tries to to its best to safely commit to disk.
+    """Tries to do its best to safely commit to disk.
 
     Note that calling this is needed to reduce the risk of data loss due to, e.g., a power failure.
     However, this call is typically expensive so should be called only if the guarantees are really needed, and

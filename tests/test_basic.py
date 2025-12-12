@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from disk_objectstore import Container
+
 # pylint: disable=invalid-name
 
 
@@ -351,3 +353,154 @@ def test_exclusive_mode_windows(temp_dir, lock_file_on_windows):
         # If I close, I shouldn't need to unlock
         # win32file.UnlockFileEx(winfd, 0, -0x10000, overlapped)
         os.close(fd)
+
+
+def test_clean_loose_objects_empty(temp_container):
+    """Test early return."""
+    result = temp_container._clean_loose_objects([])
+    assert result is None
+
+
+def test_clean_loose_objects_file_not_found(temp_container):
+    """Test _clean_loose_objects when loose file doesn't exist."""
+    # Create a fake hashkey that won't have a corresponding loose file
+    fake_hashkey = 'a' * 64  # Valid hex string of typical hash length
+
+    # This should hit the FileNotFoundError exception, which, however, is being captured, so no raise
+    temp_container._clean_loose_objects([fake_hashkey])
+
+
+def test_clean_loose_objects_successful_cleanup(temp_container):
+    """Test _clean_loose_objects successfully removes loose files."""
+    contents = [b'content1', b'content2', b'content3']
+    hashkeys = []
+    loose_paths = []
+
+    for content in contents:
+        hashkey = temp_container.add_object(content)
+        hashkeys.append(hashkey)
+        loose_paths.append(temp_container._get_loose_path_from_hashkey(hashkey))
+
+    # Verify all loose files exist
+    assert all(path.exists() for path in loose_paths)
+
+    temp_container._clean_loose_objects(hashkeys)
+
+    # Verify all loose files are removed
+    assert all(not path.exists() for path in loose_paths)
+
+
+def test_clean_loose_objects_mixed_scenarios(temp_container):
+    """Test _clean_loose_objects with mix of existing and non-existing files."""
+    # Create one real loose object
+    content = b'real content'
+    real_hashkey = temp_container.add_object(content)
+    real_path = temp_container._get_loose_path_from_hashkey(real_hashkey)
+    assert real_path.exists()
+
+    # Create fake hashkeys
+    fake_hashkey1 = 'b' * 64
+    fake_hashkey2 = 'c' * 64
+
+    # Mix real and fake hashkeys
+    mixed_hashkeys = [fake_hashkey1, real_hashkey, fake_hashkey2]
+
+    # This should handle both successful deletion and FileNotFoundError
+    temp_container._clean_loose_objects(mixed_hashkeys)
+
+    # Real file should be deleted, fake ones just ignored
+    assert not real_path.exists()
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='PermissionError test only relevant on Windows')
+def test_clean_loose_objects_permission_error_windows(temp_container, lock_file_on_windows):
+    """Test _clean_loose_objects when file is locked (Windows only)."""
+    # Create a loose object
+    content = b'test content'
+    hashkey = temp_container.add_object(content)
+
+    # Verify the loose file exists
+    loose_path = temp_container._get_loose_path_from_hashkey(hashkey)
+    assert loose_path.exists()
+
+    # Lock the file on Windows
+    fd = os.open(loose_path, os.O_RDONLY)
+    try:
+        lock_file_on_windows(fd)
+
+        # This should hit the PermissionError exception path
+        temp_container._clean_loose_objects([hashkey])
+
+        # File should still exist since it was locked
+        assert loose_path.exists()
+    finally:
+        os.close(fd)
+
+
+def test_get_pack_id_to_write_to_with_known_sizes(temp_container):
+    """Unit test: Verify _get_pack_id_to_write_to correctly uses known_sizes parameter.
+
+    Tests that when known_sizes is provided, it uses those values instead of stat()
+    to determine which pack file to write to next.
+    """
+    pack_size_target = 1000
+    temp_container.init_container(clear=True, pack_size_target=pack_size_target)
+
+    # Test 1: Without known_sizes, should return pack 0 (doesn't exist yet)
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=None)
+    assert pack_id == 0, 'Should start with pack 0 when no packs exist'
+
+    # Create a small pack file (under target)
+    pack_path = temp_container._get_pack_path_from_pack_id(0)
+    pack_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(pack_path, 'wb') as f:
+        f.write(b'x' * 500)  # 500 bytes, under the target
+
+    # Test 2: Without known_sizes, should use stat() and return pack 0 (under target)
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=None)
+    assert pack_id == 0, 'Should return pack 0 when it exists and is under target'
+
+    # Test 3: With known_sizes showing pack 0 is not full, should return pack 0
+    known_sizes = {0: 500}  # Under the target
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 0, 'Should return pack 0 when known_sizes shows pack 0 is not full'
+
+    # Test 4: With known_sizes showing pack 0 is full, should return pack 1
+    known_sizes = {0: 1500}  # Over the target
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 1, 'Should return pack 1 when known_sizes shows pack 0 is full'
+
+    # Test 5: Multiple packs tracked in known_sizes
+    # Create pack 1 that's also under target
+    pack_path_1 = temp_container._get_pack_path_from_pack_id(1)
+    with open(pack_path_1, 'wb') as f:
+        f.write(b'y' * 600)
+
+    # Now _current_pack_id is 1 (cached from previous test)
+    # With known_sizes showing pack 1 is not full, should return pack 1
+    known_sizes = {1: 800}  # Pack 1 not full
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 1, 'Should return pack 1 when it is cached and not full'
+
+    # Test 6: Multiple packs, current one full, should increment
+    known_sizes = {1: 1200}  # Pack 1 full
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 2, 'Should return pack 2 when pack 1 is full'
+
+    # Test 7: Multiple packs in known_sizes with different states
+    # Create pack 2
+    pack_path_2 = temp_container._get_pack_path_from_pack_id(2)
+    with open(pack_path_2, 'wb') as f:
+        f.write(b'z' * 300)
+
+    # known_sizes shows pack 2 is not full
+    known_sizes = {0: 1500, 1: 1200, 2: 300}
+    pack_id = temp_container._get_pack_id_to_write_to(known_sizes=known_sizes)
+    assert pack_id == 2, 'Should return pack 2 when it is cached and not full'
+
+    # Test 8: instantiate a new Container instance: this should not reuse the cache.
+    # Even if packs 1 and 2 exist, since pack 0 is smaller, the function should return
+    # pack 0.
+    temp_container_new = Container(folder=temp_container.get_folder())
+    pack_id = temp_container_new._get_pack_id_to_write_to()
+    assert pack_id == 0, 'Should return pack 0 even if pack 1 and 2 exist, since pack 0 is smaller'

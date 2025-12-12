@@ -9,6 +9,9 @@ on:
     branches:
       - main
 
+env:
+  FORCE_COLOR: 1
+
 jobs:
 
   benchmarks:
@@ -23,18 +26,19 @@ jobs:
     if: github.repository_owner == 'aiidateam'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v6
     - name: Set up uv
-      uses: astral-sh/setup-uv@v5.2.1
+      uses: astral-sh/setup-uv@v7
       with:
-        version: 0.5.22
+        version: 0.9.13
         python-version: 3.9
+
     - name: Install dependencies from uv lock
-      # I'm using pip install -e to make sure that the coverage properly traces the runs
-      # also of the concurrent tests (maybe we can achieve this differently)
-      run: uv pip install -e .[dev,examples,optionaltests]
+      run: uv sync --locked
+
     - name: Run benchmarks
-      run: pytest --benchmark-only --benchmark-json output.json
+      run: uv run pytest --benchmark-only --benchmark-json output.json
+
     - name: Store benchmark result
       ## Run only on push on main! Otherwise people (or other branches) might access to the github-actions branch
       ## This is currently disabled because we are in a workflow that has the correct 'on' settings (only push,

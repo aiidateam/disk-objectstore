@@ -243,26 +243,37 @@ class Container:  # pylint: disable=too-many-public-methods
         """Return the path to the SQLite file containing the index of packed objects."""
         return self._folder / f'packs{self._PACK_INDEX_SUFFIX}'
 
-    def _get_pack_id_to_write_to(self) -> int:
+    def _get_pack_id_to_write_to(self, known_sizes: dict[int, int] | None = None) -> int:
         """Return the pack ID to write the next object.
 
-        This function checks that there is a pack file with the current pack ID.
-        If it does not exist, that it returns that ID (the file is new and must be created).
-        If it exists, it returns the ID only if the size is smaller than the container's pack_size_target,
-        otherwise it increases by one until it finds a valid "non-full" pack ID.
+        This function finds the first pack file that either doesn't exist yet or
+        has size below pack_size_target. Starts from the current pack ID.
 
+        :param known_sizes: Optional dict mapping pack_id -> size (via `tell()`). If provided,
+            uses the known size instead of calling `stat()` on the pack file. This avoids
+            incorrect sizes due to buffering when the pack file hasn't been flushed yet.
         :return: an integer pack ID.
         """
         # Default to zero if not set (e.g. if it's None)
         pack_id = self._current_pack_id or 0
+
         while True:
             pack_path = self._get_pack_path_from_pack_id(pack_id)
+
             if not pack_path.exists():
                 # Use this ID - the pack file does not exist yet
                 break
-            if pack_path.stat().st_size < self.pack_size_target:
+
+            # Get size from known_sizes if available, otherwise from filesystem
+            if known_sizes and pack_id in known_sizes:
+                size = known_sizes[pack_id]
+            else:
+                size = pack_path.stat().st_size
+
+            if size < self.pack_size_target:
                 # Use this ID - the pack file is not "full" yet
                 break
+
             # Try the next pack
             pack_id += 1
 
@@ -1250,6 +1261,7 @@ class Container:  # pylint: disable=too-many-public-methods
         validate_objects: bool = True,
         do_fsync: bool = True,
         callback: None | (Callable[[str, Any], None]) = None,
+        clean_loose_per_pack: bool = False,
     ) -> None:
         """Pack all loose objects.
 
@@ -1265,10 +1277,11 @@ class Container:  # pylint: disable=too-many-public-methods
            Note that since loose objects are always uncompressed, `CompressMode.KEEP` is equivalent to
            `CompressMode.NO` in this function.
         :param validate_objects: if True, recompute the hash while packing, and raises if there is a problem.
-        :param do_fsync: if True, calls a flush to disk of the pack files before closing it.
+        :param do_fsync: if True, calls a flush to disk of each pack file just before closing it.
             Needed to guarantee that data will be there even in the case of a power loss.
-            Set to False if you don't need such a guarantee (anyway the loose version will be kept,
-            so often this guarantee is not strictly needed).
+            Set to False if you don't need such a guarantee (major risk of data loss if this is set to False, and power
+            supply stops during packing operation). If you set `do_fsync=False` at least use
+            `clean_loose_per_pack=False`, and do a manual `fsync` before cleaning the loose objects via `clean_storage`.
         :param callback: a callback function that can be used to report progress.
             The callback function should accept two arguments: a string with the action being performed
             and the value of the action. The action can be "init" (initialization),
@@ -1278,6 +1291,8 @@ class Container:  # pylint: disable=too-many-public-methods
             In case of "update", the value is amount of the operation that has been completed.
             In case of "close", the value is None.
             return value of the callback function is ignored.
+        :param clean_loose_per_pack: if True, the loose files that went into a `pack` are deleted immediately after this
+            `pack` is created.
         """
         hash_type = self.hash_type if validate_objects else None
 
@@ -1325,9 +1340,6 @@ class Container:  # pylint: disable=too-many-public-methods
         # Here, I could do some clean up of loose objects that are already in the packs,
         # by removing all loose objects with hash key `existing_packed_hashkeys`, that are
         # already packed.
-        # HOWEVER, while this would work fine on Linux, there are concurrency issues both
-        # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
-        # and deletion is deferred to a manual clean-up operation.
 
         if callback:
             callback(
@@ -1346,6 +1358,9 @@ class Container:  # pylint: disable=too-many-public-methods
         while loose_objects:
             # Store the last pack integer ID, needed to know later if I need to open a new pack
             last_pack_int_id = pack_int_id
+            # Track which objects were added to this pack for cleanup
+            packed_in_current_pack: list[str] = []
+
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
                 # Inner loop: continue until when there is a file, or
@@ -1358,7 +1373,11 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 while loose_objects:
                     # Check in which pack I need to write to the next object
-                    pack_int_id = self._get_pack_id_to_write_to()
+                    # Pass the known size for the current pack as the pack file might not have been flushed yet
+                    # and stat() might give incorrect results
+                    # Note: just pass the size for the current pack, as it's currently locked for
+                    # writing and it is the only pack for which this portion of code has full "control"
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes={pack_int_id: pack_handle.tell()})
                     if pack_int_id != last_pack_int_id:
                         # new pack file needed!
                         # Break from the inner while loop. This will:
@@ -1416,6 +1435,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Appending for later bulk commit - see comments in add_streamed_objects_to_pack
                     obj_dicts.append(obj_dict)
 
+                    # Track this object for potential cleanup
+                    packed_in_current_pack.append(loose_hashkey)
+
                     if callback:
                         callback(
                             'update',
@@ -1444,6 +1466,8 @@ class Container:  # pylint: disable=too-many-public-methods
                     )
 
             # OK, if we are here, file was flushed, synced to disk and closed.
+            # Note that this is only the case if do_fsync is True. This is the default,
+            # and we warn users that they should not set it to False.
             # Let's commit then the information to the DB, so it's officially a
             # packed object. Note: committing as soon as we are done with one pack,
             # so if there's a problem with one pack we don't start operating on the next one
@@ -1454,11 +1478,30 @@ class Container:  # pylint: disable=too-many-public-methods
             # Then, it would be safe to already do some clean up of loose objects that are now packed,
             # and by doing it here we would do it after each pack.
             # This would mean keeping track of the loose objects added to packs, and removing them.
-            # HOWEVER, while this would work fine on Linux, there are concurrency issues both
-            # on Mac and on Windows (see issues #37 and #43). Therefore, I do NOT delete them,
-            # and deletion is deferred to a manual clean-up operation.
+
+            # Clean up loose objects for this pack if requested
+            if clean_loose_per_pack and packed_in_current_pack:
+                self._clean_loose_objects(packed_in_current_pack)
         if callback:
             callback('close', None)
+
+    def _clean_loose_objects(self, hashkeys: list[str]) -> None:
+        """Clean up specific loose objects that have been successfully packed.
+
+        :param hashkeys: List of hashkeys to clean up from loose objects.
+            These should be objects that were just packed.
+        """
+
+        # Simply remove the loose files for the given hashkeys
+        # We trust that the caller has already ensured these are packed
+        for obj_hashkey in hashkeys:
+            try:
+                os.remove(self._get_loose_path_from_hashkey(obj_hashkey))
+            except (FileNotFoundError, PermissionError):
+                # FileNotFoundError: file might already be removed by another process
+                # PermissionError: file might be locked (especially on Windows)
+                # In both cases, we just continue - the file will be cleaned up later
+                pass
 
     def add_streamed_object_to_pack(  # pylint: disable=too-many-arguments
         self,
@@ -1550,7 +1593,7 @@ class Container:  # pylint: disable=too-many-public-methods
         """
         assert isinstance(
             compress, bool
-        ), 'Only True of False are valid `compress` modes when adding direclty to a pack'
+        ), 'Only True or False are valid `compress` modes when adding directly to a pack'
         yield_per_size = 1000
         hashkeys: list[str] = []
 
@@ -1631,7 +1674,8 @@ class Container:  # pylint: disable=too-many-public-methods
 
                 while working_stream_list:
                     # Check in which pack I need to write to the next object
-                    pack_int_id = self._get_pack_id_to_write_to()
+                    # Update the known size for the current pack before checking which pack to use
+                    pack_int_id = self._get_pack_id_to_write_to(known_sizes={pack_int_id: pack_handle.tell()})
                     if pack_int_id != last_pack_int_id:
                         # Break from the inner while loop. This will:
                         # 1. go down after the while loop, performing commits and

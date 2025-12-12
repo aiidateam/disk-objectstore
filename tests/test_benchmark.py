@@ -138,3 +138,223 @@ def test_list_all_loose(temp_container, benchmark):
     results = benchmark(temp_container.list_all_objects)
 
     assert set(results) == set(hashkeys)
+
+
+def add_objects_in_batches(temp_container, data, batch_size=1000):
+    """Add objects to temp_container in batches.
+
+    This is to avoid exceptions due to too many file descriptors being open.
+    """
+    for i in range(0, len(data), batch_size):
+        batch = data[i : i + batch_size]
+        for content in batch:
+            temp_container.add_object(content)
+
+
+def calculate_target_config(target_packs: int = 100, num_files: int = 10000):
+    """Calculate file size and pack size to achieve target number of packs."""
+    files_per_pack = num_files // target_packs
+
+    scenarios = [
+        {
+            'name': '100KB_packs',
+            'pack_size': 100_000,  # 100KB
+            'file_size': 100_000 // files_per_pack,  # ~1KB per file
+            'description': '100KB packs with ~1KB files',
+        },
+        {
+            'name': '1MB_packs',
+            'pack_size': 1_000_000,  # 1MB
+            'file_size': 1_000_000 // files_per_pack,  # ~10KB per file
+            'description': '1MB packs with ~10KB files',
+        },
+    ]
+    return scenarios
+
+
+def setup_container_with_data(temp_container, generate_random_data, num_files, file_size, pack_size):
+    """Helper function to set up container with test data."""
+    data_dict = generate_random_data(
+        num_files=num_files,
+        min_size=file_size,
+        max_size=file_size,
+        seed=42,
+    )
+    data = list(data_dict.values())
+
+    temp_container.init_container(clear=True, pack_size_target=pack_size)
+    add_objects_in_batches(temp_container, data)
+
+    # Verify setup
+    counts = temp_container.count_objects()
+    assert counts['loose'] == num_files, f'Expected {num_files} loose objects, got {counts["loose"]}'
+
+    return data
+
+
+def run_clean_final_approach(temp_container):
+    """Helper function to run the clean_final approach.
+
+    Packs all loose objects without cleaning during packing, then explicitly
+    calls _clean_loose_objects() at the end to delete all loose files at once.
+    This ensures the same number of os.remove() calls as clean_each_approach
+    (which calls _clean_loose_objects() internally after each pack), making
+    the benchmarks comparable.
+    """
+    # Get all loose objects before packing
+    loose_hashkeys = list(temp_container._list_loose())
+
+    # Pack without cleaning during packing
+    temp_container.pack_all_loose(clean_loose_per_pack=False)
+
+    # Explicitly clean up all loose objects at once to match clean_each overhead
+    if loose_hashkeys:
+        temp_container._clean_loose_objects(loose_hashkeys)
+
+
+def run_clean_each_approach(temp_container):
+    """Helper function to run the clean_each approach.
+
+    Packs all loose objects and automatically deletes them progressively
+    after each pack (via internal calls to _clean_loose_objects()).
+    """
+    temp_container.pack_all_loose(clean_loose_per_pack=True)
+
+
+def create_benchmark_test(config_name, pack_size, file_size, description, num_files, approach):
+    """Generic helper to create a benchmark test."""
+
+    def test_function(benchmark, temp_container, generate_random_data):
+        _ = setup_container_with_data(temp_container, generate_random_data, num_files, file_size, pack_size)
+
+        if approach == 'clean_final':
+            result = benchmark(run_clean_final_approach, temp_container)
+        else:  # clean_each
+            result = benchmark(run_clean_each_approach, temp_container)
+
+        return result
+
+    return test_function
+
+
+# ==================
+# TESTS FOR 10 FILES
+# ==================
+
+
+@pytest.mark.benchmark(group='10_files_100KB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_10_files_100KB_packs(benchmark, temp_container, generate_random_data, approach):
+    """10 files, 100KB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=10,
+        file_size=10_000,
+        pack_size=100_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
+
+
+@pytest.mark.benchmark(group='10_files_1MB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_10_files_1MB_packs(benchmark, temp_container, generate_random_data, approach):
+    """10 files, 1MB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=10,
+        file_size=100_000,
+        pack_size=1_000_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
+
+
+# ===================
+# TESTS FOR 100 FILES
+# ===================
+
+
+@pytest.mark.benchmark(group='100_files_100KB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_100_files_100KB_packs(benchmark, temp_container, generate_random_data, approach):
+    """100 files, 100KB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=100,
+        file_size=1_000,
+        pack_size=100_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
+
+
+@pytest.mark.benchmark(group='100_files_1MB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_100_files_1MB_packs(benchmark, temp_container, generate_random_data, approach):
+    """100 files, 1MB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=100,
+        file_size=10_000,
+        pack_size=1_000_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
+
+
+# =============================================================================
+# TESTS FOR 1000 FILES
+# =============================================================================
+
+
+@pytest.mark.benchmark(group='1000_files_100KB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_1000_files_100KB_packs(benchmark, temp_container, generate_random_data, approach):
+    """1000 files, 100KB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=1_000,
+        file_size=10_000,
+        pack_size=100_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
+
+
+@pytest.mark.benchmark(group='1000_files_1MB_packs')
+@pytest.mark.parametrize('approach', ['clean_final', 'clean_each'])
+def test_clean_loose_1000_files_1MB_packs(benchmark, temp_container, generate_random_data, approach):
+    """1000 files, 1MB packs - Compare both approaches"""
+    _ = setup_container_with_data(
+        temp_container=temp_container,
+        generate_random_data=generate_random_data,
+        num_files=1_000,
+        file_size=100_000,
+        pack_size=1_000_000,
+    )
+
+    if approach == 'clean_final':
+        _ = benchmark(run_clean_final_approach, temp_container)
+    else:  # clean_each
+        _ = benchmark(run_clean_each_approach, temp_container)
