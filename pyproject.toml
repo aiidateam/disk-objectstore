@@ -131,6 +131,7 @@ select = [
   'PLR',  # pylint-refactor
   'PLW',  # pylint-warning
   'RUF',  # ruff
+  'FLY',  # flynt (f-string formatting)
   'UP'    # pyupgrade
 ]
 
