@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import click
 
@@ -142,7 +142,7 @@ def validate(dostore: ContainerContext, verbose: bool):
 @main.command('add-files')
 @click.argument('files', nargs=-1, type=click.Path(exists=True))
 @pass_dostore
-def add_files(dostore: ContainerContext, files: List[str]):
+def add_files(dostore: ContainerContext, files: list[str]):
     """Add file(s) to the container"""
     with dostore.container as container:
         click.echo(f'Adding {len(files)} file(s) to container: {container.get_folder()}')
