@@ -74,7 +74,7 @@ def get_session(path: Path, create: bool = False) -> Session:
 
     # Bind the engine to the metadata of the Base class so that the
     # declaratives can be accessed through a DBSession instance
-    Base.metadata.bind = engine
+    Base.metadata.bind = engine  # type: ignore[attr-defined]
 
     # We set autoflush = False to avoid to lock the DB if just doing queries/reads
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)()
