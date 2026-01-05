@@ -52,9 +52,9 @@ def main(path, repetitions, wait_time, clean_loose_per_pack):
         end_counts = container.count_objects()
 
         print(
-            f"[PACKER {timestamp()}] Packed objects (was {start_counts['loose']} loose, "
-            f"{start_counts['packed']} packed; now: "
-            f"{end_counts['loose']} loose, {end_counts['packed']} packed)."
+            f'[PACKER {timestamp()}] Packed objects (was {start_counts["loose"]} loose, '
+            f'{start_counts["packed"]} packed; now: '
+            f'{end_counts["loose"]} loose, {end_counts["packed"]} packed).'
         )
 
 
