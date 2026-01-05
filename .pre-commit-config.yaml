@@ -11,7 +11,7 @@ exclude: &exclude_files >
 repos:
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
     - id: check-json
     - id: check-yaml
@@ -19,13 +19,13 @@ repos:
     - id: trailing-whitespace
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.13
+    rev: 0.9.21
     hooks:
       # Check and update the uv lockfile
     - id: uv-lock
 
   - repo: https://github.com/executablebooks/mdformat
-    rev: '0.7.17'
+    rev: '1.0.0'
     hooks:
     - id: mdformat
       additional_dependencies:
@@ -35,14 +35,14 @@ repos:
       files: (?x)^(README\.md|CHANGELOG\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.14.10
     hooks:
     - id: ruff-format
     - id: ruff
       args: [--fix, --exit-non-zero-on-fix, --show-fixes]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1
+    rev: v1.19.1
     hooks:
     - id: mypy
       additional_dependencies:
