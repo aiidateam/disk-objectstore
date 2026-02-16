@@ -13,6 +13,7 @@ import itertools
 import os
 import uuid
 import zlib
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -21,11 +22,8 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
-    Iterable,
-    Iterator,
     Literal,
     Protocol,
-    Sequence,
     runtime_checkable,
 )
 from zlib import error
