@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772110556536,
+  "lastUpdate": 1772110557256,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -14628,6 +14628,163 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.005226062715491374",
             "extra": "mean: 16.074433400000032 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "khsrali@gmail.com",
+            "name": "Ali Khosravi",
+            "username": "khsrali"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8caa2ec90fb7b26da626fe09284d273c1a7ccff4",
+          "message": "Add no-op `close()` and `flush()` methods to `PackedObjectReader`, `CallbackStreamWrapper`, and `ZlibLikeBaseStreamDecompresser` (#205)\n\nWhen the packed object are returned they still should support close() and flush(), because in aiida-core TextIOWrapper is used as a context manager, its __exit__ calls close(), which propagates to the underlying stream. \n\nThe methods are intentionally no-ops because these readers don't own the underlying file handles they read from.",
+          "timestamp": "2026-02-26T13:54:49+01:00",
+          "tree_id": "d6b29e6ca506f86939776c7940a16e1ec2157019",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/8caa2ec90fb7b26da626fe09284d273c1a7ccff4"
+        },
+        "date": 1772110555483,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 3.6973654060457437,
+            "unit": "iter/sec",
+            "range": "stddev: 0.03549154968216931",
+            "extra": "mean: 270.4628539999998 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 2.202165322950285,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04730261973425492",
+            "extra": "mean: 454.0985136666669 msec\nrounds: 3"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 9.037233980121743,
+            "unit": "iter/sec",
+            "range": "stddev: 0.015576552244440873",
+            "extra": "mean: 110.6533262500003 msec\nrounds: 12"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 22.936610385595763,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007773294761682014",
+            "extra": "mean: 43.59842117857144 msec\nrounds: 28"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 4.47501376066731,
+            "unit": "iter/sec",
+            "range": "stddev: 0.016765609912780668",
+            "extra": "mean: 223.4630000000002 msec\nrounds: 4"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 3131069.948414756,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000010902737802789137",
+            "extra": "mean: 319.3796422549725 nsec\nrounds: 137137"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 3536724.5497380556,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000014451933081823406",
+            "extra": "mean: 282.7474930367603 nsec\nrounds: 156863"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_final]",
+            "value": 1459.9295686174423,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004984069556026635",
+            "extra": "mean: 684.9645500001777 usec\nrounds: 80"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_each]",
+            "value": 3665.1472035360293,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001794843676155013",
+            "extra": "mean: 272.8403375000132 usec\nrounds: 160"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_final]",
+            "value": 1764.5972051761444,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00042439816417892993",
+            "extra": "mean: 566.7015662649079 usec\nrounds: 166"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_each]",
+            "value": 3633.647319826327,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001730453376423865",
+            "extra": "mean: 275.2055749999963 usec\nrounds: 120"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_final]",
+            "value": 165.82007868209763,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0033002790729468354",
+            "extra": "mean: 6.030632767441587 msec\nrounds: 43"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_each]",
+            "value": 361.5141417302625,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0010562488192881795",
+            "extra": "mean: 2.7661435185186547 msec\nrounds: 27"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_final]",
+            "value": 208.89710995174275,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002440036318877183",
+            "extra": "mean: 4.787045642857431 msec\nrounds: 42"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_each]",
+            "value": 410.44100873115997,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014931453706997456",
+            "extra": "mean: 2.436403718749758 msec\nrounds: 32"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_final]",
+            "value": 85.60452701392465,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0016086824840316238",
+            "extra": "mean: 11.681625200000667 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_each]",
+            "value": 173.8747366058734,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0005365370320227448",
+            "extra": "mean: 5.751266799999399 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_final]",
+            "value": 58.276785522905314,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0027551384547132847",
+            "extra": "mean: 17.15949140000106 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_each]",
+            "value": 165.5300271469259,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012759343880438512",
+            "extra": "mean: 6.041199999999947 msec\nrounds: 5"
           }
         ]
       }
