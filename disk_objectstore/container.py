@@ -1599,7 +1599,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
         # Make a copy of the list and revert its order, so we can pop from the list
         # without affecting the original list, and it's from the end so it's fast
-        working_stream_list = list(stream_list[::-1])
+        working_stream_list: list[StreamSeekBytesType | LazyOpener] = list(stream_list[::-1])
         pack_int_id = self._get_pack_id_to_write_to()
         session = self._get_operation_session()
 
@@ -1690,9 +1690,9 @@ class Container:  # pylint: disable=too-many-public-methods
                     next_stream = working_stream_list.pop()
                     stream_context_manager: AbstractContextManager[StreamSeekBytesType | BinaryIO]
                     if open_streams:
-                        stream_context_manager = next_stream  # type: ignore[assignment]
+                        stream_context_manager = next_stream
                     else:
-                        stream_context_manager = nullcontext(next_stream)  # type: ignore[arg-type]
+                        stream_context_manager = nullcontext(next_stream)
 
                     if callback:
                         since_last_update += 1
@@ -1709,14 +1709,12 @@ class Container:  # pylint: disable=too-many-public-methods
                     obj_dict['compressed'] = compress
                     obj_dict['offset'] = pack_handle.tell()
                     with stream_context_manager as stream:
-                        # BinaryIO from LazyOpener and StreamSeekBytesType both have all required methods
-                        stream_typed: StreamSeekBytesType = stream  # type: ignore[assignment]
                         if no_holes and no_holes_read_twice:
                             # Compute the hash key before writing (I just read once)
                             (
                                 obj_dict['hashkey'],
                                 obj_dict['size'],
-                            ) = compute_hash_and_size(stream_typed, hash_type=self.hash_type)
+                            ) = compute_hash_and_size(stream, hash_type=self.hash_type)
                             if obj_dict['hashkey'] in known_packed_hashkeys:
                                 # I recomputed the hashkey and this was already there: I don't try to write on disk,
                                 # but I just continue.
@@ -1727,14 +1725,14 @@ class Container:  # pylint: disable=too-many-public-methods
                             # I didn't continue. Then, I need to store on disk, as it is a new unknown object.
                             # I therefore need to seek back to zero, because the next line will read it again
                             # in _write_data_to_packfile.
-                            stream_typed.seek(0)
+                            stream.seek(0)
 
                         (
                             obj_dict['size'],
                             obj_dict['hashkey'],
                         ) = self._write_data_to_packfile(
                             pack_handle=pack_handle,
-                            read_handle=stream_typed,
+                            read_handle=stream,
                             compress=compress,
                             hash_type=self.hash_type,
                         )
