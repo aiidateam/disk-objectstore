@@ -44,9 +44,9 @@ def test_lazy_opener_read():
             # This is not open yet
             lazy.tell()
 
-        assert (
-            len(current_process.open_files()) == start_open_files
-        ), 'The LazyOpener is not lazy, but axtually opened the file instead!'
+        assert len(current_process.open_files()) == start_open_files, (
+            'The LazyOpener is not lazy, but axtually opened the file instead!'
+        )
         with lazy as fhandle:
             # Shoul be opened at position zero at the beginnign
             assert lazy.tell() == 0
@@ -1940,3 +1940,136 @@ def test_all_streams_readline_readlines(tmp_path, stream_type):
     # Cleanup
     if stream_type == 'packed_object_reader':
         fhandle.close()
+
+
+def _build_readable_stream(stream_type, content, tmp_path):
+    """Construct a fresh readable stream of the given type over ``content``.
+
+    :return: a ``(stream, closer)`` tuple, where ``closer()`` releases any file handle.
+    """
+    if stream_type == 'bytesio':
+        return io.BytesIO(content), lambda: None
+    if stream_type == 'packed_object_reader':
+        pack_file = tmp_path / 'pack'
+        pack_file.write_bytes(content)
+        fhandle = open(pack_file, 'rb')
+        return utils.PackedObjectReader(fhandle, offset=0, length=len(content)), fhandle.close
+    if stream_type == 'callback_wrapper':
+        return utils.CallbackStreamWrapper(io.BytesIO(content), callback=None), lambda: None
+    if stream_type == 'zlib_decompresser':
+        compresser = utils.get_compressobj_instance('zlib+1')
+        compressed = compresser.compress(content) + compresser.flush()
+        return utils.ZlibStreamDecompresser(io.BytesIO(compressed)), lambda: None
+    raise ValueError(f'Unknown stream type {stream_type}')
+
+
+@pytest.mark.parametrize(
+    'stream_type',
+    ['bytesio', 'packed_object_reader', 'callback_wrapper', 'zlib_decompresser'],
+)
+def test_all_streams_readlines_hint(tmp_path, stream_type):
+    """``readlines(hint)`` returns whole lines until at least ``hint`` bytes are read."""
+    content = b'line1\nline2\nline3\nlast'
+
+    # hint smaller than the first line -> stop after the first line
+    # (positional arg: stdlib BytesIO.readlines does not accept a keyword)
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        assert stream.readlines(3) == [b'line1\n'], f'Failed for {stream_type}: hint=3'
+    finally:
+        closer()
+
+    # hint spanning into the second line -> first two lines
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        assert stream.readlines(8) == [b'line1\n', b'line2\n'], f'Failed for {stream_type}: hint=8'
+    finally:
+        closer()
+
+    # hint larger than the content -> read everything (loop exhausts the stream)
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        assert stream.readlines(1000) == [b'line1\n', b'line2\n', b'line3\n', b'last'], (
+            f'Failed for {stream_type}: hint > len(content)'
+        )
+    finally:
+        closer()
+
+
+def test_callback_stream_wrapper_readline(callback_instance):
+    """``readline`` on ``CallbackStreamWrapper`` reports the bytes read through the callback."""
+    content = b'aa\nbb\ncc\n'
+    wrapped = utils.CallbackStreamWrapper(
+        io.BytesIO(content), callback=callback_instance.callback, total_length=len(content)
+    )
+
+    lines = []
+    while True:
+        line = wrapped.readline()
+        if not line:
+            break
+        lines.append(line)
+    wrapped.close_callback()
+
+    assert lines == [b'aa\n', b'bb\n', b'cc\n']
+    # The callback must have accounted for every byte of the stream exactly once.
+    assert callback_instance.performed_actions == [
+        {
+            'start_value': {'total': len(content), 'description': 'Streamed object'},
+            'value': len(content),
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    'stream_type',
+    ['bytesio', 'packed_object_reader', 'callback_wrapper', 'zlib_decompresser'],
+)
+def test_all_streams_readline_size(tmp_path, stream_type):
+    """``readline(size)`` returns at most ``size`` bytes, stopping before the newline."""
+    content = b'a long first line that exceeds the size limit\nsecond\n'
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        # size shorter than the first line: truncated before the newline
+        first_chunk = stream.readline(10)
+        assert first_chunk == content[:10], f'Failed for {stream_type}: readline(10)'
+        # the remainder of the first line is returned by the next (unbounded) readline
+        assert first_chunk + stream.readline() == b'a long first line that exceeds the size limit\n', (
+            f'Failed for {stream_type}: remainder'
+        )
+    finally:
+        closer()
+
+
+def test_lazy_loose_stream_readline_readlines(temp_container):
+    """``LazyLooseStream`` proxies read/readline/readlines to the materialised loose file."""
+    content = b'alpha\nbeta\ngamma\ndelta\n'
+    hashkey = temp_container.add_object(content)
+    temp_container.pack_all_loose(compress=True)
+
+    lazy = utils.LazyLooseStream(temp_container, hashkey)
+    assert lazy.closed
+    with lazy:
+        assert not lazy.closed
+        assert lazy.readline() == b'alpha\n'
+        assert lazy.readlines() == [b'beta\n', b'gamma\n', b'delta\n']
+        assert lazy.read() == b''  # at EOF
+    assert lazy.closed
+
+
+def test_compressed_stream_readline_after_backward_seek(temp_container):
+    """After a backward seek a compressed stream switches to its loose copy for readline/peek."""
+    content = b'alpha\nbeta\ngamma\ndelta\n'
+    hashkey = temp_container.add_object(content)
+    temp_container.pack_all_loose(compress=True)
+
+    with temp_container.get_object_stream(hashkey) as stream:
+        assert isinstance(stream, utils.ZlibLikeBaseStreamDecompresser)
+        # Read forward, then seek backwards: this materialises the uncompressed loose stream.
+        assert stream.read(8) == b'alpha\nbe'
+        stream.seek(-8, 1)
+        # While proxying to the loose stream, peek() yields nothing (it cannot look ahead there).
+        assert stream.peek() == b''
+        # readline/readlines now delegate to the loose stream.
+        assert stream.readline() == b'alpha\n'
+        assert stream.readlines() == [b'beta\n', b'gamma\n', b'delta\n']

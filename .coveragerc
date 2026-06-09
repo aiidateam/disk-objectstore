@@ -3,6 +3,7 @@ exclude_lines =
     pragma: no cover
     @overload
     if TYPE_CHECKING:
+    ^\s*\.\.\.\s*$
 [run]
 omit =
     disk_objectore/examples/*
