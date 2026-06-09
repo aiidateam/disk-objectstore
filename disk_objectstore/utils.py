@@ -620,6 +620,12 @@ class PackedObjectReader:
     def closed(self) -> bool:
         return self._fhandle.closed
 
+    def close(self) -> None:
+        """Close the reader. Does not close the underlying file handle since it is shared."""
+
+    def flush(self) -> None:
+        """Flush is a no-op for a read-only stream."""
+
     @staticmethod
     def seekable() -> bool:
         """Return whether object supports random access."""
@@ -796,6 +802,12 @@ class CallbackStreamWrapper:
     @property
     def closed(self) -> bool:
         return self._stream.closed
+
+    def close(self) -> None:
+        """Close the wrapper. Does not close the underlying stream."""
+
+    def flush(self) -> None:
+        """Flush is a no-op for a read-only stream."""
 
     def seekable(self) -> bool:
         """Return whether object supports random access."""
@@ -995,6 +1007,12 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         return self._compressed_stream.closed and (
             self._lazy_uncompressed_stream is None or self._lazy_uncompressed_stream.closed
         )
+
+    def close(self) -> None:
+        """Close the decompresser. Does not close the underlying compressed stream."""
+
+    def flush(self) -> None:
+        """Flush is a no-op for a read-only stream."""
 
     def read(self, size: int = -1) -> bytes:
         """

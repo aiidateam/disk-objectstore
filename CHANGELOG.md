@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5.0 (26 February 2026)
+
+- Add no-op `close()` and `flush()` methods to `PackedObjectReader`, `CallbackStreamWrapper`, and `ZlibLikeBaseStreamDecompresser` [\[8caa2ec\]](https://github.com/aiidateam/disk-objectstore/commit/8caa2ec)
+- Delete loose files per pack creation incrementally [\[7f3ccfa\]](https://github.com/aiidateam/disk-objectstore/commit/7f3ccfa)
+- Fix pack sizes due to missing flush by passing known size via `tell` [\[5b44f09\]](https://github.com/aiidateam/disk-objectstore/commit/5b44f09)
+- Typing fixes [\[b0a120e\]](https://github.com/aiidateam/disk-objectstore/commit/b0a120e)
+- Add dev dependency group for uv, update CI workflow [\[7b7b593\]](https://github.com/aiidateam/disk-objectstore/commit/7b7b593)
+- Remove pyupgrade and flynt pre-commit hooks [\[e5cb644\]](https://github.com/aiidateam/disk-objectstore/commit/e5cb644)
+
 ## v1.4.0 (6 October 2025)
 
 - Add `readable`, `writable`, and `closed` properties to stream classes for TextIOWrapper compatibility  [\[1c73d64\]](https://github.com/aiidateam/disk-objectstore/commit/1c73d64137e1b093918337609cb6c8a6dece4a7b)
