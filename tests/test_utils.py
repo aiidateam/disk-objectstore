@@ -2061,7 +2061,7 @@ def test_lazy_loose_stream_readline_readlines(temp_container):
 
 
 def test_compressed_stream_readline_after_backward_seek(temp_container):
-    """After a backward seek a compressed stream switches to its loose copy for readline/peek."""
+    """After a backward seek a compressed stream switches to its loose copy for readline."""
     content = b'alpha\nbeta\ngamma\ndelta\n'
     hashkey = temp_container.add_object(content)
     temp_container.pack_all_loose(compress=True)
@@ -2071,8 +2071,6 @@ def test_compressed_stream_readline_after_backward_seek(temp_container):
         # Read forward, then seek backwards: this materialises the uncompressed loose stream.
         assert stream.read(8) == b'alpha\nbe'
         stream.seek(-8, 1)
-        # While proxying to the loose stream, peek() yields nothing (it cannot look ahead there).
-        assert stream.peek() == b''
         # readline/readlines now delegate to the loose stream.
         assert stream.readline() == b'alpha\n'
         assert stream.readlines() == [b'beta\n', b'gamma\n', b'delta\n']

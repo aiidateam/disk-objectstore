@@ -6,6 +6,81 @@ import random
 import pytest
 
 
+def _readline_benchmark_content(kind: str, size: int) -> bytes:
+    """Return a deterministic payload of ``size`` bytes for the readline benchmarks.
+
+    - ``random``: incompressible bytes with only sparse, accidental newlines.
+    - ``nonewline``: highly compressible and contains *no* newline, so ``readline``
+      has to scan the whole object as a single line.
+    - ``lines``: highly compressible text with frequent (65-byte) newlines.
+    """
+    if kind == 'random':
+        return random.Random(42).randbytes(size)
+    if kind == 'nonewline':
+        return b'1' * size
+    if kind == 'lines':
+        line = b'0123456789abcdef' * 4 + b'\n'  # 65-byte lines
+        return line * max(1, size // len(line))
+    raise ValueError(f'unknown content kind: {kind}')
+
+
+# Real containers hold a wide mix of object sizes/shapes: many tiny few-line objects
+# and occasional large ones. We sample that spread instead of a single fixed size, as
+# (id, size_bytes, content_kind). GB-scale objects extrapolate from these; note the
+# compressed many-line case degrades worse than linearly (the O(buffer * lines)
+# re-slicing documented in ZlibLikeBaseStreamDecompresser._read_compressed).
+_READLINE_SCENARIOS = [
+    ('few_lines_500B', 500, 'lines'),  # tiny text object, a handful of lines
+    ('256KB_text', 256_000, 'lines'),  # small text
+    ('256KB_binary', 256_000, 'random'),  # small incompressible binary
+    ('4MB_text', 4_000_000, 'lines'),  # large text -- where re-slicing starts to bite
+    ('4MB_binary', 4_000_000, 'random'),  # large incompressible binary
+    ('4MB_blob', 4_000_000, 'nonewline'),  # large single blob, no newlines
+]
+
+
+def _consume_stream(stream, method: str) -> bytes:
+    """Drain ``stream`` to EOF using the requested method and return the bytes read."""
+    if method == 'read':
+        return stream.read()
+    # 'readline': loop until EOF (readlines() tracks this within a few %, so we don't
+    # benchmark it separately; it is exercised for correctness elsewhere).
+    chunks = []
+    while True:
+        line = stream.readline()
+        if not line:
+            break
+        chunks.append(line)
+    return b''.join(chunks)
+
+
+@pytest.mark.benchmark(group='readline')
+@pytest.mark.parametrize('method', ['read', 'readline'])
+@pytest.mark.parametrize('scenario', _READLINE_SCENARIOS, ids=[s[0] for s in _READLINE_SCENARIOS])
+@pytest.mark.parametrize('compress', [True, False], ids=['compressed', 'plain'])
+def test_stream_readline_speed(benchmark, temp_container, compress, scenario, method):
+    """Benchmark ``read`` vs ``readline`` across object sizes and shapes.
+
+    Covers both packed paths, the compressed ``ZlibStreamDecompresser`` (hand-rolled
+    ``readline``) and the plain ``PackedObjectReader`` (native
+    ``fhandle.readline``), over a spread of sizes from a few-line object up to a few MB.
+    ``read`` is the baseline (full decode, no line scanning); the gap to ``readline`` is
+    the cost of the line layer, and it grows with object size on the compressed path.
+    Reproducible so future changes have a speed baseline.
+    """
+    _, size, content_kind = scenario
+    content = _readline_benchmark_content(content_kind, size)
+    hashkey = temp_container.add_object(content)
+    temp_container.pack_all_loose(compress=compress)
+
+    def run():
+        with temp_container.get_object_stream(hashkey) as stream:
+            return _consume_stream(stream, method)
+
+    result = benchmark(run)
+    assert result == content
+
+
 @pytest.mark.benchmark(group='write', min_rounds=3)
 def test_pack_write(temp_container, benchmark):
     """Add 10'000 objects to the container in packed form, and benchmark write and read speed."""

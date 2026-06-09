@@ -953,6 +953,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         self._compressed_stream = compressed_stream
         self._decompressor = self.decompressobj_class()
         self._internal_buffer = b''
+        # Read offset into `_internal_buffer`: bytes before it have already been handed
+        # out. We advance this instead of re-slicing the buffer on every read.
+        self._buffer_pos = 0
         self._pos = 0
         self._lazy_uncompressed_stream: None | (LazyLooseStream) = lazy_uncompressed_stream
         # If True, this class just proxies request to the underlying
@@ -1004,72 +1007,45 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             return self._require_uncompressed_stream().read(size)
         return self._read_compressed(size)
 
-    def peek(self, size: int = 1) -> bytes:
-        """Return bytes from the internal buffer without advancing the position.
-
-        This allows looking ahead to find delimiters (like newlines) without
-        consuming the data. Similar to BufferedReader.peek() in CPython.
-
-        :param size: Hint for desired number of bytes (ignored, always returns full buffer).
-        :return: Bytes from the buffer (may be empty if buffer is empty).
-        """
-        # If using uncompressed stream, we can't peek efficiently
-        if self._use_uncompressed_stream:
-            self._require_uncompressed_stream()
-            # LazyLooseStream doesn't have peek, so return empty
-            return b''
-
-        # Simply return the entire internal buffer
-        # The aggressive buffer filling in _read_compressed() ensures the buffer
-        # is well-populated (up to 524KB) after the first read operation
-        # Like CPython's BufferedReader.peek(), size is just a hint - we may return more
-        return self._internal_buffer
-
     def readline(self, size: int = -1) -> bytes:
         """Read and return a line of bytes from the stream.
 
-        Uses peek() to efficiently find newlines without excess reads.
-        The line terminator is always b'\\n' for binary streams.
+        The line terminator is always ``b'\\n'`` for binary streams.
 
-        :param size: If specified and positive, at most size bytes will be read.
-        :return: A line from the stream (including the trailing newline if present).
+        Newlines are located in place with ``bytes.find`` and consumed through the
+        internal-buffer offset (see :meth:`_read_compressed`), so producing a line costs
+        time proportional to the line length, not to the size of the buffer.
+
+        :param size: If specified and non-negative, at most ``size`` bytes are returned.
+        :return: A line from the stream, including the trailing newline if present.
         """
-        # If using uncompressed stream, delegate to it
+        # If using uncompressed stream, delegate to its (native) readline.
         if self._use_uncompressed_stream:
             return self._require_uncompressed_stream().readline(size)
 
-        # CPython-style readline using peek()
         res = bytearray()
         while size < 0 or len(res) < size:
-            # Peek ahead to find how much to read
-            readahead = self.peek(1)
-            if not readahead:
-                # Buffer empty and no more data
-                nread = 1
-            else:
-                # Search for newline in the peeked data
-                newline_pos = readahead.find(b'\n')
-                if newline_pos != -1:
-                    # Found newline! Read exactly up to and including it
-                    nread = newline_pos + 1
-                else:
-                    # No newline found, read all the peeked data
-                    nread = len(readahead)
+            available = len(self._internal_buffer) - self._buffer_pos
+            if available <= 0:
+                # Buffer exhausted: a one-byte read pulls a fresh chunk (and returns its
+                # first byte), or yields b'' at EOF.
+                primer = self.read(1)
+                if not primer:
+                    break
+                res += primer
+                if primer.endswith(b'\n'):
+                    break
+                continue
 
-                # Don't read more than the size limit
-                if size >= 0:
-                    nread = min(nread, size - len(res))
+            # Locate the next newline within the buffered region without copying it.
+            newline = self._internal_buffer.find(b'\n', self._buffer_pos)
+            nread = available if newline == -1 else newline - self._buffer_pos + 1
+            if size >= 0:
+                nread = min(nread, size - len(res))
 
-            # Actually read the determined amount
-            b = self.read(nread)
-            if not b:
-                # EOF reached
-                break
-
-            res += b
-
-            # If we found and read a newline, we're done
-            if b.endswith(b'\n'):
+            chunk = self.read(nread)
+            res += chunk
+            if chunk.endswith(b'\n'):
                 break
 
         return bytes(res)
@@ -1096,24 +1072,16 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
 
         Returns an empty bytes object on EOF.
 
-        PERFORMANCE NOTE: This method uses aggressive buffer filling to make
-        operations like readline() and full-file reads efficient. When you request
-        N bytes, we decompress up to 524KB into the internal buffer. This means:
-        - First read(1) call: Decompresses 524KB, returns 1 byte, keeps 524KB-1 in buffer
-        - Subsequent reads: Served from buffer without decompression
-        - peek() can see ahead without re-decompressing
-        - readline() can search for newlines in the large buffer efficiently
-        - read() with no args (read entire file) benefits from large buffer chunks
-        This strategy provides ~50x speedup for line-oriented operations.
+        Each call decompresses up to ``_CHUNKSIZE`` (512 KB) into the internal buffer,
+        even when fewer bytes are requested, so that a following ``readline`` can scan a
+        populated buffer instead of decompressing a byte at a time. The trade-off is that
+        even a ``read(1)`` holds up to ~512 KB decompressed in memory.
 
-        INTENDED USE CASE: This optimization is designed for reading entire objects
-        sequentially, which is the primary use case in AiiDA (reading complete files
-        from the repository). Each object gets its own stream instance, so aggressive
-        buffering in one object doesn't affect memory usage when accessing other objects.
-
-        WHEN IT MIGHT BE SUBOPTIMAL: If you read only the first few bytes of a very
-        large compressed object and then discard it, you'll decompress more than needed.
-        However, this is not a common pattern in practice.
+        Data is consumed via the ``_buffer_pos`` offset (the prefix before it has already
+        been returned) rather than by re-slicing ``buffer[size:]`` on every call; the
+        consumed prefix is dropped only when the buffer needs refilling. This keeps
+        line-oriented reads O(total bytes) instead of O(buffer * lines) (see the readline
+        benchmarks in ``tests/test_benchmark.py``).
 
         Note that this should be used only internally, as this function
         always reads from the compressed stream, but the position
@@ -1139,7 +1107,14 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         if size == 0:
             return b''
 
-        while len(self._internal_buffer) < size:
+        while len(self._internal_buffer) - self._buffer_pos < size:
+            # We need to decompress more. Drop the already-consumed prefix first so the
+            # buffer does not keep growing and the `+=` below stays cheap. This runs at
+            # most once per fill (afterwards `_buffer_pos` is 0).
+            if self._buffer_pos:
+                self._internal_buffer = self._internal_buffer[self._buffer_pos :]
+                self._buffer_pos = 0
+
             old_unconsumed = self._decompressor.unconsumed_tail
             next_chunk = self._compressed_stream.read(max(0, self._CHUNKSIZE - len(old_unconsumed)))
 
@@ -1147,7 +1122,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             # since I am using the max_size parameter of .decompress()
             compressed_chunk = old_unconsumed + next_chunk
             # We decompress up to `_CHUNKSIZE` bytes rather than just `size`, so that a subsequent
-            # `readline`/`peek` can scan a pre-filled buffer without re-decompressing. Leftovers that
+            # `readline` can scan a pre-filled buffer without re-decompressing. Leftovers that
             # exceed `_CHUNKSIZE` stay in `.unconsumed_tail` and are fed back (via `old_unconsumed`)
             # on the next iteration: re-passing `compressed_chunk` would replay already-consumed bytes
             # and corrupt the stream.
@@ -1167,12 +1142,11 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
                     'the compressed stream: there must be a problem in the incoming buffer'
                 )
 
-        # Note that we could be here also with len(self._internal_buffer) < size,
-        # if we used 'break' because the internal buffer reached EOF.
-        to_return, self._internal_buffer = (
-            self._internal_buffer[:size],
-            self._internal_buffer[size:],
-        )
+        # Hand back up to `size` bytes via the offset (no remainder copy). We may have
+        # fewer than `size` buffered if we broke out of the loop at EOF.
+        end = self._buffer_pos + size
+        to_return = self._internal_buffer[self._buffer_pos : end]
+        self._buffer_pos += len(to_return)
         self._pos += len(to_return)
 
         return to_return
@@ -1286,6 +1260,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             self._compressed_stream.seek(0)
             self._decompressor = self.decompressobj_class()
             self._internal_buffer = b''
+            self._buffer_pos = 0
             self._pos = 0
             return 0
 
