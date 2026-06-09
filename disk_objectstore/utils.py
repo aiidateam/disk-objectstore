@@ -558,6 +558,27 @@ class ObjectWriter:  # pylint: disable=too-many-instance-attributes
         os.rename(source_file, dest_file)
 
 
+def _collect_readlines(readline: Callable[[], bytes], hint: int = -1) -> list[bytes]:
+    """Collect lines by repeatedly calling ``readline`` until EOF.
+
+    Mirrors :meth:`io.IOBase.readlines`: if ``hint`` is positive, stop once at least
+    ``hint`` bytes have been read. Shared by the stream wrappers that expose ``readline``
+    so the loop is not duplicated in each class.
+
+    :param readline: a zero-argument callable returning the next line (empty bytes at EOF).
+    :param hint: if positive, stop after at least this many bytes have been collected.
+    :return: the list of lines read.
+    """
+    lines: list[bytes] = []
+    bytes_read = 0
+    while line := readline():
+        lines.append(line)
+        bytes_read += len(line)
+        if 0 < hint <= bytes_read:
+            break
+    return lines
+
+
 class PackedObjectReader:
     """A class to read from a pack file.
 
@@ -710,26 +731,7 @@ class PackedObjectReader:
             If hint is -1 (default), read all remaining lines.
         :return: A list of lines (bytes objects).
         """
-        if hint is None or hint <= 0:
-            # Read all remaining lines
-            lines = []
-            while True:
-                line = self.readline()
-                if not line:
-                    break
-                lines.append(line)
-            return lines
-
-        # Read lines until hint bytes consumed
-        lines = []
-        bytes_read = 0
-        while bytes_read < hint:
-            line = self.readline()
-            if not line:
-                break
-            lines.append(line)
-            bytes_read += len(line)
-        return lines
+        return _collect_readlines(self.readline, hint)
 
     def __enter__(self) -> PackedObjectReader:
         """Use as context manager."""
@@ -876,26 +878,7 @@ class CallbackStreamWrapper:
             If hint is -1 (default), read all remaining lines.
         :return: A list of lines (bytes objects).
         """
-        if hint is None or hint <= 0:
-            # Read all remaining lines
-            lines = []
-            while True:
-                line = self.readline()
-                if not line:
-                    break
-                lines.append(line)
-            return lines
-
-        # Read lines until hint bytes consumed
-        lines = []
-        bytes_read = 0
-        while bytes_read < hint:
-            line = self.readline()
-            if not line:
-                break
-            lines.append(line)
-            bytes_read += len(line)
-        return lines
+        return _collect_readlines(self.readline, hint)
 
     def __enter__(self) -> CallbackStreamWrapper:
         """Use as context manager."""
@@ -1101,26 +1084,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
             If hint is -1 (default), read all remaining lines.
         :return: A list of lines (bytes objects).
         """
-        if hint is None or hint <= 0:
-            # Read all remaining lines
-            lines = []
-            while True:
-                line = self.readline()
-                if not line:
-                    break
-                lines.append(line)
-            return lines
-
-        # Read lines until hint bytes consumed
-        lines = []
-        bytes_read = 0
-        while bytes_read < hint:
-            line = self.readline()
-            if not line:
-                break
-            lines.append(line)
-            bytes_read += len(line)
-        return lines
+        return _collect_readlines(self.readline, hint)
 
     def _read_compressed(self, size: int = -1) -> bytes:
         """
