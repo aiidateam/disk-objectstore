@@ -12,10 +12,10 @@ import os
 import shutil
 import uuid
 from collections import defaultdict, namedtuple
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, ContextManager, overload
+from typing import TYPE_CHECKING, BinaryIO, overload
 
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm.session import Session
@@ -1688,7 +1688,7 @@ class Container:  # pylint: disable=too-many-public-methods
                     # Get next stream, possibly preparing it to be open, or wrapping it
                     # if it is already open so it does not get open again
                     next_stream = working_stream_list.pop()
-                    stream_context_manager: ContextManager[StreamSeekBytesType | BinaryIO]
+                    stream_context_manager: AbstractContextManager[StreamSeekBytesType | BinaryIO]
                     if open_streams:
                         stream_context_manager = next_stream  # type: ignore[assignment]
                     else:

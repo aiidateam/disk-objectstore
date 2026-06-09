@@ -1162,6 +1162,54 @@ def test_stream_decompresser(compression_algorithm):
 
 
 @pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser_multichunk(compression_algorithm):
+    """Regression test for decompression spanning multiple internal chunks.
+
+    Reading decompresses up to ``_CHUNKSIZE`` bytes at a time into an internal buffer.
+    A buggy implementation re-fed the same compressed chunk to the decompressor on every
+    iteration instead of feeding back ``unconsumed_tail``, replaying already-consumed bytes
+    and raising ``Error while uncompressing data`` for any object large enough (or
+    incompressible enough) to require more than one decompression step. This exercises both
+    ``read`` and ``readline``/``readlines`` over such an object to guard against a recurrence.
+    """
+    StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
+        compression_algorithm
+    )
+    chunksize = utils.ZlibLikeBaseStreamDecompresser._CHUNKSIZE  # pylint: disable=protected-access
+
+    # Incompressible payload several `_CHUNKSIZE`s long, with a few newlines so `readline`
+    # also has to walk across chunk boundaries. The odd `+ 17` avoids chunk-size alignment.
+    body = os.urandom(3 * chunksize + 17)
+    original = b'\n'.join([body, body, body]) + b'\n'
+
+    def make_decompresser():
+        compresser = utils.get_compressobj_instance(compression_algorithm)
+        compressed = compresser.compress(original) + compresser.flush()
+        return StreamDecompresser(io.BytesIO(compressed))
+
+    # Full read must round-trip exactly.
+    assert make_decompresser().read() == original
+
+    # readlines() must reconstruct the original.
+    assert b''.join(make_decompresser().readlines()) == original
+
+    # readline() called repeatedly must reconstruct the original and split only on `\n`.
+    decompresser = make_decompresser()
+    lines = []
+    while True:
+        line = decompresser.readline()
+        if not line:
+            break
+        lines.append(line)
+    assert b''.join(lines) == original
+    # `original` ends with `\n`, so every line (including the last) ends with `\n` and the
+    # number of lines equals the number of newlines. Note `bytes.splitlines` is not a valid
+    # oracle here: it also splits on `\r`, `\v`, `\f`, ..., which random bytes contain.
+    assert all(line.endswith(b'\n') for line in lines)
+    assert len(lines) == original.count(b'\n')
+
+
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 def test_stream_decompresser_seek(compression_algorithm):
     """Test the seek (and tell) functionality of the StreamDecompresser."""
     StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
