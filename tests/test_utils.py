@@ -1210,6 +1210,41 @@ def test_stream_decompresser_multichunk(compression_algorithm):
 
 
 @pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
+def test_stream_decompresser_readline_many_short_lines(compression_algorithm):
+    """`readline` over many short lines spanning several internal buffers.
+
+    This is the scenario the buffer-offset consumption targets: each line is located and
+    consumed within the buffer (advancing the offset, no re-slicing), and the buffer is
+    refilled between lines. The payload is a few ``_CHUNKSIZE``s of distinct numbered
+    lines, so both the offset advance and the cross-buffer refill are exercised, and a
+    dropped/duplicated/reordered line would change the result. Asserted here (not only in
+    the benchmarks, which CI skips) so the path is covered in the normal test run.
+    """
+    StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
+        compression_algorithm
+    )
+    chunksize = utils.ZlibLikeBaseStreamDecompresser._CHUNKSIZE  # pylint: disable=protected-access
+
+    num_lines = (3 * chunksize) // 16  # ~1 MB of 11-byte lines: several buffer refills
+    original = b''.join(b'%010d\n' % i for i in range(num_lines))
+    expected_lines = original.splitlines(keepends=True)
+
+    compresser = utils.get_compressobj_instance(compression_algorithm)
+    compressed = compresser.compress(original) + compresser.flush()
+    decompresser = StreamDecompresser(io.BytesIO(compressed))
+
+    lines = []
+    while True:
+        line = decompresser.readline()
+        if not line:
+            break
+        lines.append(line)
+
+    assert lines == expected_lines
+    assert b''.join(lines) == original
+
+
+@pytest.mark.parametrize('compression_algorithm', COMPRESSION_ALGORITHMS_TO_TEST)
 def test_stream_decompresser_seek(compression_algorithm):
     """Test the seek (and tell) functionality of the StreamDecompresser."""
     StreamDecompresser = utils.get_stream_decompresser(  # pylint: disable=invalid-name
