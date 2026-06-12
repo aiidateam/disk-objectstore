@@ -964,18 +964,6 @@ def test_packed_object_reader_readline():
         # Concatenation of limited chunks must equal the original slice
         assert b''.join(chunks) == expected_slice
 
-    if not expected_slice.endswith(b'\n') and expected_lines:
-        last_from_split = expected_lines[-1]
-        with open(fname, 'rb') as fhandle:
-            pr = utils.PackedObjectReader(fhandle, offset=offset, length=length)
-            last_read = b''
-            while True:
-                line = pr.readline()
-                if not line:
-                    break
-                last_read = line
-        assert last_read == last_from_split
-
 
 def test_packed_object_reader_seek(tmp_path):
     """Test the `PackedObjectReader.seek` method."""
@@ -1910,71 +1898,21 @@ def test_all_streams_readline_readlines(tmp_path, stream_type):
     content = b'line1\nline2\nline3\nlast'
     expected_lines = [b'line1\n', b'line2\n', b'line3\n', b'last']
 
-    # Create the appropriate stream type
-    if stream_type == 'bytesio':
-        # Standard BytesIO (BinaryIO)
-        stream = io.BytesIO(content)
+    # readline() returns the lines one by one, then b'' at EOF
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        for expected in expected_lines:
+            assert stream.readline() == expected, f'Failed for {stream_type}: {expected!r}'
+        assert stream.readline() == b'', f'Failed for {stream_type}: EOF'
+    finally:
+        closer()
 
-    elif stream_type == 'packed_object_reader':
-        # PackedObjectReader
-        pack_file = tmp_path / 'pack'
-        with open(pack_file, 'wb') as f:
-            f.write(content)
-        fhandle = open(pack_file, 'rb')
-        stream = utils.PackedObjectReader(fhandle, offset=0, length=len(content))
-
-    elif stream_type == 'callback_wrapper':
-        # CallbackStreamWrapper
-        base_stream = io.BytesIO(content)
-        stream = utils.CallbackStreamWrapper(base_stream, callback=None)
-
-    elif stream_type == 'zlib_decompresser':
-        # ZlibStreamDecompresser
-        compresser = utils.get_compressobj_instance('zlib+1')
-        compressed = compresser.compress(content)
-        compressed += compresser.flush()
-        stream = utils.ZlibStreamDecompresser(io.BytesIO(compressed))
-
-    # Test readline() - read lines one by one
-    line1 = stream.readline()
-    assert line1 == b'line1\n', f'Failed for {stream_type}: line1'
-
-    line2 = stream.readline()
-    assert line2 == b'line2\n', f'Failed for {stream_type}: line2'
-
-    line3 = stream.readline()
-    assert line3 == b'line3\n', f'Failed for {stream_type}: line3'
-
-    line4 = stream.readline()
-    assert line4 == b'last', f'Failed for {stream_type}: line4'
-
-    # EOF
-    eof = stream.readline()
-    assert eof == b'', f'Failed for {stream_type}: EOF'
-
-    # Close and reopen stream for readlines() test
-    if stream_type == 'bytesio':
-        stream = io.BytesIO(content)
-
-    elif stream_type == 'packed_object_reader':
-        fhandle.close()
-        fhandle = open(pack_file, 'rb')
-        stream = utils.PackedObjectReader(fhandle, offset=0, length=len(content))
-
-    elif stream_type == 'callback_wrapper':
-        base_stream = io.BytesIO(content)
-        stream = utils.CallbackStreamWrapper(base_stream, callback=None)
-
-    elif stream_type == 'zlib_decompresser':
-        stream = utils.ZlibStreamDecompresser(io.BytesIO(compressed))
-
-    # Test readlines() - read all at once
-    lines = stream.readlines()
-    assert lines == expected_lines, f'Failed for {stream_type}: readlines()'
-
-    # Cleanup
-    if stream_type == 'packed_object_reader':
-        fhandle.close()
+    # readlines() returns all lines at once (on a fresh stream)
+    stream, closer = _build_readable_stream(stream_type, content, tmp_path)
+    try:
+        assert stream.readlines() == expected_lines, f'Failed for {stream_type}: readlines()'
+    finally:
+        closer()
 
 
 def _build_readable_stream(stream_type, content, tmp_path):
