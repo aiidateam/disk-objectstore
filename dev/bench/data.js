@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772111726284,
+  "lastUpdate": 1781278737726,
   "repoUrl": "https://github.com/aiidateam/disk-objectstore",
   "entries": {
     "Benchmark on ubuntu-latest": [
@@ -15099,6 +15099,331 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.00021324528367553788",
             "extra": "mean: 4.769808399998965 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "77727843+t-reents@users.noreply.github.com",
+            "name": "Timo Reents",
+            "username": "t-reents"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba13ca67216152fbd7c6df4b84fdec456a9d5478",
+          "message": "✨ Add `readline(s)` to all stream classes (#194)\n\nStreams returned by `get_object_stream` for packed objects lacked\n`readline`/`readlines`, so line-oriented consumers (e.g. `pickle` in\naiida-workgraph/aiida-pythonjob) crashed as soon as an object was\npacked, while the same object worked fine when loose (#174).\n\nAdd `readline` and `readlines` to `PackedObjectReader`,\n`CallbackStreamWrapper`, `ZlibLikeBaseStreamDecompresser` and\n`LazyLooseStream`, mirroring `io.BufferedReader` semantics: `b'\\n'` is\nthe terminator and `size` an upper bound, so a packed object behaves\nidentically to the same object when loose. The newline terminator was\nchosen over fixed-size chunking (raised in review) because the\nmotivating consumers are line-oriented and the loose path already splits\non newlines. `readlines` is a single shared helper,\n`_collect_readlines`, modelled on `io.IOBase.readlines`; each class\ncalls it with its own `readline`. `PackedObjectReader.readline` caps the\nread at the remaining object length, so it can never cross into the next\nobject of the pack. `CallbackStreamWrapper.readline` keeps the same\ncallback accounting as its `read`.\n\nExactly one pre-existing code path changes behaviour:\n`ZlibLikeBaseStreamDecompresser._read_compressed`, the engine behind\n`read()` on compressed streams. It now decompresses up to `_CHUNKSIZE`\n(512 KB) per fill even when fewer bytes are requested, so `readline` can\nscan a populated buffer instead of re-entering zlib per byte, and it\nconsumes the buffer through a `_buffer_pos` read offset (dropping the\nconsumed prefix only on refill) instead of re-slicing `buffer[size:]` on\nevery call; newlines are located in place with `bytes.find(b'\\n', pos)`.\nReturned bytes, EOF and seek semantics are unchanged; the trade-off is\nthat even a `read(1)` now holds up to ~512 KB of decompressed data per\nstream instance. This change is fenced by byte-exact round-trip tests on\nmulti-chunk incompressible payloads (`test_stream_decompresser`,\n`..._multichunk`, `..._readline_many_short_lines`), hash-verified\ncontainer reads (validate/repack), the preserved corrupt and\ntruncated-stream error paths, and the full OS x Python CI matrix.\n\n`PackedObjectReader.readline` advances its position by `len(line)`\ninstead of a per-line `tell()` round-trip (~2.6x faster over many short\nlines); its `read`, `seek` and `tell` are untouched.\n\nNew benchmarks in `tests/test_benchmark.py` measure read vs readline\nover a spread of object sizes and shapes (few-line to 4 MB objects;\ntext, incompressible binary, no-newline blob) on both packed paths. They\nrun in the benchmarks workflow (skipped in regular CI) and show\n`readline` scaling linearly in object size on both paths and staying\nwithin a small factor of a bulk `read`; tiny and few-line objects show\nno measurable overhead.\n\nBehaviour-preserving refactors and typing, in support of the above:\n\n- The repeated closed/None guards in `LazyLooseStream` and\n  `ZlibLikeBaseStreamDecompresser` are centralised in\n  `_require_stream()` / `_require_uncompressed_stream()`, with the same\n  exception types and messages as before.\n- `StreamReadBytesType`/`StreamSeekBytesType` become runtime-checkable\n  Protocols (read-only vs read+seek) instead of Unions, and stream\n  annotations in `container.py` are corrected accordingly (`obj_reader`\n  is in fact always seekable). Neither name is used with `isinstance`\n  inside the package nor exported at package level.\n- Coverage excludes the `...` bodies of Protocol stubs.\n\nTests cover all stream types, multi-chunk decompression, many short\nlines across buffer refills, `readline(size)` caps, `readlines(hint)`\ncutoffs, callback accounting in `CallbackStreamWrapper`, and readline\nafter a backward seek (switch to the uncompressed loose stream).\n\nFixes #174.\n\n---------\n\nCo-authored-by: Julian Geiger <julian.geiger@gmx.net>",
+          "timestamp": "2026-06-12T17:37:57+02:00",
+          "tree_id": "0fc588a86780e237da804e00473026b26c5b37f4",
+          "url": "https://github.com/aiidateam/disk-objectstore/commit/ba13ca67216152fbd7c6df4b84fdec456a9d5478"
+        },
+        "date": 1781278735843,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-few_lines_500B-read]",
+            "value": 3538.0903111397556,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006801013468638395",
+            "extra": "mean: 282.63834782607944 usec\nrounds: 805"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-few_lines_500B-readline]",
+            "value": 4123.249774522989,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004147017722091746",
+            "extra": "mean: 242.52714598539885 usec\nrounds: 1233"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-256KB_text-read]",
+            "value": 3106.7569817867125,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00034518709418719006",
+            "extra": "mean: 321.8790545454555 usec\nrounds: 1210"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-256KB_text-readline]",
+            "value": 161.40539217609077,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006749978826471836",
+            "extra": "mean: 6.195579878205156 msec\nrounds: 156"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-256KB_binary-read]",
+            "value": 2502.0647255685813,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006375686330875627",
+            "extra": "mean: 399.66991652174596 usec\nrounds: 1150"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-256KB_binary-readline]",
+            "value": 376.4279182067028,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0017335208061223214",
+            "extra": "mean: 2.656551099514578 msec\nrounds: 412"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_text-read]",
+            "value": 554.9780247762872,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0009712795378117515",
+            "extra": "mean: 1.801873146964877 msec\nrounds: 313"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_text-readline]",
+            "value": 9.41490253782925,
+            "unit": "iter/sec",
+            "range": "stddev: 0.012874799963861714",
+            "extra": "mean: 106.21458862499978 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_binary-read]",
+            "value": 275.10873512124215,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0037303273771707632",
+            "extra": "mean: 3.6349263848684914 msec\nrounds: 304"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_binary-readline]",
+            "value": 31.766790724937092,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004560112685989172",
+            "extra": "mean: 31.479415363636182 msec\nrounds: 33"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_blob-read]",
+            "value": 533.7058807078209,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008715081689390182",
+            "extra": "mean: 1.873691177383622 msec\nrounds: 451"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[compressed-4MB_blob-readline]",
+            "value": 436.26936337629013,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006611614923580689",
+            "extra": "mean: 2.2921618705035725 msec\nrounds: 139"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-few_lines_500B-read]",
+            "value": 3734.5130143235415,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006359862212624618",
+            "extra": "mean: 267.77253049180683 usec\nrounds: 1525"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-few_lines_500B-readline]",
+            "value": 4959.254681966354,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000040426234881540963",
+            "extra": "mean: 201.64320328947053 usec\nrounds: 1520"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-256KB_text-read]",
+            "value": 4528.010230718437,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007252756514206188",
+            "extra": "mean: 220.84755754655947 usec\nrounds: 1451"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-256KB_text-readline]",
+            "value": 494.41424106665505,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000259438670295448",
+            "extra": "mean: 2.0225954613333714 msec\nrounds: 375"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-256KB_binary-read]",
+            "value": 5162.348647382325,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028542769244965336",
+            "extra": "mean: 193.71027962380464 usec\nrounds: 1595"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-256KB_binary-readline]",
+            "value": 1359.6132386652323,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000978256848105684",
+            "extra": "mean: 735.5032825229961 usec\nrounds: 761"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_text-read]",
+            "value": 1849.033476583044,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006448851832260364",
+            "extra": "mean: 540.823090909078 usec\nrounds: 627"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_text-readline]",
+            "value": 34.32592310811764,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002602016118102467",
+            "extra": "mean: 29.13250131249967 msec\nrounds: 32"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_binary-read]",
+            "value": 1762.5948612321763,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010489251740911438",
+            "extra": "mean: 567.3453508771327 usec\nrounds: 627"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_binary-readline]",
+            "value": 104.64578614974727,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006807221611607319",
+            "extra": "mean: 9.556046514563025 msec\nrounds: 103"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_blob-read]",
+            "value": 1716.6922386291956,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010387224221594316",
+            "extra": "mean: 582.5155945241034 usec\nrounds: 767"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_stream_readline_speed[plain-4MB_blob-readline]",
+            "value": 317.47067316962034,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004118096609083173",
+            "extra": "mean: 3.1498972488262353 msec\nrounds: 213"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_write",
+            "value": 5.509220340953503,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013996071875861042",
+            "extra": "mean: 181.51388728571456 msec\nrounds: 7"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_write",
+            "value": 4.7053920710160595,
+            "unit": "iter/sec",
+            "range": "stddev: 0.024206189628381006",
+            "extra": "mean: 212.52214160000165 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_pack_read",
+            "value": 15.741425769694267,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005538762825815732",
+            "extra": "mean: 63.526647117646846 msec\nrounds: 17"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_loose_read",
+            "value": 37.856558273685394,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002228833759258224",
+            "extra": "mean: 26.415502243243107 msec\nrounds: 37"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_has_objects",
+            "value": 7.354508585833968,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008867985929632815",
+            "extra": "mean: 135.971015375 msec\nrounds: 8"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_packed",
+            "value": 7150716.333562816,
+            "unit": "iter/sec",
+            "range": "stddev: 1.87536504357144e-8",
+            "extra": "mean: 139.846129164159 nsec\nrounds: 73395"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_list_all_loose",
+            "value": 6362582.209401469,
+            "unit": "iter/sec",
+            "range": "stddev: 3.987188008902412e-7",
+            "extra": "mean: 157.16889261127702 nsec\nrounds: 86326"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_final]",
+            "value": 2815.059236508288,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000029185665962760126",
+            "extra": "mean: 355.23231164413045 usec\nrounds: 292"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_100KB_packs[clean_each]",
+            "value": 5786.581898648333,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005674471934223453",
+            "extra": "mean: 172.81359142840205 usec\nrounds: 350"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_final]",
+            "value": 2954.6467267409785,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011071643335701243",
+            "extra": "mean: 338.4499374999785 usec\nrounds: 272"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_10_files_1MB_packs[clean_each]",
+            "value": 5736.387818758465,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008994959867768709",
+            "extra": "mean: 174.32573103406938 usec\nrounds: 290"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_final]",
+            "value": 376.4475815075599,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00018993916070997124",
+            "extra": "mean: 2.656412337662788 msec\nrounds: 77"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_100KB_packs[clean_each]",
+            "value": 769.1975538820744,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000646110821390818",
+            "extra": "mean: 1.3000561363632597 msec\nrounds: 66"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_final]",
+            "value": 363.18311887269954,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00013935562814944232",
+            "extra": "mean: 2.7534319411759696 msec\nrounds: 68"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_100_files_1MB_packs[clean_each]",
+            "value": 782.84313067306,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001220563929623092",
+            "extra": "mean: 1.2773951265820478 msec\nrounds: 79"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_final]",
+            "value": 128.7736009173121,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00012535686990472158",
+            "extra": "mean: 7.765566800000556 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_100KB_packs[clean_each]",
+            "value": 257.17741003010644,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000130799507073612",
+            "extra": "mean: 3.8883663999996543 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_final]",
+            "value": 117.57835433291083,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008016488611404488",
+            "extra": "mean: 8.504966799999636 msec\nrounds: 5"
+          },
+          {
+            "name": "tests/test_benchmark.py::test_clean_loose_1000_files_1MB_packs[clean_each]",
+            "value": 238.5372817551699,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0003013900516020664",
+            "extra": "mean: 4.192216799998505 msec\nrounds: 5"
           }
         ]
       }
