@@ -718,7 +718,10 @@ class PackedObjectReader:
 
         readline_size = remaining if size < 0 else min(size, remaining)
         line = self._fhandle.readline(readline_size)
-        self._update_pos()
+        # `readline` consumed exactly `len(line)` bytes (bounded by `readline_size`, so it
+        # cannot cross the object boundary), so advance the position directly instead of
+        # re-deriving it with `_update_pos`'s per-line `tell()` round-trip.
+        self._pos += len(line)
         return line
 
     def readlines(self, hint: int = -1) -> list[bytes]:
