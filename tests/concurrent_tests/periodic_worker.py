@@ -51,9 +51,7 @@ def timestamp():
     '-s',
     '--shared-folder',
     default='/tmp/test-container-shared',
-    help=(
-        'Test folder path, in which all locusts will write the checksums for others to read. ' 'It must already exist.'
-    ),
+    help=('Test folder path, in which all locusts will write the checksums for others to read. It must already exist.'),
 )
 @click.option(
     '-b',
@@ -86,10 +84,10 @@ def main(
 
     start_counts = container.count_objects()
     print(
-        f"[{proc_id} {timestamp()}] Currently known objects: "
-        f"{start_counts['packed']} packed, {start_counts['loose']} loose"
+        f'[{proc_id} {timestamp()}] Currently known objects: '
+        f'{start_counts["packed"]} packed, {start_counts["loose"]} loose'
     )
-    print(f"[{proc_id} {timestamp()}] Pack objects on disk: {start_counts['pack_files']}")
+    print(f'[{proc_id} {timestamp()}] Pack objects on disk: {start_counts["pack_files"]}')
 
     for iteration in range(repetitions):
         if iteration != 0:
@@ -232,9 +230,9 @@ def main(
         assert not only_right, f'objects only in all_checksums: {only_right}'
         assert not only_left, f'objects only in retrieved_checksums: {only_left}'
         for key, value in retrieved_checksums.items():
-            assert (
-                all_checksums[key] == value
-            ), f'Mismatch for {key}: {all_checksums[key]} vs. {value}; meta={metas[key]}'
+            assert all_checksums[key] == value, (
+                f'Mismatch for {key}: {all_checksums[key]} vs. {value}; meta={metas[key]}'
+            )
         del retrieved_content
 
         random.shuffle(all_hashkeys)

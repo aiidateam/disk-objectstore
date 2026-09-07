@@ -34,8 +34,8 @@ For bulk access, the syntax is a bit more convoluted (the reason is efficiency, 
 ```python
 with container.get_objects_stream_and_meta([hash3, hash1, hash2]) as triplets:
     for hashkey, stream, meta in triplets:
-        print("Meta for hashkey {}: {}".format(hashkey, meta))
-        print("  Content: {}".format(stream.read()))
+        print('Meta for hashkey {}: {}'.format(hashkey, meta))
+        print('  Content: {}'.format(stream.read()))
 ```
 
 whose output is:

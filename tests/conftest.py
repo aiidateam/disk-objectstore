@@ -50,9 +50,9 @@ def callback_instance():
             """Check how the callback is called."""
 
             if action == 'init':
-                assert (
-                    self.current_action is None
-                ), f"Starting a new action '{action}' without closing the old one {self.current_action}"
+                assert self.current_action is None, (
+                    f"Starting a new action '{action}' without closing the old one {self.current_action}"
+                )
                 self.current_action = {'start_value': value, 'value': 0}
             elif action == 'update':
                 # Track the current position
