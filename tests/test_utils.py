@@ -44,9 +44,9 @@ def test_lazy_opener_read():
             # This is not open yet
             lazy.tell()
 
-        assert (
-            len(current_process.open_files()) == start_open_files
-        ), 'The LazyOpener is not lazy, but axtually opened the file instead!'
+        assert len(current_process.open_files()) == start_open_files, (
+            'The LazyOpener is not lazy, but axtually opened the file instead!'
+        )
         with lazy as fhandle:
             # Shoul be opened at position zero at the beginnign
             assert lazy.tell() == 0
@@ -2010,9 +2010,9 @@ def test_all_streams_readline_size(tmp_path, stream_type):
         first_chunk = stream.readline(10)
         assert first_chunk == content[:10], f'Failed for {stream_type}: readline(10)'
         # the remainder of the first line is returned by the next (unbounded) readline
-        assert (
-            first_chunk + stream.readline() == b'a long first line that exceeds the size limit\n'
-        ), f'Failed for {stream_type}: remainder'
+        assert first_chunk + stream.readline() == b'a long first line that exceeds the size limit\n', (
+            f'Failed for {stream_type}: remainder'
+        )
     finally:
         closer()
 

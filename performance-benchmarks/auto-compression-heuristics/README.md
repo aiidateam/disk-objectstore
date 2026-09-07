@@ -74,7 +74,7 @@ To compress or decompress everything, I used these scripts from ipython
 import time
 import disk_objectstore as dostore
 
-c = dostore.Container(".")
+c = dostore.Container('.')
 t = time.monotonic()
 c.repack(compress_mode=dostore.container.CompressMode.AUTO)
 print(time.monotonic() - t)
@@ -86,9 +86,10 @@ I then dumped the relevant sizes using the following code
 ### Dump relevant data to csv
 import sqlite3
 import pandas as pd
+
 conn = sqlite3.connect('packs.idx')
 cursor = conn.cursor()
-clients = pd.read_sql('SELECT length,size,compressed FROM db_object ORDER BY id' ,conn)
+clients = pd.read_sql('SELECT length,size,compressed FROM db_object ORDER BY id', conn)
 clients.to_csv('auto-compressed.csv', index=False)
 ```
 where I changed the last filename to `auto-compressed.csv` for the result of `CompressMode.AUTO` and `all-compressed.csv` for the result of `CompressMode.YES`.

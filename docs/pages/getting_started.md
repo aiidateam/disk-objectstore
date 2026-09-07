@@ -10,12 +10,12 @@ Let us run a quick demo of how to store and retrieve objects in a container:
 from disk_objectstore import Container, CompressMode
 
 # Let's create a new container in the local folder `temp_container`, and initialise it
-container = Container("temp_container")
+container = Container('temp_container')
 container.init_container(clear=True)
 
 # Let's add two objects
-hash1 = container.add_object(b"some_content")
-hash2 = container.add_object(b"some_other_content")
+hash1 = container.add_object(b'some_content')
+hash2 = container.add_object(b'some_other_content')
 
 # Let's look at the hashes
 print(hash1)
@@ -31,7 +31,7 @@ container.get_object_content(hash2)
 
 # Let's add a new object with the same content of an existing one: it will get the same
 # hash and will not be stored twice
-hash1bis = container.add_object(b"some_content")
+hash1bis = container.add_object(b'some_content')
 assert hash1bis == hash1
 
 # Let's pack all objects: instead of having a lot of files, one per object, all objects
@@ -51,7 +51,7 @@ container.get_object_content(hash2)
 # Output: b'some_other_content'
 
 # This third object will be stored as loose
-hash3 = container.add_object(b"third_content")
+hash3 = container.add_object(b'third_content')
 
 # It is important to close the container after usage to free acquired as file
 # handlers and SQL connections
