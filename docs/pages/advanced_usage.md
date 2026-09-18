@@ -80,3 +80,27 @@ of the object before starting to read, so you can e.g. simply do a `.read()` if 
 Finally, when writing objects, if the objects are big, instead of reading in memory the whole content, you should use
 the methods `container.add_streamed_object(stream)` (loose objects) or `add_streamed_objects_to_pack(stream_list)`
 (directly to packs).
+
+## Managed objects
+
+An ordinary object lives as long as something refers to it: you write it, you keep its hash key somewhere the container can see, and the sweep that collects unreferenced objects keeps it.
+
+A managed object is the other case. Its lifetime belongs to whoever wrote it, and the container holds it until that writer says otherwise.
+
+```python
+hashkey = container.add_managed_object(b'the state of something still running')
+container.get_managed_object_content(hashkey)
+# Output: b'the state of something still running'
+container.delete_managed_objects([hashkey])
+# Output: {'f140fa27a0784626a46c5efbf53f83aa7ae331a5ab3f3ee75ebd7235acd53623'}
+```
+
+They are addressed by content like everything else, so writing the same bytes twice gives one object and one key. Beyond that they stay separate from loose and packed objects:
+
+- `list_all_objects` and `count_objects` omit them, so one survives until its writer deletes it, wherever the caller records its key
+- packing and `clean_storage` skip them
+- a managed and an ordinary object with the same content are separate files, and deleting one keeps the other
+
+Use them for data a container is a convenient place to keep but whose lifetime is decided elsewhere, such as the checkpoint of a task that is still running. Use an ordinary object for content that is referred to, which is almost always what you want.
+
+Deleting them is your job. `list_managed_objects` enumerates what is there, which is the one way to find them, and `delete_managed_objects` removes them.

@@ -78,6 +78,7 @@ class Container:  # pylint: disable=too-many-public-methods
     # Size in bytes of each of the chunks used when (internally) reading or writing in chunks, e.g.
     # when packing.
     _CHUNKSIZE = 65536
+    _STREAM_READ_CHUNKSIZE: int = 524288
 
     # The pack ID that is used for repacking as a temporary location.
     # NOTE: It MUST be an integer and it MUST be < 0 to avoid collisions with 'actual' packs
@@ -180,6 +181,14 @@ class Container:  # pylint: disable=too-many-public-methods
         It is a subfolder of the container folder.
         """
         return self._folder / 'packs'
+
+    def _get_managed_folder(self) -> Path:
+        """Return the path to the folder that will host the managed objects.
+
+        It is a subfolder of the container folder. Unlike the others it is created on first use, so that a
+        container written by an older version stays valid.
+        """
+        return self._folder / 'managed'
 
     def _get_duplicates_folder(self) -> Path:
         """Return the path to the folder that will host the duplicate loose objects that couldn't be written.
@@ -390,6 +399,7 @@ class Container:  # pylint: disable=too-many-public-methods
             self._get_loose_folder(),
             self._get_duplicates_folder(),
             self._get_sandbox_folder(),
+            self._get_managed_folder(),
         ]:
             os.makedirs(folder)
 
@@ -1001,12 +1011,11 @@ class Container:  # pylint: disable=too-many-public-methods
            will be then stored as an object.
         :return: the hash key of the newly created loose object.
         """
-        _read_chunk_size = 524288
         writer = self._new_object_writer()
 
         with writer as fhandle:
             while True:
-                chunk = stream.read(_read_chunk_size)
+                chunk = stream.read(self._STREAM_READ_CHUNKSIZE)
                 if not chunk:
                     break
                 fhandle.write(chunk)
@@ -1014,6 +1023,132 @@ class Container:  # pylint: disable=too-many-public-methods
         hashkey = writer.get_hashkey()
         assert hashkey is not None
         return hashkey
+
+    def _get_managed_path_from_hashkey(self, hashkey: str) -> Path:
+        """Return the path of a managed object on disk containing the data of a given hash key.
+
+        :param hashkey: the hashkey of the object to get.
+        """
+        return self._get_managed_folder() / hashkey
+
+    def add_managed_object(self, content: bytes) -> str:
+        """Add a managed object from its content.
+
+        A managed object is one whose lifetime its writer owns. Packing, compaction and
+        :meth:`list_all_objects` all skip it, so a sweep that collects objects by walking the references to them
+        passes it by. :meth:`delete_managed_objects` is what removes it.
+
+        Use it for data a container is a convenient place to keep but whose lifetime is decided elsewhere, such as
+        the checkpoint of a running task. Use an ordinary object for anything that is content to be referred to.
+
+        :param content: the content of the object.
+        :return: the hash key of the object.
+        """
+        return self.add_streamed_managed_object(io.BytesIO(content))
+
+    def add_streamed_managed_object(self, stream: StreamReadBytesType) -> str:
+        """Add a managed object, reading its content from a stream.
+
+        See :meth:`add_managed_object` for what makes an object managed.
+
+        :param stream: an open stream, read from its current position to the end.
+        :return: the hash key of the object.
+        """
+        managed_folder = self._get_managed_folder()
+        managed_folder.mkdir(exist_ok=True)
+
+        # `ObjectWriter` parks a conflicting write in the duplicates folder for `clean_storage` to resolve
+        # against the loose objects, and a managed object on that path would either break `clean_storage` for the
+        # whole container or be promoted into `loose`, so the two namespaces stay apart. That dance protects a
+        # loose object from being overwritten while a reader holds it; here the name is the content, so a write
+        # is skipped once the object is in place.
+        hasher = get_hash_cls(self.hash_type)()
+        staged = self._get_sandbox_folder() / uuid.uuid4().hex
+
+        try:
+            with open(staged, 'wb') as handle:
+                while True:
+                    chunk = stream.read(self._STREAM_READ_CHUNKSIZE)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                    handle.write(chunk)
+
+            hashkey = hasher.hexdigest()
+            destination = self._get_managed_path_from_hashkey(hashkey)
+
+            if not destination.exists():
+                try:
+                    os.replace(staged, destination)
+                except OSError:
+                    # Another writer put the same content there first, or holds it open on Windows. Either way
+                    # what is on disk is what this call would have written.
+                    if not destination.exists():
+                        raise
+        finally:
+            staged.unlink(missing_ok=True)
+
+        return hashkey
+
+    @contextmanager
+    def get_managed_object_stream(self, hashkey: str) -> Iterator[StreamReadBytesType]:
+        """Return a context manager yielding a stream with the content of a managed object.
+
+        :param hashkey: the hash key of the object to stream.
+        :raises NotExistent: if there is no such object.
+        """
+        try:
+            with open(self._get_managed_path_from_hashkey(hashkey), mode='rb') as handle:
+                yield handle
+        except FileNotFoundError:
+            raise NotExistent(f'No managed object with hash key {hashkey}')
+
+    def get_managed_object_content(self, hashkey: str) -> bytes:
+        """Return the content of a managed object.
+
+        :param hashkey: the hash key of the object to read.
+        :raises NotExistent: if there is no such object.
+        """
+        with self.get_managed_object_stream(hashkey) as handle:
+            return handle.read()
+
+    def has_managed_object(self, hashkey: str) -> bool:
+        """Return whether the container holds a managed object with this hash key.
+
+        :param hashkey: the hash key to look for.
+        """
+        return self._get_managed_path_from_hashkey(hashkey).exists()
+
+    def list_managed_objects(self) -> Iterator[str]:
+        """Iterate over the hash keys of the managed objects.
+
+        They are deliberately absent from :meth:`list_all_objects`, so this is the only way to enumerate them.
+        """
+        managed_folder = self._get_managed_folder()
+
+        if not managed_folder.exists():
+            return
+
+        for name in os.listdir(managed_folder):
+            if self._is_valid_hashkey(name):
+                yield name
+
+    def delete_managed_objects(self, hashkeys: Iterable[str]) -> set[str]:
+        """Delete managed objects, ignoring any that are not there.
+
+        :param hashkeys: the hash keys of the objects to delete, iterated once.
+        :return: the hash keys that were deleted.
+        """
+        deleted: set[str] = set()
+
+        for hashkey in hashkeys:
+            try:
+                self._get_managed_path_from_hashkey(hashkey).unlink()
+            except FileNotFoundError:
+                continue
+            deleted.add(hashkey)
+
+        return deleted
 
     def count_objects(self) -> ObjectCount:
         """Return an ObjectCount object with the count of objects.

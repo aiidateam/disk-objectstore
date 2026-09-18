@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add managed objects, whose lifetime belongs to whoever wrote them: `add_managed_object`, `add_streamed_managed_object`, `get_managed_object_stream`, `get_managed_object_content`, `has_managed_object`, `list_managed_objects` and `delete_managed_objects`. They live in a `managed` folder of their own, are omitted from `list_all_objects` and `count_objects`, and are skipped by packing and `clean_storage`, so one survives until its writer deletes it, wherever the caller records its key. Containers written by earlier versions stay valid and grow the folder on first use.
+
 ## v1.5.0 (26 February 2026)
 
 - Add no-op `close()` and `flush()` methods to `PackedObjectReader`, `CallbackStreamWrapper`, and `ZlibLikeBaseStreamDecompresser` [\[8caa2ec\]](https://github.com/aiidateam/disk-objectstore/commit/8caa2ec)
