@@ -3429,6 +3429,112 @@ def test_pack_all_loose_progress_bar(temp_container):
     temp_container.pack_all_loose(callback=progress)
 
 
+@pytest.mark.parametrize('clean_loose_per_pack', [False, True])
+def test_pack_all_loose_reports_progress_after_each_pack(temp_container, clean_loose_per_pack):
+    """Report uncompressed bytes after each commit and any requested cleanup."""
+    temp_container.init_container(clear=True, pack_size_target=4)
+    contents = [bytes([idx, idx]) for idx in range(1, 6)]
+    hashkeys = [temp_container.add_object(content) for content in contents]
+    updates = []
+    visible_packed_counts = []
+    visible_loose_counts = []
+    visible_contents = []
+    expected_contents = dict(zip(hashkeys, contents))
+
+    def progress(action, value):
+        if action == 'update':
+            updates.append(value)
+            counts = temp_container.count_objects()
+            visible_packed_counts.append(counts['packed'])
+            visible_loose_counts.append(counts['loose'])
+            packed_hashkeys = [
+                hashkey for hashkey in hashkeys if temp_container.get_object_meta(hashkey)['type'] == ObjectType.PACKED
+            ]
+            visible_contents.append(temp_container.get_objects_content(packed_hashkeys))
+
+    temp_container.pack_all_loose(
+        compress=False,
+        callback=progress,
+        clean_loose_per_pack=clean_loose_per_pack,
+    )
+
+    assert updates == [4, 4, 2]
+    assert visible_packed_counts == [2, 4, 5]
+    assert visible_loose_counts == ([3, 1, 0] if clean_loose_per_pack else [5, 5, 5])
+    assert [len(observed) for observed in visible_contents] == visible_packed_counts
+    assert all(
+        content == expected_contents[hashkey] for observed in visible_contents for hashkey, content in observed.items()
+    )
+    assert temp_container.get_objects_content(hashkeys) == expected_contents
+
+
+def test_pack_all_loose_reports_zero_for_empty_object(temp_container):
+    """Report a completed empty object even though it adds no bytes."""
+    temp_container.init_container(clear=True, pack_size_target=2)
+    temp_container.add_object(b'')
+    updates = []
+
+    def progress(action, value):
+        if action == 'update':
+            updates.append(value)
+
+    temp_container.pack_all_loose(callback=progress)
+
+    assert updates == [0]
+    assert temp_container.count_objects()['packed'] == 1
+
+
+def test_pack_all_loose_does_not_report_uncommitted_progress(temp_container, monkeypatch):
+    """Do not report packed bytes when the database commit fails."""
+    temp_container.add_object(b'data')
+    updates = []
+    session = temp_container._get_operation_session()
+
+    def fail_commit():
+        raise RuntimeError('commit failed')
+
+    def progress(action, value):
+        if action == 'update':
+            updates.append(value)
+
+    monkeypatch.setattr(session, 'commit', fail_commit)
+    with pytest.raises(RuntimeError, match='commit failed'):
+        temp_container.pack_all_loose(callback=progress)
+
+    assert updates == []
+
+
+def test_pack_all_loose_does_not_report_progress_for_skipped_objects(temp_container, monkeypatch):
+    """Do not report progress when every loose object is skipped."""
+    temp_container.add_object(b'data')
+    updates = []
+
+    def fail_write(*args, **kwargs):
+        raise PermissionError
+
+    def progress(action, value):
+        if action == 'update':
+            updates.append(value)
+
+    monkeypatch.setattr(temp_container, '_write_data_to_packfile', fail_write)
+    temp_container.pack_all_loose(callback=progress)
+
+    assert updates == []
+    assert temp_container.count_objects()['packed'] == 0
+
+
+def test_pack_all_loose_empty_container_has_no_updates(temp_container):
+    """Close progress without updates when there are no loose objects."""
+    events = []
+
+    temp_container.pack_all_loose(callback=lambda action, value: events.append((action, value)))
+
+    assert events == [
+        ('init', {'total': 0, 'description': 'Packing loose objects'}),
+        ('close', None),
+    ]
+
+
 def test_container_id(temp_container):
     """Check the creation of unique container IDs."""
     old_container_id = temp_container.container_id
