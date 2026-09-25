@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from disk_objectstore import backup_utils
+from disk_objectstore import Container, backup_utils
 from disk_objectstore.backup_utils import BackupError, BackupManager
 
 pytestmark = pytest.mark.skipif(platform.system() == 'Windows', reason='Backup not supported on Windows')
@@ -24,6 +24,56 @@ def test_invalid_destination():
     dest = 'localhost:/tmp/test:'
     with pytest.raises(ValueError, match='Invalid destination format'):
         BackupManager(dest)
+
+
+def test_split_remote_and_path_keeps_string_remote_parsing(tmp_path):
+    """Test that string destinations retain remote syntax."""
+    remote, path = backup_utils.split_remote_and_path(f'host:{tmp_path}')
+
+    assert remote == 'host'
+    assert path == tmp_path
+
+
+def test_path_destination_existing_directory(monkeypatch, tmp_path):
+    """Test that a pathlib destination is treated as a local path."""
+    dest = tmp_path / 'existing'
+    dest.mkdir()
+
+    def fail_if_remote(_self):
+        pytest.fail('A pathlib destination must not use SSH.')
+
+    monkeypatch.setattr(BackupManager, 'check_if_remote_accessible', fail_if_remote)
+    manager = BackupManager(dest)
+
+    assert manager.dest == dest
+    assert manager.remote is None
+    assert manager.path == dest.absolute()
+
+
+def test_path_destination_backup_integrity(monkeypatch, tmp_path, temp_container):
+    """Test that a relative pathlib destination with a colon stays local."""
+    monkeypatch.chdir(tmp_path)
+
+    def fail_if_remote(_self):
+        pytest.fail('A pathlib destination must not use SSH.')
+
+    monkeypatch.setattr(BackupManager, 'check_if_remote_accessible', fail_if_remote)
+    dest = Path('backup:local')
+    object_content = b'backup destination regression'
+    hashkey = temp_container.add_object(object_content)
+
+    manager = BackupManager(dest)
+    manager.backup_auto_folders(
+        lambda path, previous: backup_utils.backup_container(manager, temp_container, path, previous)
+    )
+
+    backup_path = manager.path / 'last-backup'
+    backup_container = Container(backup_path)
+
+    assert manager.dest == dest
+    assert manager.remote is None
+    assert manager.path == dest.absolute()
+    assert backup_container.get_object_content(hashkey) == object_content
 
 
 def test_inaccessible_remote():
