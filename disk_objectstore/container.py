@@ -1360,6 +1360,7 @@ class Container:  # pylint: disable=too-many-public-methods
             last_pack_int_id = pack_int_id
             # Track which objects were added to this pack for cleanup
             packed_in_current_pack: list[str] = []
+            packed_size_current_pack = 0
 
             # Avoid concurrent writes on the pack file
             with self.lock_pack(str(pack_int_id)) as pack_handle:
@@ -1437,12 +1438,7 @@ class Container:  # pylint: disable=too-many-public-methods
 
                     # Track this object for potential cleanup
                     packed_in_current_pack.append(loose_hashkey)
-
-                    if callback:
-                        callback(
-                            'update',
-                            obj_dict['size'],
-                        )
+                    packed_size_current_pack += obj_dict['size']
                 # It's now time to write to the DB, in a single bulk operation (per pack)
                 if obj_dicts:
                     # Here I shouldn't need to do `OR IGNORE` as in `add_streamed_objects_to_pack`
@@ -1482,6 +1478,8 @@ class Container:  # pylint: disable=too-many-public-methods
             # Clean up loose objects for this pack if requested
             if clean_loose_per_pack and packed_in_current_pack:
                 self._clean_loose_objects(packed_in_current_pack)
+            if callback and packed_in_current_pack:
+                callback('update', packed_size_current_pack)
         if callback:
             callback('close', None)
 
