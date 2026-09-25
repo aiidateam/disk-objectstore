@@ -12,7 +12,7 @@ import string
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from disk_objectstore import LOGGER as BASE_LOGGER
 from disk_objectstore.container import Container
@@ -49,13 +49,16 @@ class BackupManager:
 
     def __init__(
         self,
-        dest: str,
+        dest: Union[str, Path],
         keep: Optional[int] = None,
         rsync_exe: Optional[str] = None,
     ) -> None:
         self.dest = dest
         self.keep = keep
-        self.remote, self.path = split_remote_and_path(dest)
+        if isinstance(dest, Path):
+            self.remote, self.path = None, dest.absolute()
+        else:
+            self.remote, self.path = split_remote_and_path(dest)
         self.rsync_exe = rsync_exe if rsync_exe is not None else 'rsync'
 
         # Validate the backup config inputs
