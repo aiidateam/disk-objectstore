@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines,protected-access
 import dataclasses
+import errno
 import functools
 import hashlib
 import io
@@ -113,6 +114,124 @@ def _get_data_and_md5_bulk(container, obj_hashkeys):
     for obj_hashkey in retrieved_contents:
         retval[obj_hashkey] = hashlib.md5(retrieved_contents[obj_hashkey]).hexdigest()
     return retval
+
+
+def _check_disk_full_recovery(container, monkeypatch, fault_point, packed=False, compress=False):
+    folder = container.get_folder()
+    loose_content = b'acknowledged loose object'
+    packed_content = b'acknowledged packed object'
+    acknowledged = {
+        container.add_object(loose_content): loose_content,
+        container.add_objects_to_pack([packed_content], compress=compress)[0]: packed_content,
+    }
+    for hashkey, content in acknowledged.items():
+        assert hashkey == hashlib.sha256(content).hexdigest()
+
+    failed_content = bytes(range(256)) * 4
+    failed_hashkey = hashlib.sha256(failed_content).hexdigest()
+    state = {'opened': 0, 'errors': 0, 'written': 0, 'partial': 0}
+
+    class DiskFullFile:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        def __enter__(self):
+            self.handle.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.handle.__exit__(*args)
+
+        def fail(self):
+            state['errors'] += 1
+            raise OSError(errno.ENOSPC, 'No space left on device', self.handle.name)
+
+        def write(self, data):
+            if data and fault_point != 'flush' and not state['errors']:
+                if fault_point == 'partial':
+                    position = self.handle.tell()
+                    state['partial'] = self.handle.write(data[: max(1, len(data) // 2)])
+                    assert 0 < state['partial'] < len(data)
+                    assert self.handle.tell() == position + state['partial']
+                    self.handle.flush()
+                    assert os.fstat(self.handle.fileno()).st_size >= position + state['partial']
+                    state['written'] += state['partial']
+                self.fail()
+            written = self.handle.write(data)
+            state['written'] += written
+            return written
+
+        def flush(self):
+            if fault_point == 'flush' and not state['errors']:
+                assert state['written'] > 0
+                self.fail()
+            return self.handle.flush()
+
+    original_open = open
+    target_folder = folder / ('packs' if packed else 'sandbox')
+    target_mode = 'ab' if packed else 'wb'
+
+    def failing_open(path, mode='r', *args, **kwargs):
+        handle = original_open(path, mode, *args, **kwargs)
+        if mode == target_mode and Path(path).parent == target_folder:
+            state['opened'] += 1
+            return DiskFullFile(handle)
+        return handle
+
+    def write_object(target, content):
+        if packed:
+            return target.add_objects_to_pack([content], compress=compress)[0]
+        return target.add_object(content)
+
+    module = 'disk_objectstore.container' if packed else 'disk_objectstore.utils'
+    with monkeypatch.context() as patch:
+        patch.setattr(f'{module}.open', failing_open, raising=False)
+        with pytest.raises(OSError) as error:
+            write_object(container, failed_content)
+    assert error.value.errno == errno.ENOSPC
+    assert state['opened'] == 1
+    assert state['errors'] == 1
+    if fault_point == 'before':
+        assert state['written'] == 0
+    elif fault_point == 'partial':
+        assert state['written'] == state['partial'] > 0
+    else:
+        assert state['written'] > 0
+
+    container.close()
+    with Container(folder) as reopened:
+        for hashkey, content in acknowledged.items():
+            retrieved = reopened.get_object_content(hashkey)
+            assert retrieved == content
+            assert hashlib.sha256(retrieved).hexdigest() == hashkey
+        assert not reopened.has_object(failed_hashkey)
+        assert reopened.validate().is_valid()
+        healthy_content = b'healthy write after disk full'
+        healthy_hashkey = write_object(reopened, healthy_content)
+        assert healthy_hashkey == hashlib.sha256(healthy_content).hexdigest()
+        acknowledged[healthy_hashkey] = healthy_content
+
+    with Container(folder) as reopened:
+        for hashkey, content in acknowledged.items():
+            retrieved = reopened.get_object_content(hashkey)
+            assert retrieved == content
+            assert hashlib.sha256(retrieved).hexdigest() == hashkey
+        assert not reopened.has_object(failed_hashkey)
+        assert reopened.validate().is_valid()
+
+
+@pytest.mark.parametrize('fault_point', ['before', 'partial', 'flush'])
+def test_disk_full_loose_write(temp_container, monkeypatch, fault_point):
+    _check_disk_full_recovery(temp_container, monkeypatch, fault_point)
+
+
+@pytest.mark.parametrize('compress', [True, False])
+@pytest.mark.parametrize('fault_point', ['before', 'partial', 'flush'])
+def test_disk_full_direct_pack_write(temp_container, monkeypatch, fault_point, compress):
+    _check_disk_full_recovery(temp_container, monkeypatch, fault_point, packed=True, compress=compress)
 
 
 @pytest.mark.parametrize('retrieve_bulk', [True, False])
