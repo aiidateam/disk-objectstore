@@ -13,7 +13,7 @@ are no concurrent processes accessing the packs) you can directly write to the p
 The interface is the following:
 
 ```python
-container.add_objects_to_pack([b"obj1", b"obj2"])
+container.add_objects_to_pack([b'obj1', b'obj2'])
 # Output: ['7e485fc048df85f62cb1ec17174072380519e3064a0510ec00daaa381a680942', '71d00f404e92546cba0e69b27b13394af4592e4da22bf24c58a95ec3f4f45584']
 ```
 
@@ -22,10 +22,10 @@ or, better, for big objects using streams, you can use `add_streamed_objects_to_
 As an example, let's create two files:
 
 ```python
-with open("file1.txt", "wb") as fhandle:
-    fhandle.write(b"file1content")
-with open("file2.txt", "wb") as fhandle:
-    fhandle.write(b"file2content")
+with open('file1.txt', 'wb') as fhandle:
+    fhandle.write(b'file1content')
+with open('file2.txt', 'wb') as fhandle:
+    fhandle.write(b'file2content')
 ```
 
 Now you can exploit the `LazyOpener` wrapper to lazily create handles to files, that are actually open only when accessed.
@@ -36,7 +36,7 @@ from pathlib import Path
 from disk_objectstore.utils import LazyOpener
 
 container.add_streamed_objects_to_pack(
-    [LazyOpener(Path("file1.txt")), LazyOpener(Path("file2.txt"))], open_streams=True
+    [LazyOpener(Path('file1.txt')), LazyOpener(Path('file2.txt'))], open_streams=True
 )
 ```
 
@@ -44,8 +44,8 @@ Output:
 
 ```python
 [
-    "ce3e75d02effb66eda58779e3b0f9e454aad218b9d5a38903a105f177f2dde23",
-    "eeeb27c2f0348e327ec8e66e7f5667798df601e6d1c62209dde749d370732a48",
+    'ce3e75d02effb66eda58779e3b0f9e454aad218b9d5a38903a105f177f2dde23',
+    'eeeb27c2f0348e327ec8e66e7f5667798df601e6d1c62209dde749d370732a48',
 ]
 ```
 
@@ -58,8 +58,8 @@ you can simply do:
 ```python
 from io import BytesIO
 
-stream1 = BytesIO(b"file1content")
-stream2 = BytesIO(b"file2content")
+stream1 = BytesIO(b'file1content')
+stream2 = BytesIO(b'file2content')
 container.add_streamed_objects_to_pack([stream1, stream2])
 ```
 

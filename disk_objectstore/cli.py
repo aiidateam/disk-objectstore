@@ -167,12 +167,12 @@ def optimize(dostore: ContainerContext, non_interactive: bool, compress: bool, v
     if not non_interactive:
         click.confirm('Is this the only process accessing the container?', abort=True)
     size = sum(f.stat().st_size for f in dostore.path.glob('**/*') if f.is_file())
-    click.echo(f'Initial container size: {round(size/1000, 2)} Mb')
+    click.echo(f'Initial container size: {round(size / 1000, 2)} Mb')
     with dostore.container as container:
         container.pack_all_loose(compress=compress)
         container.clean_storage(vacuum=vacuum)
     size = sum(f.stat().st_size for f in dostore.path.glob('**/*') if f.is_file())
-    click.echo(f'Final container size: {round(size/1000, 2)} Mb')
+    click.echo(f'Final container size: {round(size / 1000, 2)} Mb')
 
 
 @main.command('backup')
