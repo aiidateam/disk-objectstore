@@ -231,9 +231,9 @@ class LazyLooseStream:
         if self.closed:
             msg = 'I/O operation on closed file.'
             raise ValueError(msg)
-        assert (
-            self._stream is not None
-        ), 'LazyLooseStream has an open stream, but the stream is None! This should not happen'
+        assert self._stream is not None, (
+            'LazyLooseStream has an open stream, but the stream is None! This should not happen'
+        )
         return self._stream
 
     def seek(self, target: int, whence: int = 0) -> int:
@@ -960,7 +960,7 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         # out. We advance this instead of re-slicing the buffer on every read.
         self._buffer_pos = 0
         self._pos = 0
-        self._lazy_uncompressed_stream: None | (LazyLooseStream) = lazy_uncompressed_stream
+        self._lazy_uncompressed_stream: LazyLooseStream | None = lazy_uncompressed_stream
         # If True, this class just proxies request to the underlying
         # uncompressed stream
         self._use_uncompressed_stream: bool = False
@@ -995,9 +995,9 @@ class ZlibLikeBaseStreamDecompresser(abc.ABC):
         Only valid once `self._use_uncompressed_stream` is True; centralises the
         not-None assertion shared by every branch that proxies to the uncompressed stream.
         """
-        assert (
-            self._lazy_uncompressed_stream is not None
-        ), 'Using internally an uncompressed stream, but it is None! This should not happen'
+        assert self._lazy_uncompressed_stream is not None, (
+            'Using internally an uncompressed stream, but it is None! This should not happen'
+        )
         return self._lazy_uncompressed_stream
 
     def read(self, size: int = -1) -> bytes:
