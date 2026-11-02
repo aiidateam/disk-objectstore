@@ -71,7 +71,7 @@ def main(
     files = {}
 
     start_counts = container.count_objects()
-    print(f"Currently known objects: {start_counts['packed']} packed, {start_counts['loose']} loose")
+    print(f'Currently known objects: {start_counts["packed"]} packed, {start_counts["loose"]} loose')
     print('Pack objects on disk:', start_counts['pack_files'])
 
     print(f'Generating {num_files} files in memory...')
@@ -95,9 +95,9 @@ def main(
 
         # Check that no loose files were created
         counts = container.count_objects()
-        assert (
-            counts['loose'] == start_counts['loose']
-        ), f"Mismatch (loose in packed case): {start_counts['loose']} != {counts['loose']}"
+        assert counts['loose'] == start_counts['loose'], (
+            f'Mismatch (loose in packed case): {start_counts["loose"]} != {counts["loose"]}'
+        )
         ## Cannot do this with the hash key implenentation - I might have stored the same object twice
         # assert counts['packed'
         #             ] == start_counts['packed'] + num_files, 'Mismatch (packed in packed case): {} + {} != {}'.format(
@@ -156,7 +156,7 @@ def main(
         # Check that all loose files are gone
         counts = container.count_objects()
         loose_folder = container._get_loose_folder()  # pylint: disable=protected-access
-        assert not counts['loose'], 'loose objects left: ' f'{os.listdir(loose_folder)}'
+        assert not counts['loose'], f'loose objects left: {os.listdir(loose_folder)}'
         ## I cannot do this because I could have overlap if the object is identical and has the same hash key
         # assert counts['packed'] == start_counts['packed'] + start_counts[
         #    'loose'] + num_files, 'Mismatch (post-pack): {} + {} + {} != {}'.format(
